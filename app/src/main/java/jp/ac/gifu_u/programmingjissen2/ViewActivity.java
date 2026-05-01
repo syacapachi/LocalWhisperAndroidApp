@@ -61,8 +61,6 @@ public class ViewActivity  extends View {
     }
 
     // タッチパネルを操作した時に呼ばれるメソッド
-
-    // タッチパネルを操作した時に呼ばれるメソッド
     @Override
     public boolean onTouchEvent(MotionEvent event) {
         // 座標を取得
