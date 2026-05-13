@@ -11,7 +11,7 @@ import android.view.MotionEvent;
 import android.view.View;
 
 import java.util.ArrayList;
-
+/// 画面の制御クラス Viewを継承したクラス
 public class ViewActivity  extends View {
     // イベント発生時の X 座標、Y 座標を保存するための動的配列
     private final ArrayList<Integer> array_x;
