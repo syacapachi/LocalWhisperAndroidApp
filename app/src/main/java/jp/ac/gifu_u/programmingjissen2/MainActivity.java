@@ -1,26 +1,33 @@
 package jp.ac.gifu_u.programmingjissen2;
+import android.Manifest;
+import android.content.pm.PackageManager;
 import android.hardware.Sensor;
 import android.os.Bundle;
+import android.util.Log;
 import android.widget.Button;
 import android.widget.Toast;
-
 import androidx.activity.EdgeToEdge;
+import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
+import java.util.List;
 
+import events.RequestPermissionResultEvent;
 import events.SampleEvent;
 import events.SystemEventHub;
 
 /// アプリの状態を監視するクラス
 
 public class MainActivity extends AppCompatActivity {
-
+    private final static String TAG = MainActivity.class.getSimpleName();
     private SensorActivity sensorActivity;
     //アプリ起動時に呼ばれる
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        //EdgeToEdge.enable(this);
+//      EdgeToEdge.enable(this);
         setContentView(R.layout.activity_main);
+        //ログの書き方,Tagはクラス名が多い
+        Log.d(TAG, "onCreate");
 //        //描画処理を上書き
 //          setContentView(new ViewActivity(this));
 //        ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main), (v, insets) -> {
@@ -34,7 +41,8 @@ public class MainActivity extends AppCompatActivity {
         Button b = (Button)findViewById(R.id.button);
         //リスナーを登録
         b.setOnClickListener(buttonActivity);
-        SystemEventHub.Subscribe(SampleEvent.class,this::EventListener);
+        SystemEventHub.subscribe(SampleEvent.class,this::EventListener);
+        SystemEventHub.subscribe(SampleEvent.class,this::EventListener2);
 
         //センサーのリスナーのインスタンスを作成
         sensorActivity = new SensorActivity(this);
@@ -43,11 +51,13 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onStart(){
         super.onStart();
+        Log.d(TAG, "onStart");
     }
     //画面が描画開始タイミングで呼ばれる
     @Override
     protected void onResume(){
         super.onResume();
+        Log.d(TAG, "onResume");
         sensorActivity.AddSensorListener(Sensor.TYPE_LIGHT);
         sensorActivity.AddSensorListener(Sensor.TYPE_MAGNETIC_FIELD);
         sensorActivity.requestLocationUpdate(1000,10);
@@ -57,6 +67,7 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onPause(){
         super.onPause();
+        Log.d(TAG, "onPause");
         //電池を消耗しないようにすぐ消す。
         sensorActivity.RemoveListener();
     }
@@ -65,21 +76,47 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onStop(){
         super.onStop();
+        Log.d(TAG, "onStop");
     }
     //onStop()から再開した場合
     //この後、onStart()が呼ばれる
     @Override
     protected void onRestart(){
         super.onRestart();
+        Log.d(TAG, "onRestart");
     }
     //アプリ切り替え時、長時間放置などアプリがが廃棄されるタイミング。
     @Override
     protected void onDestroy(){
+        Log.d(TAG, "onDestroy");
         super.onDestroy();
     }
     private void EventListener(SampleEvent s){
         Toast t = Toast.makeText(
                 this, s.message(), Toast.LENGTH_SHORT);
         t.show();
+    }
+    public void EventListener2(SampleEvent s){
+        Log.d(TAG,s.message());
+    }
+
+    /**
+     * ユーザーの許可を貰えた時に呼ばれる。
+     * @param requestCode The request code passed in {@link #requestPermissions}.
+     * @param permissions The requested permissions. Never null.
+     * @param grantResults The grant results for the corresponding permissions which is either
+     *                     {@link android.content.pm.PackageManager#PERMISSION_GRANTED} or
+     *                     {@link android.content.pm.PackageManager#PERMISSION_DENIED}. Never null.
+     *
+     */
+    @Override
+    public void onRequestPermissionsResult(
+            int requestCode,
+            @NonNull String[] permissions,
+            @NonNull int[] grantResults) {
+
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        SystemEventHub.publish(new RequestPermissionResultEvent(requestCode,permissions,grantResults));
+
     }
 }

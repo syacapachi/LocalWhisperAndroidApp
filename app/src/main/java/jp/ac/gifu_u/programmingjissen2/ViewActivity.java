@@ -11,8 +11,11 @@ import android.view.MotionEvent;
 import android.view.View;
 
 import java.util.ArrayList;
-/// 画面の制御クラス Viewを継承したクラス
+/**
+ * 画面の制御クラス Viewを継承したクラス
+*/
 public class ViewActivity  extends View {
+    private static final String TAG = ViewActivity.class.getSimpleName();
     // イベント発生時の X 座標、Y 座標を保存するための動的配列
     private final ArrayList<Integer> array_x;
     private final ArrayList<Integer> array_y;
@@ -25,7 +28,10 @@ public class ViewActivity  extends View {
         array_status = new ArrayList<>();
     }
 
-    //描画開始処理
+    /**
+     * 描画開始処理
+     * @param canvas the canvas on which the background will be drawn
+     */
     @Override
     protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
@@ -60,7 +66,9 @@ public class ViewActivity  extends View {
         canvas.drawBitmap(bitmap, 0, 10, p);
     }
 
-    // タッチパネルを操作した時に呼ばれるメソッド
+    /**
+     * タッチパネルを操作した時に呼ばれるメソッド
+     */
     @Override
     public boolean onTouchEvent(MotionEvent event) {
         // 座標を取得

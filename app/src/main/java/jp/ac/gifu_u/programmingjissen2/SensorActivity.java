@@ -11,6 +11,7 @@ import android.hardware.SensorManager;
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
+import android.util.Log;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
@@ -18,9 +19,16 @@ import androidx.core.app.ActivityCompat;
 
 import java.util.List;
 
-/// センサー(権限が必要ない)を監視するクラス
+import events.RequestPermissionResultEvent;
+import events.SystemEventHub;
+
+/**
+ * センサー(権限が必要ない)を監視するクラスと
+ * 位置情報(権限が必要)を監視するクラス
+ */
 public class SensorActivity implements SensorEventListener, LocationListener {
     private final Activity activity;
+    private final static String TAG = SensorActivity.class.getSimpleName();
     //センサー
     private final SensorManager sensorManager;
     //位置情報
@@ -29,6 +37,8 @@ public class SensorActivity implements SensorEventListener, LocationListener {
     /// ⚫ Wifi などから大まかな位置情報を取得する ACCESS_COARSE_LOCATION
     /// ⚫ GPS などにより詳細な位置情報を取得する ACCESS_FINE_LOCATION
     private final LocationManager localeManager;
+    private long requestmsvc;
+    private float requestmeter;
     public  SensorActivity(Activity activity){
         this.activity = activity;
         //マネージャークラス取得
@@ -36,14 +46,24 @@ public class SensorActivity implements SensorEventListener, LocationListener {
         localeManager = (LocationManager) activity.getSystemService(Context.LOCATION_SERVICE);
     }
     public void AddSensorListener(int sensorType){
-        // 明るさセンサ(TYPE_LIGHT)のリストを取得
+        // 対応するセンサーのリストを取得
         List<Sensor> sensors =
                 sensorManager.getSensorList(sensorType);
         if(sensors.isEmpty()) return;
         //最初の1つを登録
         sensorManager.registerListener(this, sensors.get(0), SensorManager.SENSOR_DELAY_NORMAL);
     }
+    /**
+     * ユーザーに位置情報の提供を求め、指定した秒数、範囲ごとにGPS情報の更新をリクエストします。
+     * @param msvc 位置情報の更新秒数(ms)
+     * @param meter 位置情報の更新距離(M)
+     *
+     */
+    static final int REQUESTCODE = 1000;
     public void requestLocationUpdate(long msvc, float meter){
+        requestmsvc = msvc;
+        requestmeter = meter;
+        //権限があるかをチェック
         if (ActivityCompat.checkSelfPermission(activity,
                 Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED
                 && ActivityCompat.checkSelfPermission(activity,
@@ -55,6 +75,15 @@ public class SensorActivity implements SensorEventListener, LocationListener {
             //                                          int[] grantResults)
             // to handle the case where the user grants the permission. See the documentation
             // for ActivityCompat#requestPermissions for more details.
+
+            //権限リクエスト(非同期)、許可された場合、ActivityのonRequestPermissionsResultが呼ばれる。
+            ActivityCompat.requestPermissions(
+                    activity,//結果を通知するActivity
+                    //求める権限
+                    new String[]{Manifest.permission.ACCESS_FINE_LOCATION,Manifest.permission.ACCESS_COARSE_LOCATION}
+                    //結果で使うリクエスト識別コード(かぶらないように)
+                    ,REQUESTCODE);
+            SystemEventHub.subscribe(RequestPermissionResultEvent.class,this::onPermissionResultReceived);
             return;
         }
         //GPSの更新リクエストを更新
@@ -63,6 +92,48 @@ public class SensorActivity implements SensorEventListener, LocationListener {
                 msvc,
                 meter,
                 this);
+    }
+    private void onPermissionResultReceived(RequestPermissionResultEvent result){
+        if (result.requestCode() == REQUESTCODE) {
+
+            // 配列が空でないか確認
+            if (result.grantResults().length > 0) {
+
+                boolean fineGranted = false;
+                boolean coarseGranted = false;
+
+                // permissionごとの結果を見る
+                for (int i = 0; i < result.permissions().length; i++) {
+
+                    if (Manifest.permission.ACCESS_FINE_LOCATION.equals(result.permissions()[i])) {
+                        fineGranted =
+                                result.grantResults()[i] == PackageManager.PERMISSION_GRANTED;
+                    }
+
+                    if (Manifest.permission.ACCESS_COARSE_LOCATION.equals(result.permissions()[i])) {
+                        coarseGranted =
+                                result.grantResults()[i] == PackageManager.PERMISSION_GRANTED;
+                    }
+                }
+
+                // どちらか許可されていればOK
+                if (fineGranted || coarseGranted) {
+
+                    Log.d(TAG, "Location Permission Granted");
+
+                    //GPSの更新リクエストを更新
+                    requestLocationUpdate(
+                            requestmsvc,
+                            requestmeter
+                            );
+                } else {
+
+                    Log.d(TAG, "Location Permission Denied");
+                }
+            }
+            //購読解除
+            SystemEventHub.unsubscribe(RequestPermissionResultEvent.class,this::onPermissionResultReceived);
+        }
     }
     public void RemoveListener(){
         sensorManager.unregisterListener(this);
