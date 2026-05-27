@@ -1,6 +1,8 @@
 package events;
 
 import android.util.Log;
+
+import java.util.ArrayList;
 import java.util.Map;
 import java.util.List;
 import java.util.Objects;
@@ -71,20 +73,18 @@ import java.util.function.Consumer;
                 }
             }
         }
-        else{
+        else {
             //C#のTryGet結構に近い
             var consumers = events.get(eventClass);
-            if(consumers != null) {
-                for(Consumer<?> consumer: consumers) {
-                    @SuppressWarnings("unchecked")
-                    Consumer<T> action = (Consumer<T>) consumer;
-                    try{
-                        action.accept(event);
-                    }
-                    catch(Exception e){
-                        Log.e(TAG, "Event Error publish Class : "
-                                + eventClass.getSimpleName(), e);
-                    }
+            if (consumers == null) return;
+            for (Consumer<?> consumer : consumers) {
+                @SuppressWarnings("unchecked")
+                Consumer<T> action = (Consumer<T>) consumer;
+                try {
+                    action.accept(event);
+                } catch (Exception e) {
+                    Log.e(TAG, "Event Error publish Class : "
+                            + eventClass.getSimpleName(), e);
                 }
             }
         }
@@ -117,14 +117,13 @@ import java.util.function.Consumer;
      * @param <T> イベントクラスならなんでもnot null
      * @apiNote 登録されてない関数が入った場合は何も起きません。
      */
-    public static <T> void unsubscribe(Class<T> type, Consumer<T> action){
+    public static <T> void unsubscribe(Class<T> type, Consumer<T> action) {
         List<Consumer<?>> list = events.get(type);
-        if (list != null) {
-            list.remove(action);
-            if(list.isEmpty()){
-                events.remove(type);
-                typeCache.clear();
-            }
+        if (list == null) return;
+        list.remove(action);
+        if (list.isEmpty()) {
+            events.remove(type);
+            typeCache.clear();
         }
     }
 }

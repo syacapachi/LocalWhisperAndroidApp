@@ -1,17 +1,15 @@
 package jp.ac.gifu_u.programmingjissen2;
-import android.Manifest;
-import android.content.pm.PackageManager;
 import android.hardware.Sensor;
 import android.os.Bundle;
 import android.util.Log;
 import android.widget.Button;
+import android.widget.TextView;
 import android.widget.Toast;
-import androidx.activity.EdgeToEdge;
+
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
-import java.util.List;
 
-import events.RequestPermissionResultEvent;
+import events.Request.RequestPermissionResultEvent;
 import events.SampleEvent;
 import events.SystemEventHub;
 
@@ -20,6 +18,7 @@ import events.SystemEventHub;
 public class MainActivity extends AppCompatActivity {
     private final static String TAG = MainActivity.class.getSimpleName();
     private SensorActivity sensorActivity;
+    private RecordActivity recordActivity;
     //アプリ起動時に呼ばれる
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -36,16 +35,34 @@ public class MainActivity extends AppCompatActivity {
 //            return insets;
 //        });
         //ボタンのイベントを受信するクラスをインスタンス化
-        ButtonActivity buttonActivity = new ButtonActivity(this);
+        ButtonActivity finishButton = new ButtonActivity(
+                this,
+                (view) -> {
+                    Toast t = Toast.makeText(
+                            this, "Finish", Toast.LENGTH_SHORT);
+                    t.show();
+                    SystemEventHub.publish(new SampleEvent(1, "Invoked!"));
+                    Log.d(TAG, "Finish");
+                    //アプリを終了する
+                    this.finish();
+                });
         //リソースから、buttonというIdのものを持って来てButtonクラスにキャスト
-        Button b = (Button)findViewById(R.id.button);
+        Button b = (Button) findViewById(R.id.button);
         //リスナーを登録
-        b.setOnClickListener(buttonActivity);
-        SystemEventHub.subscribe(SampleEvent.class,this::EventListener);
-        SystemEventHub.subscribe(SampleEvent.class,this::EventListener2);
+        b.setOnClickListener(finishButton);
+
+        //イベントリスナー購読
+        SystemEventHub.subscribe(SampleEvent.class, this::EventListener);
+        SystemEventHub.subscribe(SampleEvent.class, this::EventListener2);
+
 
         //センサーのリスナーのインスタンスを作成
         sensorActivity = new SensorActivity(this);
+
+        //録音のインスタンスを作成。
+        Button recordButton = (Button) findViewById(R.id.recordButton);
+        TextView recordText = findViewById(R.id.recordText);
+        recordActivity = new RecordActivity(this, recordButton, recordText);
     }
     //画面が見えるタイミングで呼ばれる
     @Override
@@ -70,6 +87,7 @@ public class MainActivity extends AppCompatActivity {
         Log.d(TAG, "onPause");
         //電池を消耗しないようにすぐ消す。
         sensorActivity.RemoveListener();
+        recordActivity.StopRecord();
     }
     //Pauseから時間がたつと呼ばれる。バックグラウンドで動いている。
     //ここからの再開はReStart()

@@ -11,17 +11,9 @@
         android:id="@+id/button"
         android:layout_width="127dp"
         android:layout_height="58dp"
-        android:layout_marginStart="161dp"
-        android:layout_marginTop="150dp"
-        android:layout_marginEnd="123dp"
-        android:layout_marginBottom="32dp"
         android:text="終了"
         app:layout_constraintBottom_toBottomOf="parent"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintHorizontal_bias="0.0"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@+id/textView"
-        app:layout_constraintVertical_bias="0.41" />
+        app:layout_constraintEnd_toEndOf="parent" />
 
     <TextView
         android:id="@+id/textView"
@@ -59,5 +51,23 @@
         app:layout_constraintStart_toStartOf="@+id/status_text"
         app:layout_constraintTop_toBottomOf="@+id/status_text"
         app:layout_constraintVertical_bias="0.206" />
+
+    <Button
+        android:id="@+id/recordButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="record"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
+    <TextView
+        android:id="@+id/recordText"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="16dp"
+        android:text="TextView"
+        app:layout_constraintBottom_toBottomOf="@+id/recordButton"
+        app:layout_constraintStart_toEndOf="@+id/recordButton"
+        app:layout_constraintTop_toTopOf="@+id/recordButton" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>
