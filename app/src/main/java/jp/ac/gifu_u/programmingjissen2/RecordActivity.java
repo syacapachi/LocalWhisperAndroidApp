@@ -9,7 +9,6 @@ import android.media.MediaRecorder;
 import android.util.Log;
 import android.widget.Button;
 import android.widget.TextView;
-import android.widget.Toast;
 
 import androidx.core.app.ActivityCompat;
 
@@ -114,6 +113,7 @@ public class RecordActivity implements Runnable {
      * 録音が開始されている場合、止めます。
      */
     public void StopRecord(){
+        if(!isRecording)  return;
         isRecording = false;
 
         if(rec != null){

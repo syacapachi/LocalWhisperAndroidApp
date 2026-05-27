@@ -9,6 +9,8 @@ import android.widget.Toast;
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 
+import java.util.function.Consumer;
+
 import events.Request.RequestPermissionResultEvent;
 import events.SampleEvent;
 import events.SystemEventHub;
@@ -19,6 +21,10 @@ public class MainActivity extends AppCompatActivity {
     private final static String TAG = MainActivity.class.getSimpleName();
     private SensorActivity sensorActivity;
     private RecordActivity recordActivity;
+
+    Consumer<SampleEvent> eventListener1 = this::EventListener;
+    Consumer<SampleEvent> eventListener2 = this::EventListener2;
+
     //アプリ起動時に呼ばれる
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -52,9 +58,8 @@ public class MainActivity extends AppCompatActivity {
         b.setOnClickListener(finishButton);
 
         //イベントリスナー購読
-        SystemEventHub.subscribe(SampleEvent.class, this::EventListener);
-        SystemEventHub.subscribe(SampleEvent.class, this::EventListener2);
-
+        SystemEventHub.subscribe(SampleEvent.class, eventListener1);
+        SystemEventHub.subscribe(SampleEvent.class, eventListener2);
 
         //センサーのリスナーのインスタンスを作成
         sensorActivity = new SensorActivity(this);

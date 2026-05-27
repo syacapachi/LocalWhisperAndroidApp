@@ -1,5 +1,9 @@
 package events.AwaitEvent;
 
+import android.util.Log;
+
+import java.util.function.Consumer;
+
 import events.SystemEventHub;
 
 /**
@@ -7,12 +11,20 @@ import events.SystemEventHub;
  * @param <TEvent> イベントの受信クラス。
  */
 public abstract class EventAwaiter<TEvent> implements IAwaiter {
-
+    private static final String TAG = EventAwaiter.class.getSimpleName();
     //ここあとでEnum Stateにしたい。
     private boolean hasStarted = false;
     private boolean completed = false;
     private boolean cancelled = false;
     private boolean isReceiving = false;
+
+    //登録する関数は保持しないと、別インスタンスになる。
+    //SystemEventHub.subscribe(
+    //  getEventType(),
+    //  this::receive//これはnew Consumer<TEvent>(this::receive);つまり、毎回新規作成される、
+    //  );
+    // -> unsubscribe失敗。
+    final Consumer<TEvent> onReceived = this::receive;
 
     /**
      * 購読を開始します。
@@ -28,9 +40,11 @@ public abstract class EventAwaiter<TEvent> implements IAwaiter {
         try{
             //receiveを購読
             //一応null入れなきゃエラーはでないけど、包んでおく。
+            String TEvent;
+            Log.d(TAG,"Start");
             SystemEventHub.subscribe(
                     getEventType(),
-                    this::receive);
+                    onReceived);
             hasStarted = true;
         }
         catch(Exception e){
@@ -44,6 +58,7 @@ public abstract class EventAwaiter<TEvent> implements IAwaiter {
      */
     @Override
     public void cancel() {
+        Log.d(TAG,"Cancelled");
         cancelled = true;
         complete();
     }
@@ -57,6 +72,7 @@ public abstract class EventAwaiter<TEvent> implements IAwaiter {
         if (isReceiving) {
             return;
         }
+        Log.d(TAG,"Recieve");
         isReceiving = true;
         boolean matched = false;
 
@@ -89,12 +105,13 @@ public abstract class EventAwaiter<TEvent> implements IAwaiter {
             return;
         }
 
+        Log.d(TAG,"Completed");
         completed = true;
 
         //購読解除
         SystemEventHub.unsubscribe(
                 getEventType(),
-                this::receive);
+                onReceived);
 
         try {
             onComplete();
@@ -142,10 +159,12 @@ public abstract class EventAwaiter<TEvent> implements IAwaiter {
     }
 
     /**
-     *内部状態をリセット
+     * AwaiterHub.release()で呼ばれます。
+     * 内部状態をリセット
      */
     @Override
     public final void reset() {
+        Log.d(TAG,"Reset");
         hasStarted = false;
         completed = false;
         cancelled = false;

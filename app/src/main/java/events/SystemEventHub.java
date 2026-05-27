@@ -2,7 +2,6 @@ package events;
 
 import android.util.Log;
 
-import java.util.ArrayList;
 import java.util.Map;
 import java.util.List;
 import java.util.Objects;
@@ -97,11 +96,14 @@ import java.util.function.Consumer;
      * @param <T> イベントクラスならなんでもnot null
      * @exception NullPointerException 引数にnullを含めた場合投げられます。
      * @apiNote   関数を複数回を購読した場合、その回数だけ実行されます。
+     * また、C#と違い、Javaでは this::funcを入れた場合、Consumer<T>のインスタンスが新規で作られるので
+     * final Consumer<T> func = this::func;のように持っておかないと購読解除できません。
      */
     public static <T> void subscribe(Class<T> type, Consumer<T> action){
         //nullだったらNullPointerExceptionを投げる
         Objects.requireNonNull(action);
         Objects.requireNonNull(type);
+        Log.d(TAG,"subscribe:"+action.toString());
         events.computeIfAbsent(
                 type,
                 (v)-> {
@@ -116,11 +118,18 @@ import java.util.function.Consumer;
      * @param action 購読解除する関数。not null
      * @param <T> イベントクラスならなんでもnot null
      * @apiNote 登録されてない関数が入った場合は何も起きません。
+     * また、C#と違い、Javaでは this::funcを入れた場合、Consumer<T>のインスタンスが新規で作られるので
+     * final Consumer<T> func = this::func;のように持っておかないと購読解除できません。
      */
     public static <T> void unsubscribe(Class<T> type, Consumer<T> action) {
+        Objects.requireNonNull(type);
+        Objects.requireNonNull(action);
         List<Consumer<?>> list = events.get(type);
         if (list == null) return;
-        list.remove(action);
+        Log.d(TAG,"unsubscribe:"+action.toString());
+        if (list.remove(action)){
+            Log.w(TAG,action.toString() + "can not unsubscribe");
+        }
         if (list.isEmpty()) {
             events.remove(type);
             typeCache.clear();

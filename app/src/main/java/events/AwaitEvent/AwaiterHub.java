@@ -1,7 +1,6 @@
 package events.AwaitEvent;
 
 import java.util.HashMap;
-import java.util.Objects;
 import java.util.function.Supplier;
 
 import Utils.Pool.ObjectPool;
@@ -28,7 +27,7 @@ public final class AwaiterHub {
      * @param <T> IAwaiterを持つクラス
      * @throws IllegalStateException ObjectPoolを初期化(register)していない場合。
      */
-    public static <T extends IAwaiter> T rentAwaiter(Class<T> clazz) {
+    public static <T extends IAwaiter> T rentAwaiter(Class<T> clazz) throws IllegalStateException {
         @SuppressWarnings("unchecked")
         ObjectPool<T> pool = (ObjectPool<T>) objectPoolDic.get(clazz);
         if(pool == null){
@@ -45,7 +44,7 @@ public final class AwaiterHub {
      * @param <T> IAwaiter
      * @throws IllegalStateException 同じAwaiterが既に登録されている場合。
      */
-    public static <T extends IAwaiter> void register(Class<T> clazz, Supplier<T> onCreate){
+    public static <T extends IAwaiter> void register(Class<T> clazz, Supplier<T> onCreate) throws IllegalStateException{
         if(objectPoolDic.containsKey(clazz)){
             throw new IllegalStateException(
                     clazz.getName() + " already registered.");
@@ -68,7 +67,7 @@ public final class AwaiterHub {
      * @param <T> IAwaiter
      * @throws IllegalStateException ObjectPoolを初期化(register)していない場合。
      */
-    public static <T extends IAwaiter> void release(T awaiter) {
+    public static <T extends IAwaiter> void release(T awaiter) throws IllegalStateException {
         @SuppressWarnings("unchecked")
         ObjectPool<T> pool = (ObjectPool<T>) objectPoolDic.get(awaiter.getClass());
         if(pool == null){
