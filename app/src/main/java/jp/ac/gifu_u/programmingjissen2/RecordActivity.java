@@ -35,12 +35,12 @@ public class RecordActivity implements Runnable {
         recordButton.setText("録音");
         recordButton.setOnClickListener((view)->{
             if(!isRecording){
-                StartRecord();
-                recordButton.setText("停止");
+                if(StartRecord())
+                    recordButton.setText("停止");
             }
             else{
-                StopRecord();
-                recordButton.setText("録音");
+                if(StopRecord())
+                    recordButton.setText("録音");
             }
         });
     }
@@ -49,8 +49,9 @@ public class RecordActivity implements Runnable {
      * 許可がない場合
      * 録音の許可を求めます。
      * また、録音スレッドを立ち上げて録音を開始します。
+     * @return 録音開始できたか
      */
-    public void StartRecord(){
+    public boolean StartRecord(){
         int bufferSize = AudioRecord.getMinBufferSize(
                 FREQUENCY,
                 AudioFormat.CHANNEL_IN_MONO,
@@ -92,7 +93,7 @@ public class RecordActivity implements Runnable {
                     new String[]{Manifest.permission.RECORD_AUDIO}
                     //結果で使うリクエスト識別コード(かぶらないように)
                     ,REQUESTCODE);
-            return;
+            return false;
         }
         rec = new AudioRecord(
                 MediaRecorder.AudioSource.MIC,
@@ -108,12 +109,13 @@ public class RecordActivity implements Runnable {
         isRecording = true;
         recordThread = new Thread(this);
         recordThread.start();
+        return true;
     }
     /**
      * 録音が開始されている場合、止めます。
      */
-    public void StopRecord(){
-        if(!isRecording)  return;
+    public boolean StopRecord(){
+        if(!isRecording)  return false;
         isRecording = false;
 
         if(rec != null){
@@ -127,9 +129,11 @@ public class RecordActivity implements Runnable {
             }
             catch (InterruptedException e){
                 Thread.currentThread().interrupt();
+                return false;
             }
         }
         recordThread = null;
+        return true;
     }
 
     //録音スレッドでの関数

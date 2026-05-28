@@ -24,12 +24,11 @@ public abstract class EventAwaiter<TEvent> implements IAwaiter {
     //  this::receive//これはnew Consumer<TEvent>(this::receive);つまり、毎回新規作成される、
     //  );
     // -> unsubscribe失敗。
-    final Consumer<TEvent> onReceived = this::receive;
+    private final Consumer<TEvent> onReceived = this::receive;
 
     /**
      * 購読を開始します。
-     * getEventType()がnullだと購読できません。
-     * @throws IllegalStateException イベントが多重購読された場合。
+     * @throws IllegalStateException イベントが多重購読された場合。getEventType()がnullの場合。
      */
     @Override
     public void start() {
@@ -37,19 +36,18 @@ public abstract class EventAwaiter<TEvent> implements IAwaiter {
             throw new IllegalStateException("イベントが多重登録されました。");
         }
 
-        try{
+        Class<TEvent> eventType = getEventType();
+        if(eventType != null){
             //receiveを購読
-            //一応null入れなきゃエラーはでないけど、包んでおく。
-            String TEvent;
             Log.d(TAG,"Start");
             SystemEventHub.subscribe(
-                    getEventType(),
+                    eventType,
                     onReceived);
             hasStarted = true;
         }
-        catch(Exception e){
+        else{
             hasStarted = false;
-            throw e;
+            throw new IllegalStateException("getEventType()がnullです。");
         }
     }
 
@@ -72,24 +70,23 @@ public abstract class EventAwaiter<TEvent> implements IAwaiter {
         if (isReceiving) {
             return;
         }
-        Log.d(TAG,"Recieve");
+        Log.d(TAG,"Receive:"+event.getClass());
         isReceiving = true;
         boolean matched = false;
 
         try {
-            //カスタムクラスでエラーが出る可能性をキャッチ
+            //カスタム関数でエラーが出る可能性があるので
             matched = match(event);
             if (!matched) {
                 return;
             }
             onReceive(event);
-
         }
         finally {
-            //必ず戻す
+            //例外があっても必ず戻す
             isReceiving = false;
 
-            //onReceive()でエラッタ場合も呼ぶ
+            //onReceive()でエラッた場合も呼ぶ
             if (matched) {
                 complete();
             }
@@ -117,7 +114,7 @@ public abstract class EventAwaiter<TEvent> implements IAwaiter {
             onComplete();
         }
         finally {
-            //ここでresetが呼ばれます。
+            //ここでresetが呼ばれる。
             AwaiterHub.release(this);
         }
     }
@@ -149,7 +146,7 @@ public abstract class EventAwaiter<TEvent> implements IAwaiter {
 
     /**
      *
-     * @return TEvent.classを書いて
+     * @return TEvent.classを書く
      */
 
     protected abstract Class<TEvent> getEventType();

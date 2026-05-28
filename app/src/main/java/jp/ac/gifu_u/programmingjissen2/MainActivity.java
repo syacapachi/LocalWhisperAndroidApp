@@ -12,7 +12,8 @@ import androidx.appcompat.app.AppCompatActivity;
 import java.util.function.Consumer;
 
 import events.Request.RequestPermissionResultEvent;
-import events.SampleEvent;
+import events.SampleEvent.SampleRecordEvent;
+import events.SampleEvent.SampleTest;
 import events.SystemEventHub;
 
 /// アプリの状態を監視するクラス
@@ -22,8 +23,8 @@ public class MainActivity extends AppCompatActivity {
     private SensorActivity sensorActivity;
     private RecordActivity recordActivity;
 
-    Consumer<SampleEvent> eventListener1 = this::EventListener;
-    Consumer<SampleEvent> eventListener2 = this::EventListener2;
+    Consumer<SampleRecordEvent> eventListener1 = this::EventListener;
+    Consumer<SampleRecordEvent> eventListener2 = this::EventListener2;
 
     //アプリ起動時に呼ばれる
     @Override
@@ -47,7 +48,7 @@ public class MainActivity extends AppCompatActivity {
                     Toast t = Toast.makeText(
                             this, "Finish", Toast.LENGTH_SHORT);
                     t.show();
-                    SystemEventHub.publish(new SampleEvent(1, "Invoked!"));
+                    SystemEventHub.publish(new SampleRecordEvent(1, "Invoked!"));
                     Log.d(TAG, "Finish");
                     //アプリを終了する
                     this.finish();
@@ -58,8 +59,8 @@ public class MainActivity extends AppCompatActivity {
         b.setOnClickListener(finishButton);
 
         //イベントリスナー購読
-        SystemEventHub.subscribe(SampleEvent.class, eventListener1);
-        SystemEventHub.subscribe(SampleEvent.class, eventListener2);
+        SystemEventHub.subscribe(SampleRecordEvent.class, eventListener1);
+        SystemEventHub.subscribe(SampleRecordEvent.class, eventListener2);
 
         //センサーのリスナーのインスタンスを作成
         sensorActivity = new SensorActivity(this);
@@ -68,6 +69,9 @@ public class MainActivity extends AppCompatActivity {
         Button recordButton = (Button) findViewById(R.id.recordButton);
         TextView recordText = findViewById(R.id.recordText);
         recordActivity = new RecordActivity(this, recordButton, recordText);
+
+        //イベントが親クラスに行くかの確認。
+        //SampleTest.CheckTest();
     }
     //画面が見えるタイミングで呼ばれる
     @Override
@@ -114,17 +118,17 @@ public class MainActivity extends AppCompatActivity {
         Log.d(TAG, "onDestroy");
         super.onDestroy();
     }
-    private void EventListener(SampleEvent s){
+    private void EventListener(SampleRecordEvent s){
         Toast t = Toast.makeText(
                 this, s.message(), Toast.LENGTH_SHORT);
         t.show();
     }
-    public void EventListener2(SampleEvent s){
+    private void EventListener2(SampleRecordEvent s){
         Log.d(TAG,s.message());
     }
 
     /**
-     * ユーザーの許可を貰えた時に呼ばれる。
+     * ユーザーの許可の結果を貰えた時に呼ばれる。
      * @param requestCode The request code passed in {@link #requestPermissions}.
      * @param permissions The requested permissions. Never null.
      * @param grantResults The grant results for the corresponding permissions which is either
@@ -139,6 +143,7 @@ public class MainActivity extends AppCompatActivity {
             @NonNull int[] grantResults) {
 
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        //イベントとして投げる
         SystemEventHub.publish(new RequestPermissionResultEvent(requestCode,permissions,grantResults));
 
     }

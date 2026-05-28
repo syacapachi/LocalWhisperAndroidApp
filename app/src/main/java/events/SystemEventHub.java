@@ -25,7 +25,7 @@ import java.util.function.Consumer;
      * @param event 購読者に送るイベントの構造体 ,not null
      * @param <T> 発行するイベントクラス。イベントごとに作ったいほうがいいです。not null
      * @exception NullPointerException eventがnullの場合投げられます。
-     * @apiNote オーバーロード情報invokeSuperClass = true
+     * @apiNote オーバーロード情報invokeSuperClass = true;(基底クラスの購読者にも通知される)
      */
     public static <T> void publish(T event){
         publish(event,true);
@@ -33,7 +33,7 @@ import java.util.function.Consumer;
     /**
      * 既に購読しているクラスにイベントを発行します。
      * @param event 購読者に送るイベントの構造体 ,not null
-     * @param invokeSuperClass 基底イベントクラスを継承している場合、基底クラスを購読しているクラスにも発光するか
+     * @param invokeSuperClass 基底イベントクラスを継承している場合、基底クラスを購読しているクラスにも発行するか
      * @param <T> 発行するイベントクラス。イベントごとに作ったいほうがいいです。not null
      * @exception NullPointerException eventがnullの場合投げられます。
      */
@@ -73,7 +73,6 @@ import java.util.function.Consumer;
             }
         }
         else {
-            //C#のTryGet結構に近い
             var consumers = events.get(eventClass);
             if (consumers == null) return;
             for (Consumer<?> consumer : consumers) {

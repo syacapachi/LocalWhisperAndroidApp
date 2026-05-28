@@ -40,7 +40,7 @@ public final class AwaiterHub {
     /**
      *
      * @param clazz 登録するAwaiter
-     * @param onCreate 初期化関数(コンストラクタ入れて)
+     * @param onCreate 初期化関数(コンストラクタ入れるのを推奨)
      * @param <T> IAwaiter
      * @throws IllegalStateException 同じAwaiterが既に登録されている場合。
      */

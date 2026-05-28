@@ -70,7 +70,7 @@ public class SensorActivity implements SensorEventListener, LocationListener {
             PermissionAwaiter awaiter = AwaiterHub.rentAwaiter(PermissionAwaiter.class);
             awaiter.initialize(
                     REQUESTCODE,
-                    //内部でクラスになる。
+                    //内部で匿名クラスのインスタンスになるので、引数を個別に保存できる。
                     (result) ->{
                         Log.d(TAG, "Location Permission: " + result);
                     if(result) {
@@ -88,7 +88,7 @@ public class SensorActivity implements SensorEventListener, LocationListener {
             //SystemEventHub.subscribe(RequestPermissionResultEvent.class,this::onPermissionResultReceived);
 
             //購読したのち、許可を求める。
-            //権限リクエスト(非同期)、許可された場合、ActivityのonRequestPermissionsResultが呼ばれる。
+            //権限リクエスト(非同期)、結果が、ActivityのonRequestPermissionsResultが呼ばれる。
             ActivityCompat.requestPermissions(
                     activity,//結果を通知するActivity
                     //求める権限

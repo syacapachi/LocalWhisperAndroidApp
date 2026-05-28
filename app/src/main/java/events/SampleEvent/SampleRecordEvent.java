@@ -2,10 +2,10 @@ package events.SampleEvent;
 
 import android.util.Log;
 
-public record SampleEvent(int number, String message) implements ISampleEvent {
-    public static final String TAG = SampleEvent.class.getSimpleName();
+public record SampleRecordEvent(int number, String message) implements ISampleEvent {
+    public static final String TAG = SampleRecordEvent.class.getSimpleName();
     @Override
     public void sayHello(){
-        Log.d(TAG,message + number);
+        Log.d(TAG,message+"," + number);
     }
 }
