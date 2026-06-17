@@ -1,4 +1,8 @@
+//プロジェクト全体のビルド設定を管理します。
+
+// どこからダウンロードするか
 pluginManagement {
+    // プラグイン倉庫一覧
     repositories {
         google {
             content {
@@ -19,6 +23,8 @@ dependencyResolutionManagement {
     }
 }
 
+// ヘッダー定義、include
 rootProject.name = "ProgrammingJissen2"
+// ビルドに含めるもの
 include(":app")
  
