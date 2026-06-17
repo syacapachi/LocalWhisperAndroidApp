@@ -12,11 +12,17 @@ import android.widget.TextView;
 
 import androidx.core.app.ActivityCompat;
 
+import java.io.IOException;
+
+import Utils.MyUtils;
+import Whisper.WhisperBridge;
 import events.AwaitEvent.AwaiterHub;
 import events.Request.PermissionAwaiter;
 
 public class RecordActivity implements Runnable {
     private final static String TAG = RecordActivity.class.getSimpleName();
+    private final static String ModelName = "ggml-base.bin";
+    private final String ModelPath;
     private final Activity activity;
     private final Button recordButton;
     private final TextView resultTextView;
@@ -24,12 +30,20 @@ public class RecordActivity implements Runnable {
     static final int REQUESTCODE = 2000;
     AudioRecord rec;
     short[] buf;
+    float[] floatbuf;
     //録音スレッドの状態監視
     //volatileで最適化阻止(マルチスレッド用)
     volatile boolean isRecording;
     Thread recordThread;
     public RecordActivity(Activity activity, Button button, TextView resultTextView){
+        String modelPath;
         this.activity = activity;
+        try {
+            modelPath = MyUtils.prepareModelPath(activity,ModelName);
+        }catch (IOException e){
+            modelPath = "";
+        }
+        this.ModelPath = modelPath;
         this.recordButton = button;
         this.resultTextView = resultTextView;
         recordButton.setText("録音");
@@ -56,7 +70,7 @@ public class RecordActivity implements Runnable {
                 FREQUENCY,
                 AudioFormat.CHANNEL_IN_MONO,
                 AudioFormat.ENCODING_PCM_16BIT
-        );
+        ) * 100;
         //許可が必要<uses-permission android:name="android.permission.RECORD_AUDIO" />
         if (ActivityCompat.checkSelfPermission(activity, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             PermissionAwaiter awaiter = AwaiterHub.rentAwaiter(PermissionAwaiter.class);
@@ -73,6 +87,7 @@ public class RecordActivity implements Runnable {
                                     bufferSize
                             );
                             buf = new short[bufferSize];
+                            floatbuf = new float[bufferSize];
                             if(isRecording){
                                 StopRecord();
                             }
@@ -103,6 +118,7 @@ public class RecordActivity implements Runnable {
                 bufferSize
         );
         buf = new short[bufferSize];
+        floatbuf = new float[bufferSize];
         if(isRecording){
             StopRecord();
         }
@@ -149,6 +165,7 @@ public class RecordActivity implements Runnable {
                 int datasize = rec.read(buf, 0, buf.length), max = 0;
                 //録音されたデータの最大振幅を保存。
                 for (int i = 0; i < datasize; i++) {
+                    floatbuf[i] = buf[i];
                     if ((buf[i] > 0) && (buf[i] > max)) {
                         max = buf[i];
                     }
@@ -156,11 +173,12 @@ public class RecordActivity implements Runnable {
                         max = -buf[i];
                     }
                 }
+                String transcribe = WhisperBridge.transcribe(ModelPath,floatbuf);
                 //メインスレッドに返す(UIはメインスレッドのみ)。
                 String str = Integer.toString(max);
                 activity.runOnUiThread(
                         () -> {
-                            resultTextView.setText(str);
+                            resultTextView.setText(String.join(",",str, transcribe));
                         });
             }
         }
