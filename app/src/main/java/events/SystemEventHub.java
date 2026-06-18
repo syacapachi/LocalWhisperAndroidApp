@@ -102,7 +102,10 @@ import java.util.function.Consumer;
         //nullだったらNullPointerExceptionを投げる
         Objects.requireNonNull(action);
         Objects.requireNonNull(type);
-        Log.d(TAG,"subscribe:"+action.toString());
+        //String結合もどうせ内部でnewなので早いほうにする。
+        StringBuilder builder = new StringBuilder("subscribe: ");
+        builder.append(action.toString());
+        Log.d(TAG,builder.toString());
         events.computeIfAbsent(
                 type,
                 (v)-> {
@@ -125,7 +128,10 @@ import java.util.function.Consumer;
         Objects.requireNonNull(action);
         List<Consumer<?>> list = events.get(type);
         if (list == null) return;
-        Log.d(TAG,"unsubscribe:"+action.toString());
+        //String結合もどうせ内部でnewなので早いほうにする。
+        StringBuilder builder = new StringBuilder("unsubscribe: ");
+        builder.append(action.toString());
+        Log.d(TAG,builder.toString());
         if (list.remove(action)){
             Log.w(TAG,action.toString() + "can not unsubscribe");
         }
@@ -133,5 +139,13 @@ import java.util.function.Consumer;
             events.remove(type);
             typeCache.clear();
         }
+    }
+
+    /**
+     * 全てのイベントの購読解除
+     */
+    public static void clear(){
+        events.clear();
+        typeCache.clear();
     }
 }

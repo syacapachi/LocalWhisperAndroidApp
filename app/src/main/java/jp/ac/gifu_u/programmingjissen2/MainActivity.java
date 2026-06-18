@@ -115,6 +115,8 @@ public class MainActivity extends AppCompatActivity {
     //アプリ切り替え時、長時間放置などアプリがが廃棄されるタイミング。
     @Override
     protected void onDestroy(){
+        // イベント購読を解除
+        SystemEventHub.clear();
         Log.d(TAG, "onDestroy");
         super.onDestroy();
     }

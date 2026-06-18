@@ -20,7 +20,7 @@ public class PermissionAwaiter extends EventAwaiter<RequestPermissionResultEvent
             int requestCode,
             Consumer<Boolean> callback)
     {
-        Log.d(TAG,"Initialized:"+requestCode);
+        DebugLog("Initialized: "+requestCode);
         this.requestCode = requestCode;
         this.callback = callback;
     }
@@ -32,7 +32,7 @@ public class PermissionAwaiter extends EventAwaiter<RequestPermissionResultEvent
 
     @Override
     protected void onReceive(RequestPermissionResultEvent event) {
-        Log.d(TAG,"onReceived:"+event.requestCode());
+        DebugLog("onReceived: "+event.requestCode());
 
         boolean granted = false;
 
@@ -53,7 +53,7 @@ public class PermissionAwaiter extends EventAwaiter<RequestPermissionResultEvent
     }
     @Override
     protected void onComplete(){
-        Log.d(TAG,"onComplete");
+        DebugLog("onComplete");
     }
     @Override
     protected Class<RequestPermissionResultEvent> getEventType() {

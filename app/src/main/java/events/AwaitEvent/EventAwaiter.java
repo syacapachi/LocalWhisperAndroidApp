@@ -17,6 +17,8 @@ public abstract class EventAwaiter<TEvent> implements IAwaiter {
     private boolean completed = false;
     private boolean cancelled = false;
     private boolean isReceiving = false;
+    // 文字列を高速に結合できるやつ。
+    private final StringBuilder builder = new StringBuilder();
 
     //登録する関数は保持しないと、別インスタンスになる。
     //SystemEventHub.subscribe(
@@ -39,7 +41,7 @@ public abstract class EventAwaiter<TEvent> implements IAwaiter {
         Class<TEvent> eventType = getEventType();
         if(eventType != null){
             //receiveを購読
-            Log.d(TAG,"Start");
+            DebugLog(" Start");
             SystemEventHub.subscribe(
                     eventType,
                     onReceived);
@@ -56,7 +58,7 @@ public abstract class EventAwaiter<TEvent> implements IAwaiter {
      */
     @Override
     public void cancel() {
-        Log.d(TAG,"Cancelled");
+        DebugLog("Cancelled");
         cancelled = true;
         complete();
     }
@@ -70,7 +72,7 @@ public abstract class EventAwaiter<TEvent> implements IAwaiter {
         if (isReceiving) {
             return;
         }
-        Log.d(TAG,"Receive:"+event.getClass());
+        DebugLog("Receive");
         isReceiving = true;
         boolean matched = false;
 
@@ -102,7 +104,7 @@ public abstract class EventAwaiter<TEvent> implements IAwaiter {
             return;
         }
 
-        Log.d(TAG,"Completed");
+        DebugLog("Completed");
         completed = true;
 
         //購読解除
@@ -161,7 +163,7 @@ public abstract class EventAwaiter<TEvent> implements IAwaiter {
      */
     @Override
     public final void reset() {
-        Log.d(TAG,"Reset");
+        DebugLog("Reset");
         hasStarted = false;
         completed = false;
         cancelled = false;
@@ -170,5 +172,15 @@ public abstract class EventAwaiter<TEvent> implements IAwaiter {
     }
     protected void onReset(){
 
+    }
+
+    /**
+     * デバック用のログ出力
+     * @param message
+     */
+    protected final void DebugLog(String message){
+        builder.delete(0,builder.length());
+        builder.append(getClass().getSimpleName()).append(": ");
+        Log.d(TAG,builder.append(message).toString());;
     }
 }

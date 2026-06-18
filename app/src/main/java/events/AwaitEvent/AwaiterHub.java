@@ -5,6 +5,8 @@ import java.util.function.Supplier;
 
 import Utils.Pool.ObjectPool;
 import events.Request.PermissionAwaiter;
+import events.Threading.ThreadStopAwaiter;
+import events.Whisper.WhisperTranscriptionAwaiter;
 
 /**
  * IAwaiterをObjectPoolで管理するクラス。
@@ -19,6 +21,14 @@ public final class AwaiterHub {
                 PermissionAwaiter.class,
                 PermissionAwaiter::new
         );
+        AwaiterHub.register(
+                WhisperTranscriptionAwaiter.class,
+                WhisperTranscriptionAwaiter::new
+        );
+        AwaiterHub.register(
+                ThreadStopAwaiter.class,
+                ThreadStopAwaiter::new
+        );
     }
     /**
      * Awaiterを貸す
@@ -31,7 +41,7 @@ public final class AwaiterHub {
         @SuppressWarnings("unchecked")
         ObjectPool<T> pool = (ObjectPool<T>) objectPoolDic.get(clazz);
         if(pool == null){
-            throw new IllegalStateException(
+            throwIllegalStateException(
                     clazz.getName() + " is not registered.");
         }
         return pool.getOrCreate();
@@ -46,7 +56,7 @@ public final class AwaiterHub {
      */
     public static <T extends IAwaiter> void register(Class<T> clazz, Supplier<T> onCreate) throws IllegalStateException{
         if(objectPoolDic.containsKey(clazz)){
-            throw new IllegalStateException(
+            throwIllegalStateException(
                     clazz.getName() + " already registered.");
         }
         ObjectPool<T> pool = new ObjectPool<T>(
@@ -71,9 +81,18 @@ public final class AwaiterHub {
         @SuppressWarnings("unchecked")
         ObjectPool<T> pool = (ObjectPool<T>) objectPoolDic.get(awaiter.getClass());
         if(pool == null){
-            throw new IllegalStateException(
+            throwIllegalStateException(
                     awaiter.getClass().getName() + " is not registered.");
         }
         pool.releaseOrDelete(awaiter);
+    }
+    public static  void clear(){
+        for (ObjectPool<? extends IAwaiter> pool : objectPoolDic.values()) {
+            pool.clearPool();
+        }
+        objectPoolDic.clear();
+    }
+    private static void throwIllegalStateException(String message) throws IllegalStateException{
+        throw new IllegalStateException(message);
     }
 }
