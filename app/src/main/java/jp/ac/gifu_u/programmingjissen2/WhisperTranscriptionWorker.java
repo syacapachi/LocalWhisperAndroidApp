@@ -6,6 +6,7 @@ import java.util.Arrays;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.TimeUnit;
 
+import Utils.StringPool.StringBufferBuilderPool;
 import Whisper.WhisperBridge;
 import events.SystemEventHub;
 import events.Threading.ThreadStoppedEvent;
@@ -107,7 +108,7 @@ public class WhisperTranscriptionWorker implements Runnable {
     ) {
         this.modelPath = modelPath;
         this.sessionId = sessionId;
-        this.stopEventId = sessionId + ":whisper";
+        this.stopEventId = StringBufferBuilderPool.Join("", sessionId, ":whisper");
         this.sampleRate = sampleRate;
         this.windowSamples = Math.max(1, sampleRate * windowMs / 1000);
         this.overlapSamples = Math.max(0, sampleRate * overlapMs / 1000);
@@ -189,7 +190,16 @@ public class WhisperTranscriptionWorker implements Runnable {
         String stopErrorMessage = null;
 
         try {
-            stopErrorMessage = runWorkerLoop(currentThread);
+            // Whisper context を開きます
+            context = openContext();
+            if (context == 0) {
+                stopErrorMessage = StringBufferBuilderPool.Join("", "model load failed: ", modelPath);
+                outputError(stopErrorMessage);
+            }
+            // キュー内の音声を推論し、停止時の残り音声を処理します。ここでループ
+            consumeQueuedAudio(currentThread);
+            // ループ停止時にバッファへ残っている音声を最終結果として推論します。
+            transcribeRemainingAudio(currentThread);
         } catch (InterruptedException e) {
             currentThread.interrupt();
         } catch (Exception e) {
@@ -204,37 +214,6 @@ public class WhisperTranscriptionWorker implements Runnable {
         }
     }
 
-    /**
-     * Whisper context を開き、キュー内の音声を推論し、停止時の残り音声を処理します。
-     *
-     * @param currentThread worker 自身のスレッド
-     * @return エラー終了した場合のメッセージ。正常終了なら null
-     * @throws InterruptedException キュー待機中に interrupt された場合
-     */
-    private String runWorkerLoop(Thread currentThread) throws InterruptedException {
-        String openError = openWhisperContext();
-        if (openError != null) {
-            outputError(openError);
-            return openError;
-        }
-
-        consumeQueuedAudio(currentThread);
-        transcribeRemainingAudio(currentThread);
-        return null;
-    }
-
-    /**
-     * Whisper context を開きます。
-     *
-     * @return エラーメッセージ。成功時は null
-     */
-    private String openWhisperContext() {
-        context = openContext();
-        if (context == 0) {
-            return "model load failed: " + modelPath;
-        }
-        return null;
-    }
 
     /**
      * 録音 worker から届く PCM キューを消費し続けます。
@@ -243,8 +222,10 @@ public class WhisperTranscriptionWorker implements Runnable {
      * @throws InterruptedException キュー待機中に interrupt された場合
      */
     private void consumeQueuedAudio(Thread currentThread) throws InterruptedException {
-        while (shouldContinue(currentThread)) {
-            float[] chunk = pollAudio();
+        // 実行中かつ、スレッドが閉じられていなければ継続
+        while (running && !currentThread.isInterrupted()) {
+            // キューから推論する音声データを受け取り取得、タイムアウト時は null
+            float[] chunk = audioQueue.poll(200, TimeUnit.MILLISECONDS);;
             if (chunk != null) {
                 processAudioChunk(chunk, currentThread);
             }
@@ -276,16 +257,6 @@ public class WhisperTranscriptionWorker implements Runnable {
     }
 
     /**
-     * worker ループを継続できるか判定します。
-     *
-     * @param currentThread worker 自身のスレッド
-     * @return running かつ interrupt されていなければ true
-     */
-    private boolean shouldContinue(Thread currentThread) {
-        return running && !currentThread.isInterrupted();
-    }
-
-    /**
      * native の Whisper context を作成します。
      *
      * @return native context ハンドル。失敗時は 0
@@ -293,16 +264,6 @@ public class WhisperTranscriptionWorker implements Runnable {
     private long openContext() {
         WhisperBridge.ContextParams params = WhisperBridge.defaultContextParams();
         return WhisperBridge.initFromFile(modelPath, params);
-    }
-
-    /**
-     * 録音キューから PCM チャンクを取り出します。
-     *
-     * @return PCM チャンク。タイムアウト時は null
-     * @throws InterruptedException 待機中に interrupt された場合
-     */
-    private float[] pollAudio() throws InterruptedException {
-        return audioQueue.poll(200, TimeUnit.MILLISECONDS);
     }
 
     /**
@@ -314,16 +275,18 @@ public class WhisperTranscriptionWorker implements Runnable {
         int sampleCount = finalResult
                 ? pendingAudio.size()
                 : windowSamples;
+        //データコピー
         float[] samples = pendingAudio.copyFirst(sampleCount);
         long startMs = samplesToMs(processedSamples);
         long durationMs = samplesToMs(samples.length);
-
+        //ここで推論結果を待つ。時間かかる。
         TranscriptionResult result = transcribe(samples);
         output(result.text, result.speakerChanged, finalResult, null, startMs, durationMs);
 
         int discardSamples = finalResult
                 ? sampleCount
                 : Math.max(1, sampleCount - overlapSamples);
+        //後処理 推論した分を無効化
         pendingAudio.discardFirst(discardSamples);
         processedSamples += discardSamples;
     }
@@ -359,16 +322,19 @@ public class WhisperTranscriptionWorker implements Runnable {
      * @return 文字起こし結果
      */
     private TranscriptionResult collectTranscriptionResult() {
-        StringBuilder builder = new StringBuilder();
         boolean speakerChanged = false;
         int segmentCount = WhisperBridge.fullNSegments(context);
+        String[] texts = new String[segmentCount];
 
         for (int i = 0; i < segmentCount; i++) {
-            builder.append(WhisperBridge.fullSegmentText(context, i));
+            texts[i] = WhisperBridge.fullSegmentText(context, i);
             speakerChanged |= WhisperBridge.fullSegmentSpeakerTurnNext(context, i);
         }
 
-        return new TranscriptionResult(builder.toString().trim(), speakerChanged);
+        return new TranscriptionResult(
+                StringBufferBuilderPool.Join("", (Object[]) texts).trim(),
+                speakerChanged
+        );
     }
 
     /**

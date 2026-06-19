@@ -19,6 +19,7 @@ import androidx.core.app.ActivityCompat;
 
 import java.util.List;
 
+import Utils.StringPool.StringBufferBuilderPool;
 import events.AwaitEvent.AwaiterHub;
 import events.Request.PermissionAwaiter;
 import events.Request.RequestPermissionResultEvent;
@@ -72,7 +73,11 @@ public class SensorActivity implements SensorEventListener, LocationListener {
                     REQUESTCODE,
                     //内部で匿名クラスのインスタンスになるので、引数を個別に保存できる。
                     (result) ->{
-                        Log.d(TAG, "Location Permission: " + result);
+                        Log.d(TAG, StringBufferBuilderPool.Join(
+                                "",
+                                "Location Permission: ",
+                                result
+                        ));
                     if(result) {
                         //GPSの更新リクエストを更新
                         localeManager.requestLocationUpdates(
@@ -169,7 +174,7 @@ public class SensorActivity implements SensorEventListener, LocationListener {
             // 明るさの値（単位ルクス）を取得
             float intensity = event.values[0];
 
-            str += Float.toString(intensity) + "ルクス\n";
+            str = buildSensorText(intensity, "ルクス\n");
         }
         else if(sensorType == Sensor.TYPE_MAGNETIC_FIELD){
             float intensity = event.values[0];
@@ -179,7 +184,7 @@ public class SensorActivity implements SensorEventListener, LocationListener {
             TextView textview =
                     (TextView)activity.findViewById(R.id.status_text);
 
-            str += Float.toString(intensity) + "磁場";
+            str = buildSensorText(intensity, "磁場");
         }
         //画面にテキストビューアを追加してidをstatus_textに
         TextView textview =
@@ -201,5 +206,16 @@ public class SensorActivity implements SensorEventListener, LocationListener {
         String str = String.format("%.3f %.3f", lat, lng);
         textview.setText(str);
 
+    }
+
+    /**
+     * センサー値の表示文字列を {@link StringBufferBuilderPool#Join(String, Object...)} で作成します。
+     *
+     * @param intensity センサー値
+     * @param unit 表示単位
+     * @return TextView 表示用文字列
+     */
+    private String buildSensorText(float intensity, String unit) {
+        return StringBufferBuilderPool.Join("", Float.toString(intensity), unit);
     }
 }

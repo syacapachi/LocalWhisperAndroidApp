@@ -12,6 +12,7 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 
+import Utils.StringPool.StringBufferBuilderPool;
 import events.Whisper.WhisperTranscriptionEvent;
 
 /**
@@ -56,10 +57,17 @@ public class TranscriptionJsonWriter {
 
         File directory = new File(context.getFilesDir(), DIRECTORY_NAME);
         if (!directory.exists() && !directory.mkdirs()) {
-            Log.w(TAG, "Failed to create transcription directory: " + directory);
+            Log.w(TAG, StringBufferBuilderPool.Join(
+                    "",
+                    "Failed to create transcription directory: ",
+                    directory
+            ));
         }
 
-        this.outputFile = new File(directory, sanitizeFileName(sessionId) + ".json");
+        this.outputFile = new File(
+                directory,
+                StringBufferBuilderPool.Join("", sanitizeFileName(sessionId), ".json")
+        );
         saveQuietly();
     }
 

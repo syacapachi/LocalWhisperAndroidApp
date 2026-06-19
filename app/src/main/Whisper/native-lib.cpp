@@ -6,7 +6,6 @@
 #include <vector>
 
 #include "whisper.h"
-
 // Java JNIに接続する文言を置き換える
 #define JNI_METHOD(return_type, name) \
 extern "C" JNIEXPORT return_type JNICALL Java_Whisper_WhisperBridge_##name

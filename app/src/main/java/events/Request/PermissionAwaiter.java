@@ -5,6 +5,7 @@ import android.util.Log;
 
 import java.util.function.Consumer;
 
+import Utils.StringPool.StringBufferBuilderPool;
 import events.AwaitEvent.EventAwaiter;
 
 /**
@@ -20,7 +21,7 @@ public class PermissionAwaiter extends EventAwaiter<RequestPermissionResultEvent
             int requestCode,
             Consumer<Boolean> callback)
     {
-        DebugLog("Initialized: "+requestCode);
+        DebugLog("Initialized: ", requestCode);
         this.requestCode = requestCode;
         this.callback = callback;
     }
@@ -32,7 +33,7 @@ public class PermissionAwaiter extends EventAwaiter<RequestPermissionResultEvent
 
     @Override
     protected void onReceive(RequestPermissionResultEvent event) {
-        DebugLog("onReceived: "+event.requestCode());
+        DebugLog("onReceived: ", event.requestCode());
 
         boolean granted = false;
 
@@ -48,7 +49,12 @@ public class PermissionAwaiter extends EventAwaiter<RequestPermissionResultEvent
             callback.accept(granted);
         }
         catch (Exception e){
-            Log.e(TAG,"request code:"+requestCode+" callback occur error ",e);
+            Log.e(TAG, StringBufferBuilderPool.Join(
+                    "",
+                    "request code:",
+                    requestCode,
+                    " callback occur error "
+            ), e);
         }
     }
     @Override

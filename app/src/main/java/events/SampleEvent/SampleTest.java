@@ -4,6 +4,7 @@ import android.util.Log;
 
 import java.util.function.Consumer;
 
+import Utils.StringPool.StringBufferBuilderPool;
 import events.SystemEventHub;
 
 public class SampleTest {
@@ -17,7 +18,11 @@ public class SampleTest {
         SystemEventHub.unsubscribe(ISampleEvent.class,sampleEventListener);
     }
     private static void SampleEventListener(ISampleEvent sampleEvent){
-        Log.d(TAG,"Event Received:"+sampleEvent.getClass());
+        Log.d(TAG, StringBufferBuilderPool.Join(
+                "",
+                "Event Received:",
+                sampleEvent.getClass()
+        ));
         sampleEvent.sayHello();
     }
 }

@@ -14,3 +14,4 @@
 .cxx
 local.properties
 app/src/main/assets/ggml-base.bin
+/app/src/main/export

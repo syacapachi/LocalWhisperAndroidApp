@@ -11,6 +11,7 @@ import androidx.appcompat.app.AppCompatActivity;
 
 import java.util.function.Consumer;
 
+import events.AwaitEvent.AwaiterHub;
 import events.Request.RequestPermissionResultEvent;
 import events.SampleEvent.SampleRecordEvent;
 import events.SampleEvent.SampleTest;
@@ -115,8 +116,11 @@ public class MainActivity extends AppCompatActivity {
     //アプリ切り替え時、長時間放置などアプリがが廃棄されるタイミング。
     @Override
     protected void onDestroy(){
-        // イベント購読を解除
+        // 待機しているイベント解除
+        AwaiterHub.clear();
+        // 全てのイベント購読を解除
         SystemEventHub.clear();
+
         Log.d(TAG, "onDestroy");
         super.onDestroy();
     }

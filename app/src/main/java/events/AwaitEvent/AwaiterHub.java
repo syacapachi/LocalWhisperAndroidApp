@@ -4,6 +4,7 @@ import java.util.HashMap;
 import java.util.function.Supplier;
 
 import Utils.Pool.ObjectPool;
+import Utils.StringPool.StringBufferBuilderPool;
 import events.Request.PermissionAwaiter;
 import events.Threading.ThreadStopAwaiter;
 import events.Whisper.WhisperTranscriptionAwaiter;
@@ -42,7 +43,7 @@ public final class AwaiterHub {
         ObjectPool<T> pool = (ObjectPool<T>) objectPoolDic.get(clazz);
         if(pool == null){
             throwIllegalStateException(
-                    clazz.getName() + " is not registered.");
+                    buildMessage(clazz.getName(), " is not registered."));
         }
         return pool.getOrCreate();
     }
@@ -57,14 +58,14 @@ public final class AwaiterHub {
     public static <T extends IAwaiter> void register(Class<T> clazz, Supplier<T> onCreate) throws IllegalStateException{
         if(objectPoolDic.containsKey(clazz)){
             throwIllegalStateException(
-                    clazz.getName() + " already registered.");
+                    buildMessage(clazz.getName(), " already registered."));
         }
         ObjectPool<T> pool = new ObjectPool<T>(
                 onCreate,
                 null,
                 IAwaiter::reset,
                 null,
-                10,
+                2,
                 100
 
         );
@@ -82,7 +83,7 @@ public final class AwaiterHub {
         ObjectPool<T> pool = (ObjectPool<T>) objectPoolDic.get(awaiter.getClass());
         if(pool == null){
             throwIllegalStateException(
-                    awaiter.getClass().getName() + " is not registered.");
+                    buildMessage(awaiter.getClass().getName(), " is not registered."));
         }
         pool.releaseOrDelete(awaiter);
     }
@@ -94,5 +95,16 @@ public final class AwaiterHub {
     }
     private static void throwIllegalStateException(String message) throws IllegalStateException{
         throw new IllegalStateException(message);
+    }
+
+    /**
+     * 例外メッセージを {@link StringBufferBuilderPool#Join(String, Object...)} で作成します。
+     *
+     * @param value 先頭に入れる値
+     * @param suffix 後ろに追加する文字列
+     * @return 結合済みメッセージ
+     */
+    private static String buildMessage(Object value, String suffix) {
+        return StringBufferBuilderPool.Join("", value, suffix);
     }
 }

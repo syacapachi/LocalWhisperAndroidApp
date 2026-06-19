@@ -4,6 +4,7 @@ import android.util.Log;
 
 import java.util.function.Consumer;
 
+import Utils.StringPool.StringBufferBuilderPool;
 import events.SystemEventHub;
 
 /**
@@ -17,8 +18,6 @@ public abstract class EventAwaiter<TEvent> implements IAwaiter {
     private boolean completed = false;
     private boolean cancelled = false;
     private boolean isReceiving = false;
-    // 文字列を高速に結合できるやつ。
-    private final StringBuilder builder = new StringBuilder();
 
     //登録する関数は保持しないと、別インスタンスになる。
     //SystemEventHub.subscribe(
@@ -35,13 +34,13 @@ public abstract class EventAwaiter<TEvent> implements IAwaiter {
     @Override
     public void start() {
         if(hasStarted) {
-            throw new IllegalStateException("イベントが多重登録されました。");
+            DebugLog("イベントが多重登録されました。");
         }
 
         Class<TEvent> eventType = getEventType();
         if(eventType != null){
             //receiveを購読
-            DebugLog(" Start");
+            DebugLog("Start");
             SystemEventHub.subscribe(
                     eventType,
                     onReceived);
@@ -49,7 +48,7 @@ public abstract class EventAwaiter<TEvent> implements IAwaiter {
         }
         else{
             hasStarted = false;
-            throw new IllegalStateException("getEventType()がnullです。");
+            DebugLog("getEventType()がnullです。");
         }
     }
 
@@ -179,8 +178,22 @@ public abstract class EventAwaiter<TEvent> implements IAwaiter {
      * @param message
      */
     protected final void DebugLog(String message){
-        builder.delete(0,builder.length());
-        builder.append(getClass().getSimpleName()).append(": ");
-        Log.d(TAG,builder.append(message).toString());;
+        Log.d(TAG, StringBufferBuilderPool.Join("", message, ": ", getClass().getSimpleName()));
+    }
+
+    /**
+     * 値付きのデバック用ログを pooled builder で組み立てて出力します。
+     *
+     * @param message ログの先頭メッセージ
+     * @param value 追加で表示する値
+     */
+    protected final void DebugLog(String message, Object value){
+        Log.d(TAG, StringBufferBuilderPool.Join(
+                "",
+                message,
+                value,
+                ": ",
+                getClass().getSimpleName()
+        ));
     }
 }

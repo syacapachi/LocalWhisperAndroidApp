@@ -13,6 +13,7 @@ import androidx.core.app.ActivityCompat;
 import java.io.IOException;
 
 import Utils.MyUtils;
+import Utils.StringPool.StringBufferBuilderPool;
 import events.AwaitEvent.AwaiterHub;
 import events.Request.PermissionAwaiter;
 import events.Threading.ThreadStopAwaiter;
@@ -69,14 +70,20 @@ public class RecordActivity {
     /** 録音開始ごとに作る session ID です。 */
     private String transcriptionSessionId;
 
-    /** 録音ごとの文字起こし JSON ファイルを管理する writer です。 */
-    private TranscriptionJsonWriter transcriptionJsonWriter;
+    /** 録音ごとの文字起こし JSON ファイルを別スレッドで保存する worker です。 */
+    private TranscriptionJsonWorker transcriptionJsonWorker;
+
+    /** JSON 保存スレッド停止イベントを待つ Awaiter です。 */
+    private ThreadStopAwaiter jsonStopAwaiter;
 
     /** 録音スレッドが停止済みなら true です。 */
     private volatile boolean recordThreadStopped = true;
 
     /** Whisper スレッドが停止済みなら true です。 */
     private volatile boolean whisperThreadStopped = true;
+
+    /** JSON 保存スレッドが停止済みなら true です。 */
+    private volatile boolean jsonThreadStopped = true;
 
     /**
      * 録音 UI と Whisper リアルタイム文字起こしの制御クラスを作成します。
@@ -136,7 +143,11 @@ public class RecordActivity {
             awaiter.initialize(
                     REQUESTCODE,
                     (result) -> {
-                        Log.d(TAG, "Record Permission: " + result);
+                        Log.d(TAG, StringBufferBuilderPool.Join(
+                                "",
+                                "Record Permission: ",
+                                result
+                        ));
                         if (result && StartRecordInternal(bufferSize)) {
                             activity.runOnUiThread(() -> recordButton.setText("停止"));
                         } else if (!result) {
@@ -158,7 +169,7 @@ public class RecordActivity {
     }
 
     /**
-     * 録音権限取得後に、録音 worker、Whisper worker、JSON writer を作成して開始します。
+     * 録音権限取得後に、録音 worker、Whisper worker、JSON worker を作成して開始します。
      *
      * @param bufferSize AudioRecord に渡すバッファサイズ
      * @return worker を開始できた場合 true
@@ -174,20 +185,26 @@ public class RecordActivity {
             return false;
         }
 
-        transcriptionSessionId = createSessionId();
-        transcriptionJsonWriter = new TranscriptionJsonWriter(activity, transcriptionSessionId);
+        transcriptionSessionId = StringBufferBuilderPool.Join(
+                "-",
+                Long.toHexString(System.currentTimeMillis()),
+                Long.toHexString(System.nanoTime())
+        );
         recordThreadStopped = false;
         whisperThreadStopped = false;
+        jsonThreadStopped = false;
 
         transcriptionWorker = new WhisperTranscriptionWorker(ModelPath, transcriptionSessionId);
+        transcriptionJsonWorker = new TranscriptionJsonWorker(activity, transcriptionSessionId);
         recordWorker = new AudioRecordWorker(
                 FREQUENCY,
                 bufferSize,
-                transcriptionSessionId + ":record",
+                StringBufferBuilderPool.Join("", transcriptionSessionId, ":record"),
                 this::submitAudioToWhisper
         );
 
         waitNextTranscriptionEvent(transcriptionSessionId);
+        transcriptionJsonWorker.start();
         transcriptionWorker.start();
 
         if (!recordWorker.start()) {
@@ -241,10 +258,9 @@ public class RecordActivity {
             return;
         }
 
-        waitThreadStopEvent(
+        recordStopAwaiter = waitThreadStopEvent(
                 worker.getStopEventId(),
-                this::onRecordThreadStopped,
-                true
+                this::onRecordThreadStopped
         );
 
         if (!worker.requestStop()) {
@@ -262,18 +278,42 @@ public class RecordActivity {
         if (worker == null || !worker.isAlive()) {
             whisperThreadStopped = true;
             transcriptionWorker = null;
+            requestJsonThreadStop();
             return;
         }
 
-        waitThreadStopEvent(
+        whisperStopAwaiter = waitThreadStopEvent(
                 worker.getStopEventId(),
-                this::onWhisperThreadStopped,
-                false
+                this::onWhisperThreadStopped
         );
 
         if (!worker.requestStop()) {
             cancelWhisperStopAwaiter();
             whisperThreadStopped = true;
+            requestJsonThreadStop();
+        }
+    }
+
+    /**
+     * JSON 保存スレッドへ停止を要求し、停止イベントを待つ Awaiter を開始します。
+     */
+    private void requestJsonThreadStop() {
+        TranscriptionJsonWorker worker = transcriptionJsonWorker;
+        if (worker == null || !worker.isAlive()) {
+            jsonThreadStopped = true;
+            transcriptionJsonWorker = null;
+            return;
+        }
+
+        jsonStopAwaiter = waitThreadStopEvent(
+                worker.getStopEventId(),
+                this::onJsonThreadStopped
+        );
+
+        if (!worker.requestStop()) {
+            cancelJsonStopAwaiter();
+            jsonThreadStopped = true;
+            transcriptionJsonWorker = null;
         }
     }
 
@@ -282,23 +322,16 @@ public class RecordActivity {
      *
      * @param threadId 停止イベントの識別 ID
      * @param callback 停止イベント受信時の処理
-     * @param recordThreadEvent 録音スレッド用 Awaiter として保持する場合 true
+     * @return 開始した停止 Awaiter
      */
-    private void waitThreadStopEvent(
+    private ThreadStopAwaiter waitThreadStopEvent(
             String threadId,
-            java.util.function.Consumer<ThreadStoppedEvent> callback,
-            boolean recordThreadEvent
+            java.util.function.Consumer<ThreadStoppedEvent> callback
     ) {
         ThreadStopAwaiter awaiter = AwaiterHub.rentAwaiter(ThreadStopAwaiter.class);
         awaiter.initialize(threadId, callback);
-
-        if (recordThreadEvent) {
-            recordStopAwaiter = awaiter;
-        } else {
-            whisperStopAwaiter = awaiter;
-        }
-
         awaiter.start();
+        return awaiter;
     }
 
     /**
@@ -307,7 +340,7 @@ public class RecordActivity {
      * @param event スレッド停止イベント
      */
     private void onRecordThreadStopped(ThreadStoppedEvent event) {
-        Log.d(TAG, "Record thread stopped: " + event);
+        Log.d(TAG, buildThreadStoppedLogMessage("Record thread stopped: ", event));
         recordStopAwaiter = null;
         recordThreadStopped = true;
         recordWorker = null;
@@ -320,23 +353,36 @@ public class RecordActivity {
      * @param event スレッド停止イベント
      */
     private void onWhisperThreadStopped(ThreadStoppedEvent event) {
-        Log.d(TAG, "Whisper thread stopped: " + event);
+        Log.d(TAG, buildThreadStoppedLogMessage("Whisper thread stopped: ", event));
         whisperStopAwaiter = null;
         whisperThreadStopped = true;
         transcriptionWorker = null;
         cancelTranscriptionAwaiter();
+        requestJsonThreadStop();
         completeStopIfNeeded();
     }
 
     /**
-     * 録音スレッドと Whisper スレッドの両方が止まったら停止処理を完了します。
+     * JSON 保存スレッド停止イベントを受け取ったときに呼ばれます。
+     *
+     * @param event スレッド停止イベント
+     */
+    private void onJsonThreadStopped(ThreadStoppedEvent event) {
+        Log.d(TAG, buildThreadStoppedLogMessage("JSON thread stopped: ", event));
+        jsonStopAwaiter = null;
+        jsonThreadStopped = true;
+        transcriptionJsonWorker = null;
+        completeStopIfNeeded();
+    }
+
+    /**
+     * 録音、Whisper、JSON 保存の全スレッドが止まったら停止処理を完了します。
      */
     private void completeStopIfNeeded() {
-        if (!isStopping || !recordThreadStopped || !whisperThreadStopped) {
+        if (!isStopping || !recordThreadStopped || !whisperThreadStopped || !jsonThreadStopped) {
             return;
         }
 
-        finishTranscriptionJson();
         isStopping = false;
         activity.runOnUiThread(() -> recordButton.setText("録音"));
     }
@@ -393,47 +439,28 @@ public class RecordActivity {
      */
     public void outputTranscription(WhisperTranscriptionEvent event) {
         if (event.hasError()) {
-            resultTextView.setText("Whisper エラー: " + event.errorMessage());
+            resultTextView.setText(StringBufferBuilderPool.Join(
+                    "",
+                    "Whisper エラー: ",
+                    event.errorMessage()
+            ));
             return;
         }
 
         String label = event.finalResult() ? "最終結果" : "認識中";
         String text = event.text().isEmpty() ? "..." : event.text();
-        resultTextView.setText(
-                label
-                        + " "
-                        + event.startMs()
-                        + "ms-"
-                        + (event.startMs() + event.durationMs())
-                        + "ms\n"
-                        + text
-                        + "\n話者変化: "
-                        + event.speakerChanged()
-        );
+        resultTextView.setText(buildTranscriptionViewText(label, text, event));
     }
 
     /**
-     * Whisper 推論イベントを録音ごとの JSON ファイルへ追記します。
+     * Whisper 推論イベントを JSON 保存 worker へ渡します。
      *
      * @param event Whisper 推論結果イベント
      */
     private void appendTranscriptionJson(WhisperTranscriptionEvent event) {
-        TranscriptionJsonWriter writer = transcriptionJsonWriter;
-        if (writer != null) {
-            writer.append(event);
-        }
-    }
-
-    /**
-     * 録音終了時に JSON ファイルの終了時刻を保存します。
-     */
-    private void finishTranscriptionJson() {
-        TranscriptionJsonWriter writer = transcriptionJsonWriter;
-        transcriptionJsonWriter = null;
-
-        if (writer != null) {
-            writer.finish();
-            Log.d(TAG, "Transcription JSON saved: " + writer.getOutputFile().getAbsolutePath());
+        TranscriptionJsonWorker worker = transcriptionJsonWorker;
+        if (worker != null) {
+            worker.submit(event);
         }
     }
 
@@ -474,14 +501,15 @@ public class RecordActivity {
     }
 
     /**
-     * 録音 session ID を作成します。
-     *
-     * @return ファイル名にも使える session ID
+     * JSON 保存スレッド停止 Awaiter をキャンセルします。
      */
-    private String createSessionId() {
-        return Long.toHexString(System.currentTimeMillis())
-                + "-"
-                + Long.toHexString(System.nanoTime());
+    private void cancelJsonStopAwaiter() {
+        ThreadStopAwaiter awaiter = jsonStopAwaiter;
+        jsonStopAwaiter = null;
+
+        if (awaiter != null && !awaiter.isCompleted() && !awaiter.isCancelled()) {
+            awaiter.cancel();
+        }
     }
 
     /**
@@ -490,5 +518,41 @@ public class RecordActivity {
      */
     private void outputMessage(String message) {
         activity.runOnUiThread(() -> resultTextView.setText(message));
+    }
+
+    /**
+     * スレッド停止ログを {@link StringBufferBuilderPool#Join(String, Object...)} で作成します。
+     *
+     * @param prefix ログ先頭のメッセージ
+     * @param event 停止イベント
+     * @return ログ出力用メッセージ
+     */
+    private String buildThreadStoppedLogMessage(String prefix, ThreadStoppedEvent event) {
+        return StringBufferBuilderPool.Join("", prefix, event);
+    }
+
+    /**
+     * 文字起こし結果の表示文字列を {@link StringBufferBuilderPool#Join(String, Object...)} で作成します。
+     *
+     * @param label 表示ラベル
+     * @param text 文字起こし本文
+     * @param event Whisper 推論結果イベント
+     * @return TextView 表示用メッセージ
+     */
+    private String buildTranscriptionViewText(
+            String label,
+            String text,
+            WhisperTranscriptionEvent event
+    ) {
+        return StringBufferBuilderPool.Join(
+                "",
+                label,
+                " ",
+                event.startMs(),
+                "ms-",
+                event.startMs() + event.durationMs(),
+                "ms\n",
+                text
+        );
     }
 }

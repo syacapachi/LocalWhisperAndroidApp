@@ -7,6 +7,7 @@ import android.util.Log;
 
 import androidx.annotation.RequiresPermission;
 
+import Utils.StringPool.StringBufferBuilderPool;
 import events.SystemEventHub;
 import events.Threading.ThreadStoppedEvent;
 
@@ -88,7 +89,11 @@ public class AudioRecordWorker implements Runnable {
         );
 
         if (minBufferSize == AudioRecord.ERROR || minBufferSize == AudioRecord.ERROR_BAD_VALUE) {
-            Log.e(TAG, "Invalid AudioRecord buffer size: " + minBufferSize);
+            Log.e(TAG, StringBufferBuilderPool.Join(
+                    "",
+                    "Invalid AudioRecord buffer size: ",
+                    minBufferSize
+            ));
             return -1;
         }
 
@@ -233,7 +238,11 @@ public class AudioRecordWorker implements Runnable {
         if (dataSize > 0) {
             listener.onAudioChunk(audioBuffer, dataSize);
         } else if (dataSize < 0) {
-            Log.w(TAG, "AudioRecord read error: " + dataSize);
+            Log.w(TAG, StringBufferBuilderPool.Join(
+                    "",
+                    "AudioRecord read error: ",
+                    dataSize
+            ));
         }
     }
 
@@ -277,4 +286,5 @@ public class AudioRecordWorker implements Runnable {
                 errorMessage
         ));
     }
+
 }

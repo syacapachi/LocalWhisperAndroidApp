@@ -1,5 +1,7 @@
 package Whisper;
 
+import Utils.StringPool.StringBufferBuilderPool;
+
 /**
  * Whisper.cpp を Java/Kotlin 側から呼び出すための JNI ブリッジです。
  *
@@ -747,14 +749,14 @@ public class WhisperBridge {
      * @return 文字起こし結果全体
      */
     public static String getText(long context) {
-        StringBuilder builder = new StringBuilder();
         int count = fullNSegments(context);
+        String[] texts = new String[count];
 
         for (int i = 0; i < count; i++) {
-            builder.append(fullSegmentText(context, i));
+            texts[i] = fullSegmentText(context, i);
         }
 
-        return builder.toString();
+        return StringBufferBuilderPool.Join("", (Object[]) texts);
     }
 
     /**

@@ -92,6 +92,6 @@ target_link_libraries(
         whisper-lib
         # Whisper本体
         whisper
-        # Whisper本体
+        # logライブラリ
         ${log-lib}
 )

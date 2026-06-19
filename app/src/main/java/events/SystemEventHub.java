@@ -8,6 +8,9 @@ import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
+
+import Utils.StringPool.StringBufferBuilderPool;
+
 /**
  * イベント駆動型設計をするために、設置
  * Subscribeで型と関数を登録、Unsubscribeで、解除
@@ -66,8 +69,11 @@ import java.util.function.Consumer;
                         action.accept(event);
                     }
                     catch(Exception e){
-                        Log.e(TAG, "Event Error publish Class : "
-                                + eventClass.getSimpleName(), e);
+                        Log.e(TAG, StringBufferBuilderPool.Join(
+                                "",
+                                "Event Error publish Class : ",
+                                eventClass.getSimpleName()
+                        ), e);
                     }
                 }
             }
@@ -81,8 +87,11 @@ import java.util.function.Consumer;
                 try {
                     action.accept(event);
                 } catch (Exception e) {
-                    Log.e(TAG, "Event Error publish Class : "
-                            + eventClass.getSimpleName(), e);
+                    Log.e(TAG, StringBufferBuilderPool.Join(
+                            "",
+                            "Event Error publish Class : ",
+                            eventClass.getSimpleName()
+                    ), e);
                 }
             }
         }
@@ -102,10 +111,7 @@ import java.util.function.Consumer;
         //nullだったらNullPointerExceptionを投げる
         Objects.requireNonNull(action);
         Objects.requireNonNull(type);
-        //String結合もどうせ内部でnewなので早いほうにする。
-        StringBuilder builder = new StringBuilder("subscribe: ");
-        builder.append(action.toString());
-        Log.d(TAG,builder.toString());
+        Log.d(TAG, StringBufferBuilderPool.Join("", "subscribe: ", action));
         events.computeIfAbsent(
                 type,
                 (v)-> {
@@ -128,13 +134,11 @@ import java.util.function.Consumer;
         Objects.requireNonNull(action);
         List<Consumer<?>> list = events.get(type);
         if (list == null) return;
-        //String結合もどうせ内部でnewなので早いほうにする。
-        StringBuilder builder = new StringBuilder("unsubscribe: ");
-        builder.append(action.toString());
-        Log.d(TAG,builder.toString());
-        if (list.remove(action)){
-            Log.w(TAG,action.toString() + "can not unsubscribe");
+        Log.d(TAG, StringBufferBuilderPool.Join("", "unsubscribe: ", action));
+        if (!list.remove(action)){
+            Log.w(TAG, StringBufferBuilderPool.Join("", action, "can not unsubscribe"));
         }
+
         if (list.isEmpty()) {
             events.remove(type);
             typeCache.clear();
