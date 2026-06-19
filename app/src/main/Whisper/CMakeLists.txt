@@ -1,14 +1,18 @@
 # 必要なCMakeの最低バージョン
 cmake_minimum_required(VERSION 3.22)
 
-# プロジェクト名を定義
+# プロジェクト情報
 # VERSION    : プロジェクトバージョン
 # LANGUAGES  : 使用する言語
-project(whisper_android VERSION 1.0.0 LANGUAGES C CXX)
+project(
+        whisper_android
+        VERSION 1.0.0
+        LANGUAGES C CXX
+)
 
-# 使用するC++規格を指定
+# C++17
 set(CMAKE_CXX_STANDARD 17)
-# C++17未満へのフォールバックを禁止
+# C++17より古いG++を禁止
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Android では JNI から読み込む libwhisper-lib.so へ静的にまとめる
@@ -20,7 +24,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # OFFなら .a
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 
-# Android NDKでは通常OpenMPを利用しないため無効化
+# Android NDKでは通常OpenMP(処理のマルチスレッド化)を利用しないため無効化
 # libomp依存を避ける目的
 set(GGML_OPENMP OFF CACHE BOOL "" FORCE)
 
@@ -32,6 +36,28 @@ set(GGML_OPENMP OFF CACHE BOOL "" FORCE)
 #
 # Androidではほぼ影響なし
 set(SOVERSION 1)
+
+# ------------------------
+# Release最適化
+# ------------------------
+
+# Release時のみ-O3(積極的な最適化)を有効
+set(CMAKE_C_FLAGS_RELEASE
+        "${CMAKE_C_FLAGS_RELEASE} -O3")
+
+set(CMAKE_CXX_FLAGS_RELEASE
+        "${CMAKE_CXX_FLAGS_RELEASE} -O3")
+
+# ------------------------
+# LTO (Link Time Optimization)
+# ------------------------
+# 最適化を統合的に行う(ビルド時間増加の代わりに、高速化)
+include(CheckIPOSupported)
+
+check_ipo_supported(
+        RESULT IPO_SUPPORTED
+        OUTPUT IPO_ERROR
+)
 
 # Whisper.cpp公式の CMake を利用してライブラリを作成
 # ggmlサブプロジェクトを追加
@@ -46,7 +72,24 @@ add_subdirectory(ggml)
 # whisperライブラリを生成する
 add_subdirectory(src)
 
-# Whisperライブラリへコンパイル時マクロを追加
+# LTO有効化
+if (IPO_SUPPORTED)
+
+    set_property(
+            TARGET whisper
+            PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELEASE TRUE
+    )
+
+    if(TARGET ggml)
+        set_property(
+                TARGET ggml
+                PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELEASE TRUE
+        )
+    endif()
+
+endif()
+
+# Whisperライブラリへコンパイル時マクロを追加(バージョン情報)
 #
 # ソースコード内では
 #
@@ -69,14 +112,29 @@ target_compile_definitions(
 add_library(
         # 出力されるライブラリ名
         whisper-lib
-
         # SHARED = 共有ライブラリ(.so)
         # STATIC = 静的ライブラリ(.a)
         SHARED
-
         # コンパイル対象のソースファイル
         native-lib.cpp
 )
+
+# JNI側も-O3
+target_compile_options(
+        whisper-lib
+        PRIVATE
+        $<$<CONFIG:Release>:-O3>
+)
+
+# JNI側もLTO
+if (IPO_SUPPORTED)
+
+    set_property(
+            TARGET whisper-lib
+            PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELEASE TRUE
+    )
+
+endif()
 
 # Android NDK標準のログライブラリを検索
 #
