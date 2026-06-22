@@ -39,8 +39,8 @@ android {
         }
 
         ndk {
-            // 実行環境をARM6
-            abiFilters += "arm64-v8a"
+            // 実行環境をARM6,x86_64とする(本番リリース時は"arm64-v8a"の方がよい)
+            abiFilters += listOf("arm64-v8a", "x86_64")
         }
     }
 

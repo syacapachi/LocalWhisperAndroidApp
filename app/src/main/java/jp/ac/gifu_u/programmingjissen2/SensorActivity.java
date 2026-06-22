@@ -30,6 +30,7 @@ import events.SystemEventHub;
  * 位置情報(権限が必要)を監視するクラス
  */
 public class SensorActivity implements SensorEventListener, LocationListener {
+    private static boolean isRequested = false;
     private final Activity activity;
     private final static String TAG = SensorActivity.class.getSimpleName();
     //センサー
@@ -62,44 +63,58 @@ public class SensorActivity implements SensorEventListener, LocationListener {
      */
     static final int REQUESTCODE = 1000;
     public void requestLocationUpdate(long msvc, float meter){
+
         //権限があるかをチェック
         if (ActivityCompat.checkSelfPermission(activity,
                 Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED
                 && ActivityCompat.checkSelfPermission(activity,
-                Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+                Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED)
+        {
+//          // ActivityCompat.shouldShowRequestPermissionRationale
+            // true  -> 過去にユーザーがその権限を拒否したことがある場合。
+            // false -> アプリがその権限を初めてリクエストする場合 or ユーザーが過去に権限リクエスト時に「今後表示しない」を選択した場合（永久拒否）。
+            if(!isRequested
+                    || ActivityCompat.shouldShowRequestPermissionRationale(activity,
+                    Manifest.permission.ACCESS_FINE_LOCATION)
+                    && ActivityCompat.shouldShowRequestPermissionRationale(activity,
+                    Manifest.permission.ACCESS_COARSE_LOCATION))
+            {
+                PermissionAwaiter awaiter = AwaiterHub.rentAwaiter(PermissionAwaiter.class);
+                awaiter.initialize(
+                        REQUESTCODE,
+                        //内部で匿名クラスのインスタンスになるので、引数を個別に保存できる。
+                        (result) ->{
+                            Log.d(TAG, StringBufferBuilderPool.Join(
+                                    "",
+                                    "Location Permission: ",
+                                    result
+                            ));
+                            if(result) {
+                                //GPSの更新リクエストを更新
+                                localeManager.requestLocationUpdates(
+                                        LocationManager.GPS_PROVIDER,
+                                        msvc,
+                                        meter,
+                                        this);
+                            }
+                        });
+                //待機開始
+                awaiter.start();
+                //以前の方法
+                //SystemEventHub.subscribe(RequestPermissionResultEvent.class,this::onPermissionResultReceived);
 
-            PermissionAwaiter awaiter = AwaiterHub.rentAwaiter(PermissionAwaiter.class);
-            awaiter.initialize(
-                    REQUESTCODE,
-                    //内部で匿名クラスのインスタンスになるので、引数を個別に保存できる。
-                    (result) ->{
-                        Log.d(TAG, StringBufferBuilderPool.Join(
-                                "",
-                                "Location Permission: ",
-                                result
-                        ));
-                    if(result) {
-                        //GPSの更新リクエストを更新
-                        localeManager.requestLocationUpdates(
-                                LocationManager.GPS_PROVIDER,
-                                msvc,
-                                meter,
-                                this);
-                    }
-            });
-            //待機開始
-            awaiter.start();
-            //以前の方法
-            //SystemEventHub.subscribe(RequestPermissionResultEvent.class,this::onPermissionResultReceived);
+                //購読したのち、許可を求める。
+                //権限リクエスト(非同期)、結果が、ActivityのonRequestPermissionsResultが呼ばれる。
+                ActivityCompat.requestPermissions(
+                        activity,//結果を通知するActivity
+                        //求める権限
+                        new String[]{Manifest.permission.ACCESS_FINE_LOCATION,Manifest.permission.ACCESS_COARSE_LOCATION}
+                        //結果で使うリクエスト識別コード(かぶらないように)
+                        ,REQUESTCODE);
 
-            //購読したのち、許可を求める。
-            //権限リクエスト(非同期)、結果が、ActivityのonRequestPermissionsResultが呼ばれる。
-            ActivityCompat.requestPermissions(
-                    activity,//結果を通知するActivity
-                    //求める権限
-                    new String[]{Manifest.permission.ACCESS_FINE_LOCATION,Manifest.permission.ACCESS_COARSE_LOCATION}
-                    //結果で使うリクエスト識別コード(かぶらないように)
-                    ,REQUESTCODE);
+                isRequested = true;
+            }
+
 
             return;
         }
@@ -112,47 +127,6 @@ public class SensorActivity implements SensorEventListener, LocationListener {
                 meter,
                 this);
     }
-//    private void onPermissionResultReceived(RequestPermissionResultEvent result) {
-//        if (result.requestCode() != REQUESTCODE) return;
-//
-//        // 配列が空でないか確認
-//        if (result.grantResults().length > 0) {
-//
-//            boolean fineGranted = false;
-//            boolean coarseGranted = false;
-//
-//            // permissionごとの結果を見る
-//            for (int i = 0; i < result.permissions().length; i++) {
-//
-//                if (Manifest.permission.ACCESS_FINE_LOCATION.equals(result.permissions()[i])) {
-//                    fineGranted =
-//                            result.grantResults()[i] == PackageManager.PERMISSION_GRANTED;
-//                }
-//
-//                if (Manifest.permission.ACCESS_COARSE_LOCATION.equals(result.permissions()[i])) {
-//                    coarseGranted =
-//                            result.grantResults()[i] == PackageManager.PERMISSION_GRANTED;
-//                }
-//            }
-//
-//            // どちらか許可されていればOK
-//            if (fineGranted || coarseGranted) {
-//
-//                Log.d(TAG, "Location Permission Granted");
-//
-//                //GPSの更新リクエストを更新
-//                requestLocationUpdate(
-//                        requestmsvc,
-//                        requestmeter
-//                );
-//            } else {
-//
-//                Log.d(TAG, "Location Permission Denied");
-//            }
-//        }
-//        //購読解除
-//        SystemEventHub.unsubscribe(RequestPermissionResultEvent.class, this::onPermissionResultReceived);
-//    }
     public void RemoveListener(){
         sensorManager.unregisterListener(this);
         localeManager.removeUpdates(this);

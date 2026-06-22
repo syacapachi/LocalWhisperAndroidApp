@@ -24,9 +24,14 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # OFFなら .a
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 
-# Android NDKでは通常OpenMP(処理のマルチスレッド化)を利用しないため無効化
+# AI 推論向けライブラリを有効(arm64-v8aのみ,実機推奨)
+if(ANDROID AND CMAKE_ANDROID_ARCH_ABI STREQUAL "arm64-v8a")
+    set(GGML_CPU_KLEIDIAI ON CACHE BOOL "" FORCE)
+endif()
+
+# Android NDKでは通常OpenMP(処理のマルチスレッド化)を利用すると高速化できる
 # libomp依存を避ける目的
-set(GGML_OPENMP OFF CACHE BOOL "" FORCE)
+set(GGML_OPENMP ON CACHE BOOL "" FORCE)
 
 # 共有ライブラリのABIバージョン
 #

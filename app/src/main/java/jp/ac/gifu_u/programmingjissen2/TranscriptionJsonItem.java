@@ -21,6 +21,12 @@ public class TranscriptionJsonItem {
     /** この結果が対象にしている音声の長さです。ミリ秒。 */
     public final long durationMs;
 
+    /** Whisper 推論 1 回にかかった処理時間です。ミリ秒。 */
+    public final long processingTimeMs;
+
+    /** 推論に使った Whisper モデルの識別子です。 */
+    public final String modelKey;
+
     /** Whisper が出力した文字起こし本文です。 */
     public final String text;
 
@@ -37,6 +43,8 @@ public class TranscriptionJsonItem {
             int sequence,
             long recordingTimeMs,
             long durationMs,
+            long processingTimeMs,
+            String modelKey,
             String text,
             boolean speakerChanged,
             boolean finalResult
@@ -44,6 +52,8 @@ public class TranscriptionJsonItem {
         this.sequence = sequence;
         this.recordingTimeMs = recordingTimeMs;
         this.durationMs = durationMs;
+        this.processingTimeMs = Math.max(0, processingTimeMs);
+        this.modelKey = modelKey == null ? "" : modelKey;
         this.text = text == null ? "" : text;
         this.speakerChanged = speakerChanged;
         this.finalResult = finalResult;
@@ -60,6 +70,8 @@ public class TranscriptionJsonItem {
                 event.sequence(),
                 event.startMs(),
                 event.durationMs(),
+                event.processingTimeMs(),
+                event.modelKey(),
                 event.text(),
                 event.speakerChanged(),
                 event.finalResult()
@@ -77,6 +89,8 @@ public class TranscriptionJsonItem {
         object.put("sequence", sequence);
         object.put("recordingTimeMs", recordingTimeMs);
         object.put("durationMs", durationMs);
+        object.put("processingTimeMs", processingTimeMs);
+        object.put("modelKey", modelKey);
         object.put("text", text);
         object.put("speakerChanged", speakerChanged);
         object.put("finalResult", finalResult);

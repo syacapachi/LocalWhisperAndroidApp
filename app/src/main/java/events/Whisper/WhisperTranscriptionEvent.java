@@ -13,6 +13,8 @@ import androidx.annotation.Nullable;
  * @param errorMessage エラーがある場合のメッセージ
  * @param startMs この結果が対象にしている音声の開始位置。ミリ秒
  * @param durationMs この結果が対象にしている音声の長さ。ミリ秒
+ * @param processingTimeMs Whisper 推論 1 回にかかった処理時間。ミリ秒
+ * @param modelKey 推論に使ったモデルの識別子
  */
 public record WhisperTranscriptionEvent(
         String sessionId,
@@ -22,7 +24,9 @@ public record WhisperTranscriptionEvent(
         boolean finalResult,
         @Nullable String errorMessage,
         long startMs,
-        long durationMs
+        long durationMs,
+        long processingTimeMs,
+        String modelKey
 ) {
     /**
      * このイベントがエラー通知かどうかを返します。

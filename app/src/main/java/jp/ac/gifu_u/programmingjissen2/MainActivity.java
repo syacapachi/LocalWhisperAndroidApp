@@ -3,6 +3,7 @@ import android.hardware.Sensor;
 import android.os.Bundle;
 import android.util.Log;
 import android.widget.Button;
+import android.widget.RadioGroup;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -10,6 +11,8 @@ import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 
 import java.util.function.Consumer;
+
+import jp.ac.gifu_u.programmingjissen2.UI.WhisperRecordControls;
 
 import events.AwaitEvent.AwaiterHub;
 import events.Request.RequestPermissionResultEvent;
@@ -68,8 +71,19 @@ public class MainActivity extends AppCompatActivity {
 
         //録音のインスタンスを作成。
         Button recordButton = (Button) findViewById(R.id.recordButton);
+        Button whisperSettingsButton = (Button) findViewById(R.id.whisperSettingsButton);
+        RadioGroup whisperModelRadioGroup = findViewById(R.id.whisperModelRadioGroup);
         TextView recordText = findViewById(R.id.recordText);
-        recordActivity = new RecordActivity(this, recordButton, recordText);
+        TextView whisperStatusText = findViewById(R.id.whisperStatusText);
+        TextView whisperBenchmarkText = findViewById(R.id.whisperBenchmarkText);
+        recordActivity = new RecordActivity(this, new WhisperRecordControls(
+                recordButton,
+                whisperSettingsButton,
+                whisperModelRadioGroup,
+                recordText,
+                whisperStatusText,
+                whisperBenchmarkText
+        ));
 
         //イベントが親クラスに行くかの確認。
         //SampleTest.CheckTest();
@@ -86,8 +100,11 @@ public class MainActivity extends AppCompatActivity {
         super.onResume();
         Log.d(TAG, "onResume");
         sensorActivity.AddSensorListener(Sensor.TYPE_LIGHT);
-        sensorActivity.AddSensorListener(Sensor.TYPE_MAGNETIC_FIELD);
+        //sensorActivity.AddSensorListener(Sensor.TYPE_MAGNETIC_FIELD);
         sensorActivity.requestLocationUpdate(1000,10);
+        if (recordActivity != null) {
+            recordActivity.RefreshSettings();
+        }
     }
     //ホーム画面の繊維など、アプリがメインではなくなったときに呼ばれる
     //再開時はonResume()
@@ -95,9 +112,8 @@ public class MainActivity extends AppCompatActivity {
     protected void onPause(){
         super.onPause();
         Log.d(TAG, "onPause");
-        //電池を消耗しないようにすぐ消す。
+        //電池を消耗しないようにセンサーだけ止める。録音は foreground service 側で継続する。
         sensorActivity.RemoveListener();
-        recordActivity.StopRecord();
     }
     //Pauseから時間がたつと呼ばれる。バックグラウンドで動いている。
     //ここからの再開はReStart()
@@ -116,10 +132,15 @@ public class MainActivity extends AppCompatActivity {
     //アプリ切り替え時、長時間放置などアプリがが廃棄されるタイミング。
     @Override
     protected void onDestroy(){
-        // 待機しているイベント解除
-        AwaiterHub.clear();
-        // 全てのイベント購読を解除
-        SystemEventHub.clear();
+        if (recordActivity != null) {
+            recordActivity.Dispose();
+        }
+        if (!BackgroundWhisperService.isServiceActive()) {
+            // 待機しているイベント解除
+            AwaiterHub.clear();
+            // 全てのイベント購読を解除
+            SystemEventHub.clear();
+        }
 
         Log.d(TAG, "onDestroy");
         super.onDestroy();
@@ -154,3 +175,4 @@ public class MainActivity extends AppCompatActivity {
 
     }
 }
+

@@ -166,13 +166,21 @@ public class AudioRecordWorker implements Runnable {
         String stopErrorMessage = null;
 
         try {
-            startAudioRecord();
-            readAudioUntilStopped(currentThread);
+            if (audioRecord == null) {
+                throw new IllegalStateException("AudioRecord is null");
+            }
+            audioRecord.startRecording();
+            while (running && !currentThread.isInterrupted()) {
+                readNextAudioChunk();
+            }
         } catch (Exception e) {
             Log.e(TAG, "Record thread error", e);
             stopErrorMessage = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
         } finally {
-            releaseAudioRecord();
+            if (audioRecord != null) {
+                audioRecord.release();
+                audioRecord = null;
+            }
             running = false;
             workerThread = null;
             publishStoppedEvent(currentThread, stopErrorMessage);
@@ -201,27 +209,6 @@ public class AudioRecordWorker implements Runnable {
         }
 
         return record;
-    }
-
-    /**
-     * AudioRecord の録音を開始します。
-     */
-    private void startAudioRecord() {
-        if (audioRecord == null) {
-            throw new IllegalStateException("AudioRecord is null");
-        }
-        audioRecord.startRecording();
-    }
-
-    /**
-     * stop 要求または interrupt まで録音チャンクを読み続けます。
-     *
-     * @param currentThread 録音 worker 自身のスレッド
-     */
-    private void readAudioUntilStopped(Thread currentThread) {
-        while (running && !currentThread.isInterrupted()) {
-            readNextAudioChunk();
-        }
     }
 
     /**
@@ -258,16 +245,6 @@ public class AudioRecordWorker implements Runnable {
             audioRecord.stop();
         } catch (IllegalStateException e) {
             Log.w(TAG, "AudioRecord stop failed", e);
-        }
-    }
-
-    /**
-     * AudioRecord を解放します。
-     */
-    private void releaseAudioRecord() {
-        if (audioRecord != null) {
-            audioRecord.release();
-            audioRecord = null;
         }
     }
 

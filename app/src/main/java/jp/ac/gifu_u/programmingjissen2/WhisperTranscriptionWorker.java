@@ -11,6 +11,7 @@ import Whisper.WhisperBridge;
 import events.SystemEventHub;
 import events.Threading.ThreadStoppedEvent;
 import events.Whisper.WhisperTranscriptionEvent;
+import jp.ac.gifu_u.programmingjissen2.UI.WhisperSettings;
 
 /**
  * 録音スレッドから受け取った音声チャンクを、別スレッドで Whisper.cpp に渡すクラスです。
@@ -27,16 +28,7 @@ public class WhisperTranscriptionWorker implements Runnable {
     public static final int DEFAULT_SAMPLE_RATE = 16000;
 
     /** 録音スレッドから受け取る音声チャンクの最大待機数です。 */
-    private static final int QUEUE_CAPACITY = 12;
-
-    /** 1 回の Whisper 推論に使う音声窓の長さです。ミリ秒。 */
-    private static final int WINDOW_MS = 5000;
-
-    /** 連続する推論窓の重なり部分です。ミリ秒。 */
-    private static final int OVERLAP_MS = 1000;
-
-    /** 停止時に最終推論として処理する最小音声長です。ミリ秒。 */
-    private static final int MIN_FINAL_MS = 1000;
+    private static final int QUEUE_CAPACITY = 32;
 
     /** Whisper モデルファイルの実ファイルパスです。 */
     private final String modelPath;
@@ -46,6 +38,9 @@ public class WhisperTranscriptionWorker implements Runnable {
 
     /** この worker の停止イベントを識別する ID です。 */
     private final String stopEventId;
+
+    /** Whisper 推論設定です。 */
+    private final WhisperSettings settings;
 
     /** 入力 PCM のサンプリングレートです。 */
     private final int sampleRate;
@@ -81,13 +76,28 @@ public class WhisperTranscriptionWorker implements Runnable {
     private long processedSamples;
 
     /**
-     * 既定のサンプリングレート、推論窓、重なり幅で Whisper 推論 worker を作成します。
+     * 既定のサンプリングレートと設定で Whisper 推論 worker を作成します。
      *
      * @param modelPath Whisper モデルファイルの実ファイルパス
      * @param sessionId 録音 session ID
      */
     public WhisperTranscriptionWorker(String modelPath, String sessionId) {
-        this(modelPath, sessionId, DEFAULT_SAMPLE_RATE, WINDOW_MS, OVERLAP_MS);
+        this(modelPath, sessionId, WhisperSettings.defaultSettings());
+    }
+
+    /**
+     * 既定のサンプリングレートで Whisper 推論 worker を作成します。
+     *
+     * @param modelPath Whisper モデルファイルの実ファイルパス
+     * @param sessionId 録音 session ID
+     * @param settings Whisper 推論設定
+     */
+    public WhisperTranscriptionWorker(
+            String modelPath,
+            String sessionId,
+            WhisperSettings settings
+    ) {
+        this(modelPath, sessionId, DEFAULT_SAMPLE_RATE, settings);
     }
 
     /**
@@ -96,29 +106,26 @@ public class WhisperTranscriptionWorker implements Runnable {
      * @param modelPath Whisper モデルファイルの実ファイルパス
      * @param sessionId 録音 session ID
      * @param sampleRate 入力 PCM のサンプリングレート
-     * @param windowMs 1 回の推論に使う音声長。ミリ秒
-     * @param overlapMs 推論窓同士で重ねる音声長。ミリ秒
+     * @param settings Whisper 推論設定
      */
     public WhisperTranscriptionWorker(
             String modelPath,
             String sessionId,
             int sampleRate,
-            int windowMs,
-            int overlapMs
+            WhisperSettings settings
     ) {
         this.modelPath = modelPath;
         this.sessionId = sessionId;
         this.stopEventId = StringBufferBuilderPool.Join("", sessionId, ":whisper");
+        this.settings = settings == null ? WhisperSettings.defaultSettings() : settings;
         this.sampleRate = sampleRate;
-        this.windowSamples = Math.max(1, sampleRate * windowMs / 1000);
-        this.overlapSamples = Math.max(0, sampleRate * overlapMs / 1000);
-        this.minFinalSamples = Math.max(1, sampleRate * MIN_FINAL_MS / 1000);
+        this.windowSamples = Math.max(1, sampleRate * this.settings.windowMs() / 1000);
+        this.overlapSamples = Math.max(0, sampleRate * this.settings.overlapMs() / 1000);
+        this.minFinalSamples = Math.max(1, sampleRate * this.settings.minFinalMs() / 1000);
         this.pendingAudio = new FloatAudioBuffer(windowSamples * 2);
     }
 
-    /**
-     * Whisper 推論スレッドを開始します。
-     */
+    /** Whisper 推論スレッドを開始します。 */
     public synchronized void start() {
         if (running) {
             return;
@@ -129,16 +136,12 @@ public class WhisperTranscriptionWorker implements Runnable {
         workerThread.start();
     }
 
-    /**
-     * この worker スレッドの停止イベントを待つための ID を返します。
-     */
+    /** この worker スレッドの停止イベントを待つための ID を返します。 */
     public String getStopEventId() {
         return stopEventId;
     }
 
-    /**
-     * worker スレッドがまだ生きている場合 true を返します。
-     */
+    /** worker スレッドがまだ生きている場合 true を返します。 */
     public boolean isAlive() {
         Thread thread = workerThread;
         return thread != null && thread.isAlive();
@@ -190,15 +193,19 @@ public class WhisperTranscriptionWorker implements Runnable {
         String stopErrorMessage = null;
 
         try {
-            // Whisper context を開きます
             context = openContext();
             if (context == 0) {
                 stopErrorMessage = StringBufferBuilderPool.Join("", "model load failed: ", modelPath);
                 outputError(stopErrorMessage);
+                return;
             }
-            // キュー内の音声を推論し、停止時の残り音声を処理します。ここでループ
-            consumeQueuedAudio(currentThread);
-            // ループ停止時にバッファへ残っている音声を最終結果として推論します。
+
+            while (running && !currentThread.isInterrupted()) {
+                float[] chunk = audioQueue.poll(200, TimeUnit.MILLISECONDS);
+                if (chunk != null) {
+                    processAudioChunk(chunk, currentThread);
+                }
+            }
             transcribeRemainingAudio(currentThread);
         } catch (InterruptedException e) {
             currentThread.interrupt();
@@ -207,28 +214,13 @@ public class WhisperTranscriptionWorker implements Runnable {
             stopErrorMessage = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
             outputError(stopErrorMessage);
         } finally {
-            releaseContext();
+            if (context != 0) {
+                WhisperBridge.freeContext(context);
+                context = 0;
+            }
             running = false;
             workerThread = null;
             publishStoppedEvent(currentThread, stopErrorMessage);
-        }
-    }
-
-
-    /**
-     * 録音 worker から届く PCM キューを消費し続けます。
-     *
-     * @param currentThread worker 自身のスレッド
-     * @throws InterruptedException キュー待機中に interrupt された場合
-     */
-    private void consumeQueuedAudio(Thread currentThread) throws InterruptedException {
-        // 実行中かつ、スレッドが閉じられていなければ継続
-        while (running && !currentThread.isInterrupted()) {
-            // キューから推論する音声データを受け取り取得、タイムアウト時は null
-            float[] chunk = audioQueue.poll(200, TimeUnit.MILLISECONDS);;
-            if (chunk != null) {
-                processAudioChunk(chunk, currentThread);
-            }
         }
     }
 
@@ -256,11 +248,7 @@ public class WhisperTranscriptionWorker implements Runnable {
         }
     }
 
-    /**
-     * native の Whisper context を作成します。
-     *
-     * @return native context ハンドル。失敗時は 0
-     */
+    /** native の Whisper context を作成します。 */
     private long openContext() {
         WhisperBridge.ContextParams params = WhisperBridge.defaultContextParams();
         return WhisperBridge.initFromFile(modelPath, params);
@@ -275,18 +263,31 @@ public class WhisperTranscriptionWorker implements Runnable {
         int sampleCount = finalResult
                 ? pendingAudio.size()
                 : windowSamples;
-        //データコピー
         float[] samples = pendingAudio.copyFirst(sampleCount);
         long startMs = samplesToMs(processedSamples);
         long durationMs = samplesToMs(samples.length);
-        //ここで推論結果を待つ。時間かかる。
+
+        long startedAt = System.nanoTime();
         TranscriptionResult result = transcribe(samples);
-        output(result.text, result.speakerChanged, finalResult, null, startMs, durationMs);
+        long processingTimeMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt);
+
+        Log.d(TAG, result.text);
+        Log.d(TAG, String.valueOf(result.speakerChanged));
+        Log.d(TAG, StringBufferBuilderPool.Join("", "Whisper inference: ", processingTimeMs, "ms"));
+
+        output(
+                result.text,
+                result.speakerChanged,
+                finalResult,
+                null,
+                startMs,
+                durationMs,
+                processingTimeMs
+        );
 
         int discardSamples = finalResult
                 ? sampleCount
                 : Math.max(1, sampleCount - overlapSamples);
-        //後処理 推論した分を無効化
         pendingAudio.discardFirst(discardSamples);
         processedSamples += discardSamples;
     }
@@ -303,10 +304,13 @@ public class WhisperTranscriptionWorker implements Runnable {
         params.printProgress = false;
         params.printSpecial = false;
         params.printRealtime = false;
-        params.printTimestamps = false;
-        params.noContext = true;
-        params.language = "ja";
-        params.nThreads = Math.max(1, Runtime.getRuntime().availableProcessors() / 2);
+        params.printTimestamps = settings.printTimestamps();
+        params.noContext = settings.noContext();
+        params.language = settings.language();
+        params.nThreads = Math.min(
+                settings.maxThreads(),
+                Math.max(1, Runtime.getRuntime().availableProcessors())
+        );
 
         int result = WhisperBridge.full(context, params, samples);
         if (result != 0) {
@@ -346,6 +350,7 @@ public class WhisperTranscriptionWorker implements Runnable {
      * @param errorMessage エラーメッセージ
      * @param startMs 録音開始からの開始時刻。ミリ秒
      * @param durationMs 対象音声の長さ。ミリ秒
+     * @param processingTimeMs Whisper 推論 1 回にかかった処理時間。ミリ秒
      */
     private void output(
             String text,
@@ -353,7 +358,8 @@ public class WhisperTranscriptionWorker implements Runnable {
             boolean finalResult,
             String errorMessage,
             long startMs,
-            long durationMs
+            long durationMs,
+            long processingTimeMs
     ) {
         SystemEventHub.publish(new WhisperTranscriptionEvent(
                 sessionId,
@@ -363,12 +369,14 @@ public class WhisperTranscriptionWorker implements Runnable {
                 finalResult,
                 errorMessage,
                 startMs,
-                durationMs
+                durationMs,
+                processingTimeMs,
+                settings.model().key()
         ));
     }
 
     private void outputError(String message) {
-        output("", false, false, message, samplesToMs(processedSamples), 0);
+        output("", false, false, message, samplesToMs(processedSamples), 0, 0);
     }
 
     /**
@@ -387,24 +395,9 @@ public class WhisperTranscriptionWorker implements Runnable {
         ));
     }
 
-    /**
-     * サンプル数を録音開始からのミリ秒へ変換します。
-     *
-     * @param samples サンプル数
-     * @return ミリ秒
-     */
+    /** サンプル数を録音開始からのミリ秒へ変換します。 */
     private long samplesToMs(long samples) {
         return samples * 1000L / sampleRate;
-    }
-
-    /**
-     * native の Whisper context を解放します。
-     */
-    private void releaseContext() {
-        if (context != 0) {
-            WhisperBridge.freeContext(context);
-            context = 0;
-        }
     }
 
     private static class FloatAudioBuffer {
@@ -418,33 +411,25 @@ public class WhisperTranscriptionWorker implements Runnable {
             buffer = new float[Math.max(1, initialCapacity)];
         }
 
-        /**
-         * バッファ内の有効サンプル数を返します。
-         */
+        /** バッファ内の有効サンプル数を返します。 */
         int size() {
             return size;
         }
 
-        /**
-         * PCM サンプルを末尾へ追加します。
-         */
+        /** PCM サンプルを末尾へ追加します。 */
         void append(float[] samples) {
             ensureCapacity(size + samples.length);
             System.arraycopy(samples, 0, buffer, size, samples.length);
             size += samples.length;
         }
 
-        /**
-         * 先頭から指定サンプル数をコピーします。
-         */
+        /** 先頭から指定サンプル数をコピーします。 */
         float[] copyFirst(int count) {
             int copyLength = Math.min(count, size);
             return Arrays.copyOf(buffer, copyLength);
         }
 
-        /**
-         * 先頭から指定サンプル数を破棄します。
-         */
+        /** 先頭から指定サンプル数を破棄します。 */
         void discardFirst(int count) {
             if (count <= 0) {
                 return;
@@ -460,9 +445,7 @@ public class WhisperTranscriptionWorker implements Runnable {
             size = remaining;
         }
 
-        /**
-         * 指定容量を格納できるように内部配列を拡張します。
-         */
+        /** 指定容量を格納できるように内部配列を拡張します。 */
         private void ensureCapacity(int capacity) {
             if (capacity <= buffer.length) {
                 return;
@@ -476,9 +459,7 @@ public class WhisperTranscriptionWorker implements Runnable {
         }
     }
 
-    /**
-     * 1 回の Whisper 推論から取り出した結果です。
-     */
+    /** 1 回の Whisper 推論から取り出した結果です。 */
     private static class TranscriptionResult {
         /** 文字起こし本文です。 */
         final String text;
@@ -486,9 +467,6 @@ public class WhisperTranscriptionWorker implements Runnable {
         /** この結果の直後に話者が変わった可能性がある場合 true です。 */
         final boolean speakerChanged;
 
-        /**
-         * 文字起こし結果を作成します。
-         */
         TranscriptionResult(String text, boolean speakerChanged) {
             this.text = text == null ? "" : text;
             this.speakerChanged = speakerChanged;
