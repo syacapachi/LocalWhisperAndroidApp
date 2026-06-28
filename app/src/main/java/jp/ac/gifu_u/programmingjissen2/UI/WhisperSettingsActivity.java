@@ -3,13 +3,14 @@ package jp.ac.gifu_u.programmingjissen2.UI;
 import android.os.Bundle;
 import android.text.InputType;
 import android.view.View;
+import android.widget.ArrayAdapter;
 import android.widget.Button;
-import android.widget.CompoundButton;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.RadioButton;
 import android.widget.RadioGroup;
 import android.widget.ScrollView;
+import android.widget.Spinner;
 import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -26,10 +27,15 @@ public class WhisperSettingsActivity extends AppCompatActivity {
     private RadioGroup modelGroup;
     private int baseRadioId;
     private int smallRadioId;
-    private EditText languageEdit;
+    /**  言語選択のドロップダウン */
+    private Spinner languageSpinner;
+    /** 推論窓の大きさの 入力フィールド */
     private EditText windowEdit;
+    /** 推論窓の重なりの 入力フィールド */
     private EditText overlapEdit;
+    /** 停止時の最終数論の 入力フィールド */
     private EditText minFinalEdit;
+    /** 推論に使う最大スレッド数の 入力フィールド */
     private EditText maxThreadsEdit;
     private Switch noContextSwitch;
     private Switch timestampSwitch;
@@ -46,8 +52,11 @@ public class WhisperSettingsActivity extends AppCompatActivity {
     }
 
     private View createContentView() {
+        // スクロールできる画面を生成。
         ScrollView scrollView = new ScrollView(this);
+        // 画面の中にレイアウトの元
         LinearLayout root = new LinearLayout(this);
+        // 縦に伸びる
         root.setOrientation(LinearLayout.VERTICAL);
         int padding = dp(20);
         root.setPadding(padding, padding, padding, padding);
@@ -70,7 +79,7 @@ public class WhisperSettingsActivity extends AppCompatActivity {
         root.addView(modelGroup);
 
         root.addView(sectionText("推論"));
-        languageEdit = addEditRow(root, "言語", "ja / en / auto など", InputType.TYPE_CLASS_TEXT);
+        languageSpinner = addLanguageSpinnerRow(root);
         windowEdit = addEditRow(root, "推論窓 ms", "例: 5000", InputType.TYPE_CLASS_NUMBER);
         overlapEdit = addEditRow(root, "重なり ms", "例: 1000", InputType.TYPE_CLASS_NUMBER);
         minFinalEdit = addEditRow(root, "停止時の最小 ms", "例: 1000", InputType.TYPE_CLASS_NUMBER);
@@ -123,6 +132,31 @@ public class WhisperSettingsActivity extends AppCompatActivity {
         return button;
     }
 
+    private Spinner addLanguageSpinnerRow(LinearLayout root) {
+        root.addView(labelText("言語"));
+
+        // ドロップダウン
+        Spinner spinner = new Spinner(this);
+        // 選択肢を生成。
+        ArrayAdapter<WhisperLanguageOption> adapter = new ArrayAdapter<>(
+                this,
+                android.R.layout.simple_spinner_item,
+                WhisperLanguageOption.values()
+        );
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        spinner.setAdapter(adapter);
+        root.addView(spinner, fullWidthParams());
+        return spinner;
+    }
+
+    /**
+     * 編集できるテキストフィールドを生成
+     * @param root 親のレイアウト
+     * @param label 表示するテキスト
+     * @param hint ヒント
+     * @param inputType 入力タイプ
+     * @return 編集できるテキストフィールドコンテンツ
+     */
     private EditText addEditRow(LinearLayout root, String label, String hint, int inputType) {
         TextView labelView = labelText(label);
         root.addView(labelView);
@@ -152,7 +186,7 @@ public class WhisperSettingsActivity extends AppCompatActivity {
 
     private void bindSettings(WhisperSettings settings) {
         modelGroup.check(settings.model() == WhisperModelOption.SMALL ? smallRadioId : baseRadioId);
-        languageEdit.setText(settings.language());
+        languageSpinner.setSelection(WhisperLanguageOption.fromValue(settings.language()).ordinal());
         windowEdit.setText(String.valueOf(settings.windowMs()));
         overlapEdit.setText(String.valueOf(settings.overlapMs()));
         minFinalEdit.setText(String.valueOf(settings.minFinalMs()));
@@ -165,10 +199,11 @@ public class WhisperSettingsActivity extends AppCompatActivity {
         WhisperModelOption model = modelGroup.getCheckedRadioButtonId() == smallRadioId
                 ? WhisperModelOption.SMALL
                 : WhisperModelOption.BASE;
+        WhisperLanguageOption language = (WhisperLanguageOption) languageSpinner.getSelectedItem();
 
         WhisperSettings settings = new WhisperSettings(
                 model,
-                languageEdit.getText().toString(),
+                language.value(),
                 parseInt(windowEdit, WhisperSettings.DEFAULT_WINDOW_MS),
                 parseInt(overlapEdit, WhisperSettings.DEFAULT_OVERLAP_MS),
                 parseInt(minFinalEdit, WhisperSettings.DEFAULT_MIN_FINAL_MS),
@@ -186,11 +221,10 @@ public class WhisperSettingsActivity extends AppCompatActivity {
         WhisperInferenceStats baseStats = store.loadStats(WhisperModelOption.BASE);
         WhisperInferenceStats smallStats = store.loadStats(WhisperModelOption.SMALL);
         statsText.setText(StringBufferBuilderPool.Join(
-                "",
-                formatStats(WhisperModelOption.BASE, baseStats),
                 "\n",
+                formatStats(WhisperModelOption.BASE, baseStats),
                 formatStats(WhisperModelOption.SMALL, smallStats),
-                "\n録音画面でも推論 1 回ごとの処理時間を確認できます。"
+                "録音画面でも推論 1 回ごとの処理時間を確認できます。"
         ));
     }
 
@@ -232,6 +266,11 @@ public class WhisperSettingsActivity extends AppCompatActivity {
         return view;
     }
 
+    /**
+     * 文字を表示
+     * @param text 表示する文字列
+     * @return 文字を表示したコンテンツ
+     */
     private TextView sectionText(String text) {
         TextView view = new TextView(this);
         view.setText(text);
@@ -255,6 +294,10 @@ public class WhisperSettingsActivity extends AppCompatActivity {
         return view;
     }
 
+    /**
+     * 全体の幅を取る
+     * @return 全体の幅を取る
+     */
     private LinearLayout.LayoutParams fullWidthParams() {
         return new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -262,6 +305,10 @@ public class WhisperSettingsActivity extends AppCompatActivity {
         );
     }
 
+    /**
+     * ボタンの
+     * @return
+     */
     private LinearLayout.LayoutParams weightedButtonParams() {
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 0,
@@ -272,6 +319,11 @@ public class WhisperSettingsActivity extends AppCompatActivity {
         return params;
     }
 
+    /**
+     * 指定した深さの dp を計算します。
+     * @param value 深さ
+     * @return 指定した深さの dp
+     */
     private int dp(int value) {
         return (int) (value * getResources().getDisplayMetrics().density + 0.5f);
     }

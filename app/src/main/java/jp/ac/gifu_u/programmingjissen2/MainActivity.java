@@ -1,5 +1,6 @@
 package jp.ac.gifu_u.programmingjissen2;
 import android.hardware.Sensor;
+import android.content.Intent;
 import android.os.Bundle;
 import android.util.Log;
 import android.widget.Button;
@@ -76,6 +77,10 @@ public class MainActivity extends AppCompatActivity {
         TextView recordText = findViewById(R.id.recordText);
         TextView whisperStatusText = findViewById(R.id.whisperStatusText);
         TextView whisperBenchmarkText = findViewById(R.id.whisperBenchmarkText);
+        Button transcriptionHistoryButton = findViewById(R.id.transcriptionHistoryButton);
+        transcriptionHistoryButton.setOnClickListener((view) -> startActivity(
+                new Intent(this, TranscriptionListActivity.class)
+        ));
         recordActivity = new RecordActivity(this, new WhisperRecordControls(
                 recordButton,
                 whisperSettingsButton,

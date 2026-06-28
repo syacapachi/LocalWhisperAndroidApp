@@ -110,6 +110,13 @@
             android:text="録音結果" />
 
         <Button
+            android:id="@+id/transcriptionHistoryButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="文字起こし履歴" />
+
+        <Button
             android:id="@+id/button"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

@@ -3,7 +3,7 @@ package jp.ac.gifu_u.programmingjissen2.UI;
 /** Whisper 推論に関係するユーザー設定です。 */
 public class WhisperSettings {
     public static final WhisperModelOption DEFAULT_MODEL = WhisperModelOption.BASE;
-    public static final String DEFAULT_LANGUAGE = "ja";
+    public static final String DEFAULT_LANGUAGE = WhisperLanguageOption.JAPANESE.value();
     public static final int DEFAULT_WINDOW_MS = 5000;
     public static final int DEFAULT_OVERLAP_MS = 1000;
     public static final int DEFAULT_MIN_FINAL_MS = 1000;
@@ -99,12 +99,7 @@ public class WhisperSettings {
     }
 
     private static String normalizeLanguage(String value) {
-        if (value == null) {
-            return DEFAULT_LANGUAGE;
-        }
-
-        String trimmed = value.trim();
-        return trimmed.isEmpty() ? DEFAULT_LANGUAGE : trimmed;
+        return WhisperLanguageOption.fromValue(value).value();
     }
 
     private static int clamp(int value, int min, int max) {

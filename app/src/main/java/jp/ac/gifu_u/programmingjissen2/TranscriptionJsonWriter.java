@@ -23,7 +23,7 @@ public class TranscriptionJsonWriter {
     private static final String TAG = TranscriptionJsonWriter.class.getSimpleName();
 
     /** 文字起こし JSON を保存するアプリ内部ストレージ内のディレクトリ名です。 */
-    private static final String DIRECTORY_NAME = "transcriptions";
+    public static final String DIRECTORY_NAME = "transcriptions";
 
     /** JSON の形式を将来変更するときに使う schema version です。 */
     private static final int SCHEMA_VERSION = 1;
