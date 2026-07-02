@@ -1,7 +1,7 @@
-package jp.ac.gifu_u.programmingjissen2.UI;
+package jp.ac.gifu_u.programmingjissen2.SettingUI;
 
 /** Whisper モデルごとの推論時間統計です。 */
-public class WhisperInferenceStats {
+public final class WhisperInferenceStats {
     private final String modelKey;
     private final long count;
     private final long totalMs;

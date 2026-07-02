@@ -37,7 +37,7 @@ public abstract class EventAwaiter<TEvent> implements IAwaiter {
             DebugLog("イベントが多重登録されました。");
         }
 
-        Class<TEvent> eventType = getEventType();
+        final Class<TEvent> eventType = getEventType();
         if(eventType != null){
             //receiveを購読
             DebugLog("Start");
@@ -66,7 +66,7 @@ public abstract class EventAwaiter<TEvent> implements IAwaiter {
      * 購読する関数です
      * @param event 受信イベント
      */
-    private void receive(TEvent event) {
+    private void receive(final TEvent event) {
         //無限ループ防止
         if (isReceiving) {
             return;
@@ -136,14 +136,14 @@ public abstract class EventAwaiter<TEvent> implements IAwaiter {
      * @param event 受信イベント
      * @return 待っているイベントかの判別
      */
-    protected abstract boolean match(TEvent event);
+    protected abstract boolean match(final TEvent event);
 
     /**
      * 待っていたイベントの場合
      * @param event 受信イベント
      */
 
-    protected abstract void onReceive(TEvent event);
+    protected abstract void onReceive(final TEvent event);
 
     /**
      *
@@ -177,7 +177,7 @@ public abstract class EventAwaiter<TEvent> implements IAwaiter {
      * デバック用のログ出力
      * @param message
      */
-    protected final void DebugLog(String message){
+    protected final void DebugLog(final String message){
         Log.d(TAG, StringBufferBuilderPool.Join("", message, ": ", getClass().getSimpleName()));
     }
 
@@ -187,7 +187,7 @@ public abstract class EventAwaiter<TEvent> implements IAwaiter {
      * @param message ログの先頭メッセージ
      * @param value 追加で表示する値
      */
-    protected final void DebugLog(String message, Object value){
+    protected final void DebugLog(final String message, final Object value){
         Log.d(TAG, StringBufferBuilderPool.Join(
                 "",
                 message,

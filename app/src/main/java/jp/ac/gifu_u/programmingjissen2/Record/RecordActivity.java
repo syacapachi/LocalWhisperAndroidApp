@@ -1,4 +1,4 @@
-package jp.ac.gifu_u.programmingjissen2;
+package jp.ac.gifu_u.programmingjissen2.Record;
 
 import android.Manifest;
 import android.app.Activity;
@@ -9,6 +9,7 @@ import android.widget.Button;
 import android.widget.RadioGroup;
 import android.widget.TextView;
 
+import androidx.annotation.NonNull;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
@@ -20,12 +21,15 @@ import events.Request.PermissionAwaiter;
 import events.SystemEventHub;
 import events.Whisper.WhisperRecordingStateEvent;
 import events.Whisper.WhisperTranscriptionEvent;
-import jp.ac.gifu_u.programmingjissen2.UI.WhisperInferenceStats;
-import jp.ac.gifu_u.programmingjissen2.UI.WhisperModelOption;
-import jp.ac.gifu_u.programmingjissen2.UI.WhisperRecordControls;
-import jp.ac.gifu_u.programmingjissen2.UI.WhisperSettings;
-import jp.ac.gifu_u.programmingjissen2.UI.WhisperSettingsActivity;
-import jp.ac.gifu_u.programmingjissen2.UI.WhisperSettingsStore;
+import jp.ac.gifu_u.programmingjissen2.BackgroundWhisperService;
+import jp.ac.gifu_u.programmingjissen2.R;
+import jp.ac.gifu_u.programmingjissen2.SettingUI.WhisperInferenceStats;
+import jp.ac.gifu_u.programmingjissen2.SettingUI.WhisperModelOption;
+import jp.ac.gifu_u.programmingjissen2.SettingUI.WhisperRecordControls;
+import jp.ac.gifu_u.programmingjissen2.SettingUI.WhisperSettings;
+import jp.ac.gifu_u.programmingjissen2.SettingUI.WhisperSettingsActivity;
+import jp.ac.gifu_u.programmingjissen2.SettingUI.WhisperSettingsStore;
+import jp.ac.gifu_u.programmingjissen2.WhisperTranscriptionWorker;
 
 /** 録音画面の UI とバックグラウンド Whisper サービスを接続するクラスです。 */
 public class RecordActivity {
@@ -66,7 +70,7 @@ public class RecordActivity {
     }
 
     /** 録音 UI とバックグラウンド Whisper サービスの制御クラスを作成します。 */
-    public RecordActivity(Activity activity, WhisperRecordControls controls) {
+    public RecordActivity(Activity activity, @NonNull WhisperRecordControls controls) {
         this.activity = activity;
         this.recordButton = controls.recordButton;
         this.settingsButton = controls.settingsButton;
@@ -121,7 +125,7 @@ public class RecordActivity {
                 return;
             }
 
-            WhisperModelOption selected = modelFromRadioId(checkedId);
+            final WhisperModelOption selected = modelFromRadioId(checkedId);
             if (selected == currentSettings.model()) {
                 return;
             }
@@ -164,7 +168,7 @@ public class RecordActivity {
 
         if (ContextCompat.checkSelfPermission(activity, Manifest.permission.RECORD_AUDIO)
                 != PackageManager.PERMISSION_GRANTED) {
-            PermissionAwaiter awaiter = AwaiterHub.rentAwaiter(PermissionAwaiter.class);
+            final PermissionAwaiter awaiter = AwaiterHub.rentAwaiter(PermissionAwaiter.class);
             awaiter.initialize(
                     REQUESTCODE,
                     (result) -> {
@@ -228,7 +232,7 @@ public class RecordActivity {
         SystemEventHub.unsubscribe(WhisperRecordingStateEvent.class, stateListener);
     }
 
-    private void onTranscriptionEvent(WhisperTranscriptionEvent event) {
+    private void onTranscriptionEvent(final WhisperTranscriptionEvent event) {
         activity.runOnUiThread(() -> {
             outputTranscription(event);
             refreshWhisperInfo();
@@ -250,7 +254,7 @@ public class RecordActivity {
     }
 
     /** Whisper のイベント結果を画面に出力します。 */
-    public void outputTranscription(WhisperTranscriptionEvent event) {
+    public void outputTranscription(@NonNull final WhisperTranscriptionEvent event) {
         if (event.hasError()) {
             resultTextView.setText(StringBufferBuilderPool.Join(
                     "",
@@ -260,15 +264,16 @@ public class RecordActivity {
             return;
         }
 
-        String label = event.finalResult() ? "最終結果" : "認識中";
-        String text = event.text().isEmpty() ? "..." : event.text();
+        final String label = event.finalResult() ? "最終結果" : "認識中";
+        final String text = event.text().isEmpty() ? "..." : event.text();
         resultTextView.setText(buildTranscriptionViewText(label, text, event));
     }
 
+    @NonNull
     private String buildTranscriptionViewText(
-            String label,
-            String text,
-            WhisperTranscriptionEvent event
+            @NonNull final String label,
+            @NonNull final String text,
+            @NonNull final WhisperTranscriptionEvent event
     ) {
         WhisperModelOption model = WhisperModelOption.fromKey(event.modelKey());
         return StringBufferBuilderPool.Join(
@@ -289,8 +294,8 @@ public class RecordActivity {
     }
 
     private void refreshWhisperInfo() {
-        WhisperSettings settings = currentSettings;
-        String state = isRecording ? "録音中" : (isStopping ? "停止中" : "待機中");
+        final WhisperSettings settings = currentSettings;
+        final String state = isRecording ? "録音中" : (isStopping ? "停止中" : "待機中");
         setStatusText(StringBufferBuilderPool.Join(
                 "",
                 "状態: ",
@@ -308,6 +313,7 @@ public class RecordActivity {
         setBenchmarkText(buildBenchmarkText());
     }
 
+    @NonNull
     private String buildBenchmarkText() {
         return StringBufferBuilderPool.Join(
                 "",
@@ -317,8 +323,9 @@ public class RecordActivity {
         );
     }
 
-    private String formatStats(WhisperModelOption model) {
-        WhisperInferenceStats stats = settingsStore.loadStats(model);
+    @NonNull
+    private String formatStats(final WhisperModelOption model) {
+        final WhisperInferenceStats stats = settingsStore.loadStats(model);
         if (!stats.hasSamples()) {
             return StringBufferBuilderPool.Join(
                     "",
@@ -340,7 +347,7 @@ public class RecordActivity {
         );
     }
 
-    private void syncModelSelector(WhisperModelOption model) {
+    private void syncModelSelector(final WhisperModelOption model) {
         if (modelRadioGroup == null) {
             return;
         }
@@ -376,17 +383,17 @@ public class RecordActivity {
         );
     }
 
-    private void outputMessage(String message) {
+    private void outputMessage(final String message) {
         activity.runOnUiThread(() -> resultTextView.setText(message));
     }
 
-    private void setStatusText(String value) {
+    private void setStatusText(final String value) {
         if (statusTextView != null) {
             statusTextView.setText(value);
         }
     }
 
-    private void setBenchmarkText(String value) {
+    private void setBenchmarkText(final String value) {
         if (benchmarkTextView != null) {
             benchmarkTextView.setText(value);
         }

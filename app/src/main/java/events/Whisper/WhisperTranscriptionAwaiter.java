@@ -2,6 +2,8 @@ package events.Whisper;
 
 import android.util.Log;
 
+import androidx.annotation.NonNull;
+
 import java.util.Objects;
 import java.util.function.Consumer;
 
@@ -27,8 +29,8 @@ public class WhisperTranscriptionAwaiter extends EventAwaiter<WhisperTranscripti
      * @param callback イベント受信時の処理
      */
     public void initialize(
-            String sessionId,
-            Consumer<WhisperTranscriptionEvent> callback
+            final String sessionId,
+            final Consumer<WhisperTranscriptionEvent> callback
     ) {
         this.sessionId = sessionId;
         this.callback = callback;
@@ -38,7 +40,7 @@ public class WhisperTranscriptionAwaiter extends EventAwaiter<WhisperTranscripti
      * 受信イベントが待ち受け対象の session か判定します。
      */
     @Override
-    protected boolean match(WhisperTranscriptionEvent event) {
+    protected boolean match(@NonNull final WhisperTranscriptionEvent event) {
         return Objects.equals(sessionId, event.sessionId());
     }
 
@@ -46,7 +48,7 @@ public class WhisperTranscriptionAwaiter extends EventAwaiter<WhisperTranscripti
      * 対象 session の推論結果を callback へ渡します。
      */
     @Override
-    protected void onReceive(WhisperTranscriptionEvent event) {
+    protected void onReceive(final WhisperTranscriptionEvent event) {
         if (callback == null) {
             return;
         }

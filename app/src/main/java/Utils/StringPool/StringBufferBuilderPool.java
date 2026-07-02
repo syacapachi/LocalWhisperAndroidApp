@@ -2,6 +2,8 @@ package Utils.StringPool;
 
 import android.util.Log;
 
+import androidx.annotation.NonNull;
+
 import java.util.function.Consumer;
 
 import Utils.Pool.ObjectPool;
@@ -35,7 +37,7 @@ public final class StringBufferBuilderPool {
      *
      * @param builder 初期化する builder
      */
-    private static void ClearBuilder(StringBuilder builder) {
+    private static void ClearBuilder(@NonNull final StringBuilder builder) {
         builder.setLength(0);
     }
 
@@ -44,6 +46,7 @@ public final class StringBufferBuilderPool {
      *
      * @return 使用可能な builder
      */
+    @NonNull
     public static StringBuilder GetBuilder() {
         return builderPool.getOrCreate();
     }
@@ -53,10 +56,7 @@ public final class StringBufferBuilderPool {
      * 巨大なものは破棄されます。
      * @param builder 返却する builder
      */
-    public static void Release(StringBuilder builder) {
-        if (builder == null) {
-            return;
-        }
+    public static void Release(@NonNull final StringBuilder builder) {
         if (builder.capacity() > MAX_CAPACITY) {
             return;
         }
@@ -69,8 +69,9 @@ public final class StringBufferBuilderPool {
      * @param builder 文字列化して返却する builder
      * @return builder の内容
      */
-    public static String ToStringAndRelease(StringBuilder builder) {
-        String str = builder.toString();
+    @NonNull
+    public static String ToStringAndRelease(@NonNull final StringBuilder builder) {
+        final String str = builder.toString();
         Release(builder);
         return str;
     }
@@ -81,8 +82,9 @@ public final class StringBufferBuilderPool {
      * @param action builder に文字列要素を追加する処理
      * @return 作成された文字列
      */
-    public static String Build(Consumer<StringBuilder> action) {
-        StringBuilder sb = GetBuilder();
+    @NonNull
+    public static String Build(@NonNull final Consumer<StringBuilder> action) {
+        final StringBuilder sb = GetBuilder();
 
         try {
             action.accept(sb);
@@ -99,8 +101,9 @@ public final class StringBufferBuilderPool {
      * @param items 結合する要素
      * @return 結合済み文字列
      */
-    public static String Join(String separator, Iterable<?> items) {
-        StringBuilder sb = GetBuilder();
+    @NonNull
+    public static String Join(@NonNull final String separator, @NonNull final Iterable<?> items) {
+        final StringBuilder sb = GetBuilder();
         boolean first = true;
         try {
             for (Object item : items) {
@@ -123,8 +126,9 @@ public final class StringBufferBuilderPool {
      * @param items 結合する要素
      * @return 結合済み文字列
      */
-    public static String Join(String separator, Object... items){
-        StringBuilder sb = GetBuilder();
+    @NonNull
+    public static String Join(@NonNull final String separator, @NonNull final  Object... items){
+        final StringBuilder sb = GetBuilder();
         boolean first = true;
         try {
             for (Object item : items) {

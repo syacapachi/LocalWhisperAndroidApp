@@ -1,5 +1,6 @@
 package events.Threading;
 
+import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 /**
@@ -12,9 +13,9 @@ import androidx.annotation.Nullable;
  * @param errorMessage エラー終了した場合のメッセージ
  */
 public record ThreadStoppedEvent(
-        String threadId,
-        String owner,
-        String threadName,
+        @NonNull String threadId,
+        @NonNull String owner,
+        @NonNull String threadName,
         boolean interrupted,
         @Nullable String errorMessage
 ) {

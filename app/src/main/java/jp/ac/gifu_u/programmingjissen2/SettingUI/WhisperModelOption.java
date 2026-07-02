@@ -1,4 +1,6 @@
-package jp.ac.gifu_u.programmingjissen2.UI;
+package jp.ac.gifu_u.programmingjissen2.SettingUI;
+
+import androidx.annotation.NonNull;
 
 /** Whisper で利用できるモデルの選択肢です。 */
 public enum WhisperModelOption {
@@ -10,7 +12,7 @@ public enum WhisperModelOption {
     private final String assetName;
     private final String description;
 
-    WhisperModelOption(String key, String displayName, String assetName, String description) {
+    WhisperModelOption(final String key, final String displayName, final String assetName, final String description) {
         this.key = key;
         this.displayName = displayName;
         this.assetName = assetName;
@@ -33,7 +35,8 @@ public enum WhisperModelOption {
         return description;
     }
 
-    public static WhisperModelOption fromKey(String key) {
+    @NonNull
+    public static WhisperModelOption fromKey(final String key) {
         if (key != null) {
             for (WhisperModelOption value : values()) {
                 if (value.key.equals(key)) {

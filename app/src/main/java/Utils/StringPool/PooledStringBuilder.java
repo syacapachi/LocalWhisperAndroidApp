@@ -25,6 +25,7 @@ public class PooledStringBuilder implements AutoCloseable{
      *
      * @return プールから借りている builder
      */
+    @NonNull
     public StringBuilder get() {
         return builder;
     }
@@ -35,7 +36,8 @@ public class PooledStringBuilder implements AutoCloseable{
      * @param value 追加する値
      * @return メソッドチェーン用の this
      */
-    public PooledStringBuilder append(Object value) {
+    @NonNull
+    public PooledStringBuilder append(final Object value) {
         builder.append(value);
         return this;
     }
@@ -46,7 +48,8 @@ public class PooledStringBuilder implements AutoCloseable{
      * @param value 追加する文字列
      * @return メソッドチェーン用の this
      */
-    public PooledStringBuilder append(String value) {
+    @NonNull
+    public PooledStringBuilder append(final String value) {
         builder.append(value);
         return this;
     }

@@ -1,5 +1,9 @@
 package Utils;
 
+import androidx.annotation.NonNull;
+
+import org.jetbrains.annotations.Contract;
+
 import Utils.StringPool.PooledStringBuilder;
 
 /**
@@ -14,6 +18,8 @@ public final class ScopableUtility {
      *
      * @return {@link AutoCloseable} な pooled builder
      */
+    @NonNull
+    @Contract(" -> new")
     public static PooledStringBuilder getBuilder() {
         return new PooledStringBuilder();
     }

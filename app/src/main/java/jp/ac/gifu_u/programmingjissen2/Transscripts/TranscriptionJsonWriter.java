@@ -1,7 +1,9 @@
-package jp.ac.gifu_u.programmingjissen2;
+package jp.ac.gifu_u.programmingjissen2.Transscripts;
 
 import android.content.Context;
 import android.util.Log;
+
+import androidx.annotation.NonNull;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -51,11 +53,11 @@ public class TranscriptionJsonWriter {
      * @param context ファイル保存先を取得するための Context
      * @param sessionId 録音 session ID
      */
-    public TranscriptionJsonWriter(Context context, String sessionId) {
+    public TranscriptionJsonWriter(@NonNull Context context, String sessionId) {
         this.sessionId = sessionId;
         this.createdAtUnixMs = System.currentTimeMillis();
 
-        File directory = new File(context.getFilesDir(), DIRECTORY_NAME);
+        final File directory = new File(context.getFilesDir(), DIRECTORY_NAME);
         if (!directory.exists() && !directory.mkdirs()) {
             Log.w(TAG, StringBufferBuilderPool.Join(
                     "",
@@ -76,7 +78,7 @@ public class TranscriptionJsonWriter {
      *
      * @param event Whisper 推論結果イベント
      */
-    public synchronized void append(WhisperTranscriptionEvent event) {
+    public synchronized void append(final WhisperTranscriptionEvent event) {
         if (event == null || event.hasError()) {
             return;
         }
@@ -112,8 +114,9 @@ public class TranscriptionJsonWriter {
      * @return ファイルに保存するルート JSON オブジェクト
      * @throws JSONException JSON への変換に失敗した場合
      */
+    @NonNull
     private JSONObject buildRootObject() throws JSONException {
-        JSONObject root = new JSONObject();
+        final JSONObject root = new JSONObject();
         root.put("schemaVersion", SCHEMA_VERSION);
         root.put("sessionId", sessionId);
         root.put("createdAtUnixMs", createdAtUnixMs);
@@ -152,6 +155,7 @@ public class TranscriptionJsonWriter {
      * @param value 元の session ID
      * @return ファイル名として安全な文字列
      */
+    @NonNull
     private String sanitizeFileName(String value) {
         if (value == null || value.isEmpty()) {
             return "transcription";

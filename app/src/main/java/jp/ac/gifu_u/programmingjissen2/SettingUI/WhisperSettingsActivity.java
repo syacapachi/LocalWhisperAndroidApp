@@ -1,4 +1,4 @@
-package jp.ac.gifu_u.programmingjissen2.UI;
+package jp.ac.gifu_u.programmingjissen2.SettingUI;
 
 import android.os.Bundle;
 import android.text.InputType;
@@ -15,8 +15,11 @@ import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
+
+import org.jetbrains.annotations.Contract;
 
 import Utils.StringPool.StringBufferBuilderPool;
 
@@ -39,10 +42,11 @@ public class WhisperSettingsActivity extends AppCompatActivity {
     private EditText maxThreadsEdit;
     private Switch noContextSwitch;
     private Switch timestampSwitch;
+    private Switch useGpuSwitch;
     private TextView statsText;
 
     @Override
-    protected void onCreate(@Nullable Bundle savedInstanceState) {
+    protected void onCreate(final @Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         store = new WhisperSettingsStore(this);
         setTitle("Whisper 設定");
@@ -51,33 +55,44 @@ public class WhisperSettingsActivity extends AppCompatActivity {
         refreshStats();
     }
 
+    /**
+     * 設定画面のビューを生成します。
+     * @return 設定画面のビュー
+     */
+    @NonNull
     private View createContentView() {
         // スクロールできる画面を生成。
-        ScrollView scrollView = new ScrollView(this);
+        final ScrollView scrollView = new ScrollView(this);
         // 画面の中にレイアウトの元
-        LinearLayout root = new LinearLayout(this);
+        final LinearLayout root = new LinearLayout(this);
         // 縦に伸びる
         root.setOrientation(LinearLayout.VERTICAL);
-        int padding = dp(20);
+        // Padding設定
+        final int padding = dp(20);
         root.setPadding(padding, padding, padding, padding);
         scrollView.addView(root, new ScrollView.LayoutParams(
                 ScrollView.LayoutParams.MATCH_PARENT,
                 ScrollView.LayoutParams.WRAP_CONTENT
         ));
-
-        TextView title = titleText("Whisper 設定");
+        // タイトル
+        final TextView title = titleText("Whisper 設定");
         root.addView(title);
         root.addView(descriptionText("録音中の文字起こしに使うモデルと推論パラメータを変更します。"));
 
+        // モデル選択のラジオボタン
         root.addView(sectionText("モデル"));
         modelGroup = new RadioGroup(this);
+        // 縦に伸びる
         modelGroup.setOrientation(RadioGroup.VERTICAL);
+        // ボタンのIDを取得
         baseRadioId = View.generateViewId();
         smallRadioId = View.generateViewId();
+        // コンテンツにバインド
         modelGroup.addView(modelRadioButton(baseRadioId, WhisperModelOption.BASE));
         modelGroup.addView(modelRadioButton(smallRadioId, WhisperModelOption.SMALL));
         root.addView(modelGroup);
 
+        // 設定の入力フィールド
         root.addView(sectionText("推論"));
         languageSpinner = addLanguageSpinnerRow(root);
         windowEdit = addEditRow(root, "推論窓 ms", "例: 5000", InputType.TYPE_CLASS_NUMBER);
@@ -87,22 +102,25 @@ public class WhisperSettingsActivity extends AppCompatActivity {
 
         noContextSwitch = addSwitchRow(root, "前回文脈を使わない", "リアルタイム推論では安定しやすい設定です。", true);
         timestampSwitch = addSwitchRow(root, "Whisper 内部タイムスタンプ出力", "通常はオフのままで十分です。", false);
+        useGpuSwitch = addSwitchRow(root,"推論にGPUを使う","機種によっては対応していません",false);
 
+        // モデルの推論統計を出す
         root.addView(sectionText("処理時間"));
         statsText = descriptionText("");
         root.addView(statsText);
 
-        LinearLayout buttonRow = new LinearLayout(this);
+        // ボタンを表示
+        final LinearLayout buttonRow = new LinearLayout(this);
         buttonRow.setOrientation(LinearLayout.HORIZONTAL);
         buttonRow.setPadding(0, dp(16), 0, 0);
         root.addView(buttonRow);
 
-        Button saveButton = new Button(this);
+        final Button saveButton = new Button(this);
         saveButton.setText("保存");
         saveButton.setOnClickListener((view) -> saveSettings());
         buttonRow.addView(saveButton, weightedButtonParams());
 
-        Button resetStatsButton = new Button(this);
+        final Button resetStatsButton = new Button(this);
         resetStatsButton.setText("統計リセット");
         resetStatsButton.setOnClickListener((view) -> {
             store.resetStats();
@@ -111,7 +129,7 @@ public class WhisperSettingsActivity extends AppCompatActivity {
         });
         buttonRow.addView(resetStatsButton, weightedButtonParams());
 
-        Button closeButton = new Button(this);
+        final Button closeButton = new Button(this);
         closeButton.setText("閉じる");
         closeButton.setOnClickListener((view) -> finish());
         root.addView(closeButton, fullWidthParams());
@@ -119,8 +137,15 @@ public class WhisperSettingsActivity extends AppCompatActivity {
         return scrollView;
     }
 
-    private RadioButton modelRadioButton(int id, WhisperModelOption option) {
-        RadioButton button = new RadioButton(this);
+    /**
+     * モデル選択のラジオボタンを生成します。
+     * @param id ラジオボタンのID
+     * @param option モデルオプション
+     * @return モデル選択のラジオボタンコンテンツ
+     */
+    @NonNull
+    private RadioButton modelRadioButton(final int id, @NonNull final WhisperModelOption option) {
+        final RadioButton button = new RadioButton(this);
         button.setId(id);
         button.setText(StringBufferBuilderPool.Join(
                 "",
@@ -132,13 +157,19 @@ public class WhisperSettingsActivity extends AppCompatActivity {
         return button;
     }
 
-    private Spinner addLanguageSpinnerRow(LinearLayout root) {
+    /**
+     * 言語選択のドロップダウンを生成します。
+     * @param root 親のレイアウト
+     * @return 言語選択のドロップダウンコンテンツ
+     */
+    @NonNull
+    private Spinner addLanguageSpinnerRow(@NonNull final LinearLayout root) {
         root.addView(labelText("言語"));
 
         // ドロップダウン
-        Spinner spinner = new Spinner(this);
+        final Spinner spinner = new Spinner(this);
         // 選択肢を生成。
-        ArrayAdapter<WhisperLanguageOption> adapter = new ArrayAdapter<>(
+        final ArrayAdapter<WhisperLanguageOption> adapter = new ArrayAdapter<>(
                 this,
                 android.R.layout.simple_spinner_item,
                 WhisperLanguageOption.values()
@@ -157,8 +188,14 @@ public class WhisperSettingsActivity extends AppCompatActivity {
      * @param inputType 入力タイプ
      * @return 編集できるテキストフィールドコンテンツ
      */
-    private EditText addEditRow(LinearLayout root, String label, String hint, int inputType) {
-        TextView labelView = labelText(label);
+    @NonNull
+    private EditText addEditRow(
+            @NonNull final LinearLayout root,
+            final String label,
+            final String hint,
+            final int inputType
+    ) {
+        final TextView labelView = labelText(label);
         root.addView(labelView);
 
         EditText editText = new EditText(this);
@@ -169,13 +206,14 @@ public class WhisperSettingsActivity extends AppCompatActivity {
         return editText;
     }
 
+    @NonNull
     private Switch addSwitchRow(
-            LinearLayout root,
-            String label,
-            String description,
+            @NonNull final LinearLayout root,
+            final String label,
+            final String description,
             boolean checked
     ) {
-        Switch switchView = new Switch(this);
+        final Switch switchView = new Switch(this);
         switchView.setText(label);
         switchView.setChecked(checked);
         switchView.setMinHeight(dp(48));
@@ -184,7 +222,11 @@ public class WhisperSettingsActivity extends AppCompatActivity {
         return switchView;
     }
 
-    private void bindSettings(WhisperSettings settings) {
+    /**
+     * Whisper 設定を画面に反映します。
+     * @param settings 表示する設定
+     */
+    private void bindSettings(@NonNull final WhisperSettings settings) {
         modelGroup.check(settings.model() == WhisperModelOption.SMALL ? smallRadioId : baseRadioId);
         languageSpinner.setSelection(WhisperLanguageOption.fromValue(settings.language()).ordinal());
         windowEdit.setText(String.valueOf(settings.windowMs()));
@@ -193,13 +235,18 @@ public class WhisperSettingsActivity extends AppCompatActivity {
         maxThreadsEdit.setText(String.valueOf(settings.maxThreads()));
         noContextSwitch.setChecked(settings.noContext());
         timestampSwitch.setChecked(settings.printTimestamps());
+        useGpuSwitch.setChecked(settings.useGpu());
     }
 
+    /**
+     * Whisper 設定を保存します。
+     * 内部でUIの更新も行います。
+     */
     private void saveSettings() {
-        WhisperModelOption model = modelGroup.getCheckedRadioButtonId() == smallRadioId
+        final WhisperModelOption model = modelGroup.getCheckedRadioButtonId() == smallRadioId
                 ? WhisperModelOption.SMALL
                 : WhisperModelOption.BASE;
-        WhisperLanguageOption language = (WhisperLanguageOption) languageSpinner.getSelectedItem();
+        final WhisperLanguageOption language = (WhisperLanguageOption) languageSpinner.getSelectedItem();
 
         WhisperSettings settings = new WhisperSettings(
                 model,
@@ -209,7 +256,8 @@ public class WhisperSettingsActivity extends AppCompatActivity {
                 parseInt(minFinalEdit, WhisperSettings.DEFAULT_MIN_FINAL_MS),
                 parseInt(maxThreadsEdit, WhisperSettings.DEFAULT_MAX_THREADS),
                 noContextSwitch.isChecked(),
-                timestampSwitch.isChecked()
+                timestampSwitch.isChecked(),
+                useGpuSwitch.isChecked()
         );
         store.save(settings);
         bindSettings(settings);
@@ -217,9 +265,12 @@ public class WhisperSettingsActivity extends AppCompatActivity {
         Toast.makeText(this, "Whisper 設定を保存しました", Toast.LENGTH_SHORT).show();
     }
 
+    /**
+     * WhisperSettingStoreから統計情報を取得し、テキストに表示します。
+     */
     private void refreshStats() {
-        WhisperInferenceStats baseStats = store.loadStats(WhisperModelOption.BASE);
-        WhisperInferenceStats smallStats = store.loadStats(WhisperModelOption.SMALL);
+        final WhisperInferenceStats baseStats = store.loadStats(WhisperModelOption.BASE);
+        final WhisperInferenceStats smallStats = store.loadStats(WhisperModelOption.SMALL);
         statsText.setText(StringBufferBuilderPool.Join(
                 "\n",
                 formatStats(WhisperModelOption.BASE, baseStats),
@@ -228,7 +279,14 @@ public class WhisperSettingsActivity extends AppCompatActivity {
         ));
     }
 
-    private String formatStats(WhisperModelOption model, WhisperInferenceStats stats) {
+    /**
+     * 推論時間統計をフォーマットします。
+     * @param model 推論モデル
+     * @param stats 統計情報
+     * @return フォーマットした文字列
+     */
+    @NonNull
+    private String formatStats(final WhisperModelOption model, @NonNull final WhisperInferenceStats stats) {
         if (!stats.hasSamples()) {
             return StringBufferBuilderPool.Join("", model.displayName(), ": まだ計測なし");
         }
@@ -250,7 +308,13 @@ public class WhisperSettingsActivity extends AppCompatActivity {
         );
     }
 
-    private int parseInt(EditText editText, int fallback) {
+    /**
+     * テキストから数字に変換します。
+     * @param editText テキストフィールド
+     * @param fallback 変換できない場合のフォールバック値
+     * @return 変換した値
+     */
+    private int parseInt(@NonNull final EditText editText, final int fallback) {
         try {
             return Integer.parseInt(editText.getText().toString().trim());
         } catch (NumberFormatException e) {
@@ -258,8 +322,14 @@ public class WhisperSettingsActivity extends AppCompatActivity {
         }
     }
 
-    private TextView titleText(String text) {
-        TextView view = new TextView(this);
+    /**
+     * タイトルを表示
+     * @param text タイトルの文字
+     * @return 表示した文字のコンテンツ
+     */
+    @NonNull
+    private TextView titleText(final String text) {
+        final TextView view = new TextView(this);
         view.setText(text);
         view.setTextSize(24);
         view.setPadding(0, 0, 0, dp(8));
@@ -267,27 +337,40 @@ public class WhisperSettingsActivity extends AppCompatActivity {
     }
 
     /**
-     * 文字を表示
+     * 区切られた文字を表示
      * @param text 表示する文字列
      * @return 文字を表示したコンテンツ
      */
-    private TextView sectionText(String text) {
-        TextView view = new TextView(this);
+    @NonNull
+    private TextView sectionText(final String text) {
+        final TextView view = new TextView(this);
         view.setText(text);
         view.setTextSize(18);
         view.setPadding(0, dp(18), 0, dp(6));
         return view;
     }
 
-    private TextView labelText(String text) {
-        TextView view = new TextView(this);
+    /**
+     * ラベルを表示
+     * @param text 表示するラベルテキスト
+     * @return テキストを表示したコンテンツ
+     */
+    @NonNull
+    private TextView labelText(final String text) {
+        final TextView view = new TextView(this);
         view.setText(text);
         view.setPadding(0, dp(10), 0, 0);
         return view;
     }
 
-    private TextView descriptionText(String text) {
-        TextView view = new TextView(this);
+    /**
+     * 説明テキストを表示
+     * @param text 表示するテキスト
+     * @return 表示したコンテンツ
+     */
+    @NonNull
+    private TextView descriptionText(final String text) {
+        final TextView view = new TextView(this);
         view.setText(text);
         view.setTextSize(14);
         view.setPadding(0, 0, 0, dp(8));
@@ -298,6 +381,8 @@ public class WhisperSettingsActivity extends AppCompatActivity {
      * 全体の幅を取る
      * @return 全体の幅を取る
      */
+    @NonNull
+    @Contract(" -> new")
     private LinearLayout.LayoutParams fullWidthParams() {
         return new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -306,11 +391,12 @@ public class WhisperSettingsActivity extends AppCompatActivity {
     }
 
     /**
-     * ボタンの
-     * @return
+     * ボタンの幅を設定します。
+     * @return ボタンの幅を設定したLayoutParams
      */
+    @NonNull
     private LinearLayout.LayoutParams weightedButtonParams() {
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+        final LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 0,
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 1f
@@ -324,7 +410,7 @@ public class WhisperSettingsActivity extends AppCompatActivity {
      * @param value 深さ
      * @return 指定した深さの dp
      */
-    private int dp(int value) {
+    private int dp(final int value) {
         return (int) (value * getResources().getDisplayMetrics().density + 0.5f);
     }
 }

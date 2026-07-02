@@ -1,6 +1,7 @@
 package Whisper;
 
-import Utils.StringPool.StringBufferBuilderPool;
+import Utils.ScopableUtility;
+import Utils.StringPool.PooledStringBuilder;
 
 /**
  * Whisper.cpp を Java/Kotlin 側から呼び出すための JNI ブリッジです。
@@ -80,7 +81,7 @@ public class WhisperBridge {
      * @param pcmData 16kHz・モノラル・float PCM
      * @return 文字起こし結果。失敗時は空文字またはエラーメッセージ
      */
-    public static String transcribe(String modelPath, float[] pcmData) {
+    public static String transcribe(final String modelPath, final float[] pcmData) {
         long context = initFromFile(modelPath, defaultContextParams());
         if (context == 0) {
             return "model load failed";
@@ -712,8 +713,8 @@ public class WhisperBridge {
      * @return セグメント配列
      */
     public static Segment[] getSegments(long context) {
-        int count = fullNSegments(context);
-        Segment[] segments = new Segment[count];
+        final int count = fullNSegments(context);
+        final Segment[] segments = new Segment[count];
 
         for (int i = 0; i < count; i++) {
             segments[i] = collectSegment(context, i);
@@ -732,8 +733,8 @@ public class WhisperBridge {
      * @return セグメント配列
      */
     public static Segment[] getSegmentsFromState(long state) {
-        int count = fullNSegmentsFromState(state);
-        Segment[] segments = new Segment[count];
+        final int count = fullNSegmentsFromState(state);
+        final Segment[] segments = new Segment[count];
 
         for (int i = 0; i < count; i++) {
             segments[i] = collectSegmentFromState(state, i);
@@ -749,14 +750,14 @@ public class WhisperBridge {
      * @return 文字起こし結果全体
      */
     public static String getText(long context) {
-        int count = fullNSegments(context);
-        String[] texts = new String[count];
+        final int count = fullNSegments(context);
+        try(PooledStringBuilder sb = ScopableUtility.getBuilder()) {
 
-        for (int i = 0; i < count; i++) {
-            texts[i] = fullSegmentText(context, i);
+            for (int i = 0; i < count; i++) {
+                sb.append(fullSegmentText(context, i));
+            }
+            return sb.toString();
         }
-
-        return StringBufferBuilderPool.Join("", (Object[]) texts);
     }
 
     /**
@@ -766,7 +767,7 @@ public class WhisperBridge {
      * @return モデル情報
      */
     public static ModelInfo getModelInfo(long context) {
-        ModelInfo info = new ModelInfo();
+        final ModelInfo info = new ModelInfo();
         info.nLen = nLen(context);
         info.nVocab = nVocab(context);
         info.nTextCtx = nTextCtx(context);
@@ -792,7 +793,7 @@ public class WhisperBridge {
      * context の segment API から Java 用 {@link Segment} を組み立てます。
      */
     private static Segment collectSegment(long context, int segmentIndex) {
-        Segment segment = new Segment();
+        final Segment segment = new Segment();
         segment.index = segmentIndex;
         segment.t0 = fullSegmentT0(context, segmentIndex);
         segment.t1 = fullSegmentT1(context, segmentIndex);
@@ -800,7 +801,7 @@ public class WhisperBridge {
         segment.speakerTurnNext = fullSegmentSpeakerTurnNext(context, segmentIndex);
         segment.noSpeechProbability = fullSegmentNoSpeechProbability(context, segmentIndex);
 
-        int tokenCount = fullNTokens(context, segmentIndex);
+        final int tokenCount = fullNTokens(context, segmentIndex);
         segment.tokens = new TokenData[tokenCount];
 
         for (int i = 0; i < tokenCount; i++) {
@@ -815,7 +816,7 @@ public class WhisperBridge {
      * state の segment API から Java 用 {@link Segment} を組み立てます。
      */
     private static Segment collectSegmentFromState(long state, int segmentIndex) {
-        Segment segment = new Segment();
+        final Segment segment = new Segment();
         segment.index = segmentIndex;
         segment.t0 = fullSegmentT0FromState(state, segmentIndex);
         segment.t1 = fullSegmentT1FromState(state, segmentIndex);
@@ -823,7 +824,7 @@ public class WhisperBridge {
         segment.speakerTurnNext = fullSegmentSpeakerTurnNextFromState(state, segmentIndex);
         segment.noSpeechProbability = fullSegmentNoSpeechProbabilityFromState(state, segmentIndex);
 
-        int tokenCount = fullNTokensFromState(state, segmentIndex);
+        final int tokenCount = fullNTokensFromState(state, segmentIndex);
         segment.tokens = new TokenData[tokenCount];
 
         for (int i = 0; i < tokenCount; i++) {

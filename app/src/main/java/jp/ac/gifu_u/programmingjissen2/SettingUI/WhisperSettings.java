@@ -1,7 +1,11 @@
-package jp.ac.gifu_u.programmingjissen2.UI;
+package jp.ac.gifu_u.programmingjissen2.SettingUI;
+
+import androidx.annotation.NonNull;
+
+import org.jetbrains.annotations.Contract;
 
 /** Whisper 推論に関係するユーザー設定です。 */
-public class WhisperSettings {
+public final class WhisperSettings {
     public static final WhisperModelOption DEFAULT_MODEL = WhisperModelOption.BASE;
     public static final String DEFAULT_LANGUAGE = WhisperLanguageOption.JAPANESE.value();
     public static final int DEFAULT_WINDOW_MS = 5000;
@@ -10,7 +14,7 @@ public class WhisperSettings {
     public static final int DEFAULT_MAX_THREADS = 4;
     public static final boolean DEFAULT_NO_CONTEXT = true;
     public static final boolean DEFAULT_PRINT_TIMESTAMPS = false;
-
+    public static final boolean DEFAULT_USE_GPU = false;
     private final WhisperModelOption model;
     private final String language;
     private final int windowMs;
@@ -19,16 +23,18 @@ public class WhisperSettings {
     private final int maxThreads;
     private final boolean noContext;
     private final boolean printTimestamps;
+    private final boolean useGpu;
 
     public WhisperSettings(
-            WhisperModelOption model,
-            String language,
-            int windowMs,
-            int overlapMs,
-            int minFinalMs,
-            int maxThreads,
-            boolean noContext,
-            boolean printTimestamps
+            final WhisperModelOption model,
+            final String language,
+            final int windowMs,
+            final int overlapMs,
+            final int minFinalMs,
+            final int maxThreads,
+            final boolean noContext,
+            final boolean printTimestamps,
+            final boolean useGpu
     ) {
         this.model = model == null ? DEFAULT_MODEL : model;
         this.language = normalizeLanguage(language);
@@ -38,8 +44,11 @@ public class WhisperSettings {
         this.maxThreads = clamp(maxThreads, 1, 8);
         this.noContext = noContext;
         this.printTimestamps = printTimestamps;
+        this.useGpu = useGpu;
     }
 
+    @NonNull
+    @Contract(" -> new")
     public static WhisperSettings defaultSettings() {
         return new WhisperSettings(
                 DEFAULT_MODEL,
@@ -49,11 +58,14 @@ public class WhisperSettings {
                 DEFAULT_MIN_FINAL_MS,
                 DEFAULT_MAX_THREADS,
                 DEFAULT_NO_CONTEXT,
-                DEFAULT_PRINT_TIMESTAMPS
+                DEFAULT_PRINT_TIMESTAMPS,
+                DEFAULT_USE_GPU
         );
     }
 
-    public WhisperSettings withModel(WhisperModelOption model) {
+    @NonNull
+    @Contract("_ -> new")
+    public WhisperSettings withModel(final WhisperModelOption model) {
         return new WhisperSettings(
                 model,
                 language,
@@ -62,7 +74,8 @@ public class WhisperSettings {
                 minFinalMs,
                 maxThreads,
                 noContext,
-                printTimestamps
+                printTimestamps,
+                useGpu
         );
     }
 
@@ -97,12 +110,13 @@ public class WhisperSettings {
     public boolean printTimestamps() {
         return printTimestamps;
     }
+    public boolean useGpu() {return useGpu;}
 
-    private static String normalizeLanguage(String value) {
+    private static String normalizeLanguage(final String value) {
         return WhisperLanguageOption.fromValue(value).value();
     }
 
-    private static int clamp(int value, int min, int max) {
+    private static int clamp(final int value, final int min, final int max) {
         return Math.max(min, Math.min(max, value));
     }
 }

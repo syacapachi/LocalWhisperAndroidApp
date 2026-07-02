@@ -1,12 +1,16 @@
-package jp.ac.gifu_u.programmingjissen2.UI;
+package jp.ac.gifu_u.programmingjissen2.SettingUI;
 
 import android.content.Context;
 import android.content.SharedPreferences;
 
+import androidx.annotation.NonNull;
+
+import org.jetbrains.annotations.Contract;
+
 import Utils.StringPool.StringBufferBuilderPool;
 
 /** Whisper 設定とモデル別推論時間統計の保存を担当します。 */
-public class WhisperSettingsStore {
+public final class WhisperSettingsStore {
     private static final String PREF_NAME = "whisper_settings";
 
     private static final String KEY_MODEL = "model";
@@ -17,7 +21,7 @@ public class WhisperSettingsStore {
     private static final String KEY_MAX_THREADS = "max_threads";
     private static final String KEY_NO_CONTEXT = "no_context";
     private static final String KEY_PRINT_TIMESTAMPS = "print_timestamps";
-
+    private static final String KEY_USE_GPU = "use_gpu";
     private static final String STATS_COUNT = "stats_count";
     private static final String STATS_TOTAL_MS = "stats_total_ms";
     private static final String STATS_LAST_MS = "stats_last_ms";
@@ -26,13 +30,15 @@ public class WhisperSettingsStore {
 
     private final SharedPreferences preferences;
 
-    public WhisperSettingsStore(Context context) {
+    public WhisperSettingsStore(@NonNull final Context context) {
         preferences = context.getApplicationContext().getSharedPreferences(
                 PREF_NAME,
                 Context.MODE_PRIVATE
         );
     }
 
+    @NonNull
+    @Contract(" -> new")
     public WhisperSettings load() {
         return new WhisperSettings(
                 WhisperModelOption.fromKey(preferences.getString(
@@ -48,12 +54,13 @@ public class WhisperSettingsStore {
                 preferences.getBoolean(
                         KEY_PRINT_TIMESTAMPS,
                         WhisperSettings.DEFAULT_PRINT_TIMESTAMPS
-                )
+                ),
+                preferences.getBoolean(KEY_USE_GPU,WhisperSettings.DEFAULT_USE_GPU)
         );
     }
 
-    public void save(WhisperSettings settings) {
-        WhisperSettings value = settings == null ? WhisperSettings.defaultSettings() : settings;
+    public void save(final WhisperSettings settings) {
+        final WhisperSettings value = settings == null ? WhisperSettings.defaultSettings() : settings;
         preferences.edit()
                 .putString(KEY_MODEL, value.model().key())
                 .putString(KEY_LANGUAGE, value.language())
@@ -63,17 +70,19 @@ public class WhisperSettingsStore {
                 .putInt(KEY_MAX_THREADS, value.maxThreads())
                 .putBoolean(KEY_NO_CONTEXT, value.noContext())
                 .putBoolean(KEY_PRINT_TIMESTAMPS, value.printTimestamps())
+                .putBoolean(KEY_USE_GPU, value.useGpu())
                 .apply();
     }
 
-    public void saveModel(WhisperModelOption model) {
+    public void saveModel(final WhisperModelOption model) {
         save(load().withModel(model));
     }
 
-    public WhisperInferenceStats loadStats(WhisperModelOption model) {
-        String key = model == null ? WhisperSettings.DEFAULT_MODEL.key() : model.key();
-        long count = preferences.getLong(statsKey(key, STATS_COUNT), 0);
-        long minMs = preferences.getLong(statsKey(key, STATS_MIN_MS), 0);
+    @NonNull
+    public WhisperInferenceStats loadStats(final WhisperModelOption model) {
+        final String key = model == null ? WhisperSettings.DEFAULT_MODEL.key() : model.key();
+        final long count = preferences.getLong(statsKey(key, STATS_COUNT), 0);
+        final long minMs = preferences.getLong(statsKey(key, STATS_MIN_MS), 0);
         return new WhisperInferenceStats(
                 key,
                 count,
@@ -84,19 +93,19 @@ public class WhisperSettingsStore {
         );
     }
 
-    public void recordInference(String modelKey, long processingTimeMs) {
+    public void recordInference(final String modelKey, final long processingTimeMs) {
         if (modelKey == null || modelKey.isEmpty() || processingTimeMs < 0) {
             return;
         }
 
-        WhisperModelOption model = WhisperModelOption.fromKey(modelKey);
-        WhisperInferenceStats stats = loadStats(model);
-        long count = stats.count() + 1;
-        long totalMs = stats.totalMs() + processingTimeMs;
-        long minMs = stats.hasSamples()
+        final WhisperModelOption model = WhisperModelOption.fromKey(modelKey);
+        final WhisperInferenceStats stats = loadStats(model);
+        final long count = stats.count() + 1;
+        final long totalMs = stats.totalMs() + processingTimeMs;
+        final long minMs = stats.hasSamples()
                 ? Math.min(stats.minMs(), processingTimeMs)
                 : processingTimeMs;
-        long maxMs = Math.max(stats.maxMs(), processingTimeMs);
+        final long maxMs = Math.max(stats.maxMs(), processingTimeMs);
 
         preferences.edit()
                 .putLong(statsKey(model.key(), STATS_COUNT), count)
@@ -108,7 +117,7 @@ public class WhisperSettingsStore {
     }
 
     public void resetStats() {
-        SharedPreferences.Editor editor = preferences.edit();
+        final SharedPreferences.Editor editor = preferences.edit();
         for (WhisperModelOption model : WhisperModelOption.values()) {
             editor.remove(statsKey(model.key(), STATS_COUNT));
             editor.remove(statsKey(model.key(), STATS_TOTAL_MS));
@@ -119,7 +128,8 @@ public class WhisperSettingsStore {
         editor.apply();
     }
 
-    private String statsKey(String modelKey, String suffix) {
+    @NonNull
+    private String statsKey(final String modelKey, final String suffix) {
         return StringBufferBuilderPool.Join("_", modelKey, suffix);
     }
 }

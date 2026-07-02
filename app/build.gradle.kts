@@ -32,9 +32,8 @@ android {
                 // extra2 -march=armv8.6-a+i8mm+fp16+dotprod : armv8.6以降CPUまで制限し、i8mm(演算を16x16の行列化＋並列化)
                 cppFlags += "-std=c++17 -O3 -ffast-math -fno-finite-math-only -fomit-frame-pointer -fvectorize -fslp-vectorize"
 
-
-                arguments
-                    "-DCMAKE_BUILD_TYPE=Release"
+                // リリースビルド時を設定
+                arguments += "-DCMAKE_BUILD_TYPE=Release"
             }
         }
 

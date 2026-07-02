@@ -1,5 +1,8 @@
-package jp.ac.gifu_u.programmingjissen2;
+package jp.ac.gifu_u.programmingjissen2.Transscripts;
 
+import androidx.annotation.NonNull;
+
+import org.jetbrains.annotations.Contract;
 import org.json.JSONException;
 import org.json.JSONObject;
 
@@ -65,7 +68,9 @@ public class TranscriptionJsonItem {
      * @param event Whisper 推論結果イベント
      * @return JSON 保存用の 1 件分データ
      */
-    public static TranscriptionJsonItem fromEvent(WhisperTranscriptionEvent event) {
+    @NonNull
+    @Contract("_ -> new")
+    public static TranscriptionJsonItem fromEvent(@NonNull final WhisperTranscriptionEvent event) {
         return new TranscriptionJsonItem(
                 event.sequence(),
                 event.startMs(),
@@ -85,7 +90,7 @@ public class TranscriptionJsonItem {
      * @throws JSONException JSON への変換に失敗した場合
      */
     public JSONObject toJsonObject() throws JSONException {
-        JSONObject object = new JSONObject();
+        final JSONObject object = new JSONObject();
         object.put("sequence", sequence);
         object.put("recordingTimeMs", recordingTimeMs);
         object.put("durationMs", durationMs);

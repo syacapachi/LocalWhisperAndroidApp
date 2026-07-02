@@ -12,10 +12,12 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.FileProvider;
 
+import org.jetbrains.annotations.Contract;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -32,6 +34,7 @@ import java.util.Date;
 import java.util.Locale;
 
 import Utils.StringPool.StringBufferBuilderPool;
+import jp.ac.gifu_u.programmingjissen2.Transscripts.TranscriptionJsonWriter;
 
 /** 保存済みの文字起こし JSON を一覧表示し、内容確認と共有を行う画面です。 */
 public class TranscriptionListActivity extends AppCompatActivity {
@@ -60,24 +63,25 @@ public class TranscriptionListActivity extends AppCompatActivity {
     }
 
     /** 履歴画面の View 階層を作成します。 */
+    @NonNull
     private View createContentView() {
-        ScrollView scrollView = new ScrollView(this);
-        LinearLayout root = new LinearLayout(this);
+        final ScrollView scrollView = new ScrollView(this);
+        final LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        int padding = dp(20);
+        final int padding = dp(20);
         root.setPadding(padding, padding, padding, padding);
         scrollView.addView(root, new ScrollView.LayoutParams(
                 ScrollView.LayoutParams.MATCH_PARENT,
                 ScrollView.LayoutParams.WRAP_CONTENT
         ));
 
-        TextView title = titleText("文字起こし履歴");
+        final TextView title = titleText("文字起こし履歴");
         root.addView(title);
 
         statusText = descriptionText("");
         root.addView(statusText);
 
-        LinearLayout latestRow = new LinearLayout(this);
+        final LinearLayout latestRow = new LinearLayout(this);
         latestRow.setOrientation(LinearLayout.HORIZONTAL);
         root.addView(latestRow, fullWidthParams());
 
@@ -91,7 +95,7 @@ public class TranscriptionListActivity extends AppCompatActivity {
         latestShareButton.setOnClickListener((view) -> shareLatestFile());
         latestRow.addView(latestShareButton, weightedButtonParams());
 
-        Button refreshButton = new Button(this);
+        final Button refreshButton = new Button(this);
         refreshButton.setText("更新");
         refreshButton.setOnClickListener((view) -> refreshFileList());
         root.addView(refreshButton, fullWidthParams());
@@ -107,7 +111,7 @@ public class TranscriptionListActivity extends AppCompatActivity {
         previewText.setTypeface(Typeface.MONOSPACE);
         root.addView(previewText, fullWidthParams());
 
-        Button closeButton = new Button(this);
+        final Button closeButton = new Button(this);
         closeButton.setText("閉じる");
         closeButton.setOnClickListener((view) -> finish());
         root.addView(closeButton, fullWidthParams());
@@ -142,6 +146,7 @@ public class TranscriptionListActivity extends AppCompatActivity {
     }
 
     /** 保存済み JSON ファイルを取得し、更新日時の新しい順に並べます。 */
+    @NonNull
     private File[] listTranscriptionFiles() {
         File directory = new File(getFilesDir(), TranscriptionJsonWriter.DIRECTORY_NAME);
         File[] files = directory.listFiles((dir, name) -> name.toLowerCase(Locale.ROOT).endsWith(".json"));
@@ -154,6 +159,7 @@ public class TranscriptionListActivity extends AppCompatActivity {
     }
 
     /** 1 ファイル分の「開く」「共有」行を作成します。 */
+    @NonNull
     private View createFileRow(File file) {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
@@ -206,7 +212,7 @@ public class TranscriptionListActivity extends AppCompatActivity {
     }
 
     /** 指定された JSON ファイルを FileProvider の Uri として共有します。 */
-    private void shareFile(File file) {
+    private void shareFile(final File file) {
         Uri uri = FileProvider.getUriForFile(
                 this,
                 StringBufferBuilderPool.Join("", getPackageName(), ".fileprovider"),
@@ -222,6 +228,7 @@ public class TranscriptionListActivity extends AppCompatActivity {
     }
 
     /** UTF-8 のテキストファイルを読み込みます。 */
+    @NonNull
     private String readTextFile(File file) throws IOException {
         ByteArrayOutputStream output = new ByteArrayOutputStream();
         byte[] buffer = new byte[4096];
@@ -235,7 +242,7 @@ public class TranscriptionListActivity extends AppCompatActivity {
     }
 
     /** JSON 文字列をインデント付きで表示できる形へ整えます。 */
-    private String prettyJson(String rawJson) {
+    private String prettyJson(@NonNull final String rawJson) {
         String trimmed = rawJson.trim();
         try {
             if (trimmed.startsWith("[")) {
@@ -248,7 +255,8 @@ public class TranscriptionListActivity extends AppCompatActivity {
     }
 
     /** ファイル名、更新日時、サイズを一覧用の文字列にします。 */
-    private String formatFileLabel(File file) {
+    @NonNull
+    private String formatFileLabel(@NonNull File file) {
         return StringBufferBuilderPool.Join(
                 "",
                 file.getName(),
@@ -260,7 +268,8 @@ public class TranscriptionListActivity extends AppCompatActivity {
         );
     }
 
-    private TextView titleText(String text) {
+    @NonNull
+    private TextView titleText(final String text) {
         TextView view = new TextView(this);
         view.setText(text);
         view.setTextSize(24);
@@ -268,7 +277,8 @@ public class TranscriptionListActivity extends AppCompatActivity {
         return view;
     }
 
-    private TextView sectionText(String text) {
+    @NonNull
+    private TextView sectionText(final String text) {
         TextView view = new TextView(this);
         view.setText(text);
         view.setTextSize(18);
@@ -276,7 +286,8 @@ public class TranscriptionListActivity extends AppCompatActivity {
         return view;
     }
 
-    private TextView descriptionText(String text) {
+    @NonNull
+    private TextView descriptionText(final String text) {
         TextView view = new TextView(this);
         view.setText(text);
         view.setTextSize(14);
@@ -284,6 +295,8 @@ public class TranscriptionListActivity extends AppCompatActivity {
         return view;
     }
 
+    @NonNull
+    @Contract(" -> new")
     private LinearLayout.LayoutParams fullWidthParams() {
         return new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -291,6 +304,7 @@ public class TranscriptionListActivity extends AppCompatActivity {
         );
     }
 
+    @NonNull
     private LinearLayout.LayoutParams weightedButtonParams() {
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 0,
@@ -301,6 +315,8 @@ public class TranscriptionListActivity extends AppCompatActivity {
         return params;
     }
 
+    @NonNull
+    @Contract(" -> new")
     private LinearLayout.LayoutParams smallButtonParams() {
         return new LinearLayout.LayoutParams(
                 dp(96),

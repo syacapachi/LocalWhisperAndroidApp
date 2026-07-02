@@ -2,6 +2,8 @@ package events.Threading;
 
 import android.util.Log;
 
+import androidx.annotation.NonNull;
+
 import java.util.Objects;
 import java.util.function.Consumer;
 
@@ -27,8 +29,8 @@ public class ThreadStopAwaiter extends EventAwaiter<ThreadStoppedEvent>{
      * @param callback イベント受信時の処理
      */
     public void initialize(
-            String threadId,
-            Consumer<ThreadStoppedEvent> callback
+            final String threadId,
+            final Consumer<ThreadStoppedEvent> callback
     ) {
         this.threadId = threadId;
         this.callback = callback;
@@ -38,7 +40,7 @@ public class ThreadStopAwaiter extends EventAwaiter<ThreadStoppedEvent>{
      * 受信イベントが待ち受け対象の threadId か判定します。
      */
     @Override
-    protected boolean match(ThreadStoppedEvent event) {
+    protected boolean match(@NonNull final ThreadStoppedEvent event) {
         return Objects.equals(threadId, event.threadId());
     }
 
@@ -46,7 +48,7 @@ public class ThreadStopAwaiter extends EventAwaiter<ThreadStoppedEvent>{
      * 対象スレッドの停止イベントを callback へ渡します。
      */
     @Override
-    protected void onReceive(ThreadStoppedEvent event) {
+    protected void onReceive(final ThreadStoppedEvent event) {
         if (callback == null) {
             return;
         }

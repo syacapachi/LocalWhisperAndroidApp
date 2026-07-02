@@ -2,6 +2,8 @@ package events;
 
 import android.util.Log;
 
+import androidx.annotation.NonNull;
+
 import java.util.Map;
 import java.util.List;
 import java.util.Objects;
@@ -30,7 +32,7 @@ import Utils.StringPool.StringBufferBuilderPool;
      * @exception NullPointerException eventがnullの場合投げられます。
      * @apiNote オーバーロード情報invokeSuperClass = true;(基底クラスの購読者にも通知される)
      */
-    public static <T> void publish(T event){
+    public static <T> void publish(@NonNull final T event){
         publish(event,true);
     }
     /**
@@ -40,7 +42,7 @@ import Utils.StringPool.StringBufferBuilderPool;
      * @param <T> 発行するイベントクラス。イベントごとに作ったいほうがいいです。not null
      * @exception NullPointerException eventがnullの場合投げられます。
      */
-    public static <T> void publish(T event, boolean invokeSuperClass){
+    public static <T> void publish(@NonNull final T event, final boolean invokeSuperClass){
         Objects.requireNonNull(event);
         Class<?> eventClass = event.getClass();
         if(invokeSuperClass) {
@@ -107,7 +109,7 @@ import Utils.StringPool.StringBufferBuilderPool;
      * また、C#と違い、Javaでは this::funcを入れた場合、Consumer<T>のインスタンスが新規で作られるので
      * final Consumer<T> func = this::func;のように持っておかないと購読解除できません。
      */
-    public static <T> void subscribe(Class<T> type, Consumer<T> action){
+    public static <T> void subscribe(final Class<T> type, final Consumer<T> action){
         //nullだったらNullPointerExceptionを投げる
         Objects.requireNonNull(action);
         Objects.requireNonNull(type);
@@ -129,7 +131,7 @@ import Utils.StringPool.StringBufferBuilderPool;
      * また、C#と違い、Javaでは this::funcを入れた場合、Consumer<T>のインスタンスが新規で作られるので
      * final Consumer<T> func = this::func;のように持っておかないと購読解除できません。
      */
-    public static <T> void unsubscribe(Class<T> type, Consumer<T> action) {
+    public static <T> void unsubscribe(final Class<T> type, final Consumer<T> action) {
         Objects.requireNonNull(type);
         Objects.requireNonNull(action);
         List<Consumer<?>> list = events.get(type);

@@ -1,10 +1,19 @@
 package Utils.Pool;
 
+import android.nfc.Tag;
+import android.util.Log;
+
+import androidx.annotation.NonNull;
+
+import org.jetbrains.annotations.NotNull;
+
 import java.util.ArrayDeque;
 import java.util.Objects;
 import java.util.Queue;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
+
+import Utils.StringPool.StringBufferBuilderPool;
 
 /**
  * オブジェクトをキューを使って管理します。
@@ -25,7 +34,7 @@ public class ObjectPool<T> implements IPool,AutoCloseable {
     /**
      * @param onCreate 生成関数 Class::newを推奨
      */
-    public ObjectPool(Supplier<T> onCreate) {
+    public ObjectPool(final Supplier<T> onCreate) {
         this(onCreate, null, null, null, DEFAULTCAPACITY, MAXCAPACITY);
     }
 
@@ -34,7 +43,7 @@ public class ObjectPool<T> implements IPool,AutoCloseable {
      * @param defaultCapacity 初期化時に生成しておく数 重いクラス、使いまわしが多い場合は作ることを推奨
      * @param maxCapacity     オブジェクトプールで管理する上限。超えた分は破棄されます。
      */
-    public ObjectPool(Supplier<T> onCreate, int defaultCapacity, int maxCapacity) {
+    public ObjectPool(final Supplier<T> onCreate, final int defaultCapacity, final int maxCapacity) {
         this(onCreate, null, null, null, defaultCapacity, maxCapacity);
     }
 
@@ -46,7 +55,7 @@ public class ObjectPool<T> implements IPool,AutoCloseable {
      * @param defaultCapacity 初期化時に生成しておく数 重いクラス、使いまわしが多い場合は作ることを推奨
      * @param maxCapacity     オブジェクトプールで管理する上限。超えた分は破棄されます。
      */
-    public ObjectPool(Supplier<T> onCreate, Consumer<T> onGet, Consumer<T> onRelease, Consumer<T> onDelete, int defaultCapacity, int maxCapacity) {
+    public ObjectPool(final Supplier<T> onCreate,final  Consumer<T> onGet,final Consumer<T> onRelease,final Consumer<T> onDelete,final int defaultCapacity,final int maxCapacity) {
         objectQueue = new ArrayDeque<>(maxCapacity);//最大容量確保
         this.onCreate = onCreate;
         this.onGet = onGet;
@@ -68,6 +77,7 @@ public class ObjectPool<T> implements IPool,AutoCloseable {
      *
      * @return 登録された作成関数によって作られたTインスタンス。
      */
+    @NonNull
     public T getOrCreate() {
         T instance;
         if (!objectQueue.isEmpty()) {
@@ -79,6 +89,7 @@ public class ObjectPool<T> implements IPool,AutoCloseable {
             onGet.accept(instance);
         }
         activeCount++;
+        assert instance != null;
         return instance;
     }
 
@@ -90,7 +101,7 @@ public class ObjectPool<T> implements IPool,AutoCloseable {
      * @param instance 返却もしくは、破棄するインスタンス not null
      * @throws NullPointerException instanceがnullの場合
      */
-    public void releaseOrDelete(T instance) {
+    public void releaseOrDelete(@NonNull final T instance) {
         Objects.requireNonNull(instance);
         activeCount--;
         if (onRelease != null) {

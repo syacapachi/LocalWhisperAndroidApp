@@ -2,6 +2,8 @@ package events.SampleEvent;
 
 import android.util.Log;
 
+import androidx.annotation.NonNull;
+
 import java.util.function.Consumer;
 
 import Utils.StringPool.StringBufferBuilderPool;
@@ -17,7 +19,7 @@ public class SampleTest {
         SystemEventHub.publish(new SampleChildEvent("Invoke SampleChildEvent",100));
         SystemEventHub.unsubscribe(ISampleEvent.class,sampleEventListener);
     }
-    private static void SampleEventListener(ISampleEvent sampleEvent){
+    private static void SampleEventListener(@NonNull final ISampleEvent sampleEvent){
         Log.d(TAG, StringBufferBuilderPool.Join(
                 "",
                 "Event Received:",

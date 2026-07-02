@@ -13,12 +13,12 @@ import androidx.appcompat.app.AppCompatActivity;
 
 import java.util.function.Consumer;
 
-import jp.ac.gifu_u.programmingjissen2.UI.WhisperRecordControls;
+import jp.ac.gifu_u.programmingjissen2.Record.RecordActivity;
+import jp.ac.gifu_u.programmingjissen2.SettingUI.WhisperRecordControls;
 
 import events.AwaitEvent.AwaiterHub;
 import events.Request.RequestPermissionResultEvent;
 import events.SampleEvent.SampleRecordEvent;
-import events.SampleEvent.SampleTest;
 import events.SystemEventHub;
 
 /// アプリの状態を監視するクラス
@@ -150,12 +150,12 @@ public class MainActivity extends AppCompatActivity {
         Log.d(TAG, "onDestroy");
         super.onDestroy();
     }
-    private void EventListener(SampleRecordEvent s){
+    private void EventListener(@NonNull SampleRecordEvent s){
         Toast t = Toast.makeText(
                 this, s.message(), Toast.LENGTH_SHORT);
         t.show();
     }
-    private void EventListener2(SampleRecordEvent s){
+    private void EventListener2(@NonNull SampleRecordEvent s){
         Log.d(TAG,s.message());
     }
 

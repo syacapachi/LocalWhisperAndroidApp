@@ -14,7 +14,9 @@ import android.os.Build;
 import android.os.IBinder;
 import android.util.Log;
 
+import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.annotation.RequiresApi;
 import androidx.core.app.NotificationCompat;
 import androidx.core.content.ContextCompat;
 
@@ -27,8 +29,10 @@ import events.SystemEventHub;
 import events.Threading.ThreadStoppedEvent;
 import events.Whisper.WhisperRecordingStateEvent;
 import events.Whisper.WhisperTranscriptionEvent;
-import jp.ac.gifu_u.programmingjissen2.UI.WhisperSettings;
-import jp.ac.gifu_u.programmingjissen2.UI.WhisperSettingsStore;
+import jp.ac.gifu_u.programmingjissen2.Record.AudioRecordWorker;
+import jp.ac.gifu_u.programmingjissen2.Transscripts.TranscriptionJsonWorker;
+import jp.ac.gifu_u.programmingjissen2.SettingUI.WhisperSettings;
+import jp.ac.gifu_u.programmingjissen2.SettingUI.WhisperSettingsStore;
 
 /** バックグラウンドでも録音と Whisper 文字起こしを続ける foreground service です。 */
 public class BackgroundWhisperService extends Service {
@@ -62,14 +66,14 @@ public class BackgroundWhisperService extends Service {
             this::onTranscriptionEvent;
     private final Consumer<ThreadStoppedEvent> threadStoppedListener = this::onThreadStopped;
 
-    public static void startRecording(Context context) {
-        Intent intent = new Intent(context, BackgroundWhisperService.class);
+    public static void startRecording(final Context context) {
+        final Intent intent = new Intent(context, BackgroundWhisperService.class);
         intent.setAction(ACTION_START);
         ContextCompat.startForegroundService(context, intent);
     }
 
-    public static void stopRecording(Context context) {
-        Intent intent = new Intent(context, BackgroundWhisperService.class);
+    public static void stopRecording(final Context context) {
+        final Intent intent = new Intent(context, BackgroundWhisperService.class);
         intent.setAction(ACTION_STOP);
         context.startService(intent);
     }
@@ -94,6 +98,9 @@ public class BackgroundWhisperService extends Service {
         return currentModelKey;
     }
 
+    /**
+     * サービスが開始された時に呼ばれます。
+     */
     @Override
     public void onCreate() {
         super.onCreate();
@@ -104,9 +111,21 @@ public class BackgroundWhisperService extends Service {
         SystemEventHub.subscribe(ThreadStoppedEvent.class, threadStoppedListener);
     }
 
+    /**
+     *
+     * @param intent The Intent supplied to {@link android.content.Context#startService},
+     * as given.  This may be null if the service is being restarted after
+     * its process has gone away, and it had previously returned anything
+     * except {@link #START_STICKY_COMPATIBILITY}.
+     * @param flags Additional data about this start request.
+     * @param startId A unique integer representing this specific request to
+     * start.  Use with {@link #stopSelfResult(int)}.
+     *
+     * @return 開始したかどうか
+     */
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        String action = intent == null ? ACTION_START : intent.getAction();
+        final String action = intent == null ? ACTION_START : intent.getAction();
         if (ACTION_STOP.equals(action)) {
             requestStopRecording();
             return START_NOT_STICKY;
@@ -160,7 +179,7 @@ public class BackgroundWhisperService extends Service {
                 Long.toHexString(System.nanoTime())
         );
 
-        int bufferSize = AudioRecordWorker.createBufferSize(WhisperTranscriptionWorker.DEFAULT_SAMPLE_RATE);
+        final int bufferSize = AudioRecordWorker.createBufferSize(WhisperTranscriptionWorker.DEFAULT_SAMPLE_RATE);
         if (bufferSize <= 0) {
             publishState("録音バッファを作成できませんでした");
             stopSelf();
@@ -209,8 +228,8 @@ public class BackgroundWhisperService extends Service {
         publishState("バックグラウンド録音中");
     }
 
-    private void submitAudioToWhisper(float[] samples, int length) {
-        WhisperTranscriptionWorker worker = transcriptionWorker;
+    private void submitAudioToWhisper(final float[] samples, final int length) {
+        final WhisperTranscriptionWorker worker = transcriptionWorker;
         if (worker != null) {
             worker.submit(samples, length);
         }
@@ -236,7 +255,7 @@ public class BackgroundWhisperService extends Service {
     }
 
     private void requestRecordThreadStop() {
-        AudioRecordWorker worker = recordWorker;
+        final AudioRecordWorker worker = recordWorker;
         if (worker == null || !worker.isAlive()) {
             recordThreadStopped = true;
             recordWorker = null;
@@ -250,7 +269,7 @@ public class BackgroundWhisperService extends Service {
     }
 
     private void requestWhisperThreadStop() {
-        WhisperTranscriptionWorker worker = transcriptionWorker;
+        final WhisperTranscriptionWorker worker = transcriptionWorker;
         if (worker == null || !worker.isAlive()) {
             whisperThreadStopped = true;
             transcriptionWorker = null;
@@ -266,7 +285,7 @@ public class BackgroundWhisperService extends Service {
     }
 
     private void requestJsonThreadStop() {
-        TranscriptionJsonWorker worker = transcriptionJsonWorker;
+        final TranscriptionJsonWorker worker = transcriptionJsonWorker;
         if (worker == null || !worker.isAlive()) {
             jsonThreadStopped = true;
             transcriptionJsonWorker = null;
@@ -279,7 +298,7 @@ public class BackgroundWhisperService extends Service {
         }
     }
 
-    private void onThreadStopped(ThreadStoppedEvent event) {
+    private void onThreadStopped(final ThreadStoppedEvent event) {
         if (currentSessionId == null || !event.threadId().startsWith(currentSessionId)) {
             return;
         }
@@ -316,10 +335,11 @@ public class BackgroundWhisperService extends Service {
         stopForegroundAndSelf();
     }
 
-    private void onTranscriptionEvent(WhisperTranscriptionEvent event) {
+    private void onTranscriptionEvent(final WhisperTranscriptionEvent event) {
         if (currentSessionId == null || !currentSessionId.equals(event.sessionId())) {
             return;
         }
+        transcriptionJsonWorker.submit(event);
 
         if (event.hasError()) {
             latestText = StringBufferBuilderPool.Join("", "Whisper エラー: ", event.errorMessage());
@@ -327,7 +347,6 @@ public class BackgroundWhisperService extends Service {
             latestText = event.text().isEmpty() ? "..." : event.text();
             settingsStore.recordInference(event.modelKey(), event.processingTimeMs());
         }
-
         updateNotification(latestText);
         publishState(recording ? "バックグラウンド録音中" : "停止中...");
     }
@@ -343,12 +362,16 @@ public class BackgroundWhisperService extends Service {
         ));
     }
 
+    /**
+     * Android 26 未満用
+     * 通知を作成します。
+     */
     private void createNotificationChannel() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
             return;
         }
 
-        NotificationChannel channel = new NotificationChannel(
+        final NotificationChannel channel = new NotificationChannel(
                 CHANNEL_ID,
                 "Whisper 録音",
                 NotificationManager.IMPORTANCE_LOW
@@ -360,8 +383,14 @@ public class BackgroundWhisperService extends Service {
         }
     }
 
-    private void startForegroundNotification(String title, String text) {
-        Notification notification = buildNotification(title, text);
+    /**
+     * Android26以上向け
+     * 通知を作成
+     * @param title タイトル
+     * @param text 内容
+     */
+    private void startForegroundNotification(final String title, final String text) {
+        final Notification notification = buildNotification(title, text);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             startForeground(
                     NOTIFICATION_ID,
@@ -373,33 +402,34 @@ public class BackgroundWhisperService extends Service {
         }
     }
 
-    private void updateNotification(String text) {
-        NotificationManager manager =
+    private void updateNotification(final String text) {
+        final NotificationManager manager =
                 (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
         if (manager != null) {
             manager.notify(NOTIFICATION_ID, buildNotification("Whisper 録音中", text));
         }
     }
 
-    private Notification buildNotification(String title, String text) {
-        Intent openIntent = new Intent(this, MainActivity.class);
-        PendingIntent contentIntent = PendingIntent.getActivity(
+    @NonNull
+    private Notification buildNotification(final String title, final String text) {
+        final Intent openIntent = new Intent(this, MainActivity.class);
+        final PendingIntent contentIntent = PendingIntent.getActivity(
                 this,
                 0,
                 openIntent,
                 pendingIntentFlags()
         );
 
-        Intent stopIntent = new Intent(this, BackgroundWhisperService.class);
+        final Intent stopIntent = new Intent(this, BackgroundWhisperService.class);
         stopIntent.setAction(ACTION_STOP);
-        PendingIntent stopPendingIntent = PendingIntent.getService(
+        final PendingIntent stopPendingIntent = PendingIntent.getService(
                 this,
                 1,
                 stopIntent,
                 pendingIntentFlags()
         );
 
-        String displayText = text == null || text.isEmpty() ? "最新の文字起こしはまだありません" : text;
+        final String displayText = text == null || text.isEmpty() ? "最新の文字起こしはまだありません" : text;
         return new NotificationCompat.Builder(this, CHANNEL_ID)
                 .setSmallIcon(R.drawable.ic_launcher_foreground)
                 .setContentTitle(title)

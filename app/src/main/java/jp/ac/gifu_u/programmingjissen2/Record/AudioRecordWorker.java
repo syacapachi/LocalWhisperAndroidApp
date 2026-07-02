@@ -1,10 +1,12 @@
-package jp.ac.gifu_u.programmingjissen2;
+package jp.ac.gifu_u.programmingjissen2.Record;
 
 import android.media.AudioFormat;
 import android.media.AudioRecord;
 import android.media.MediaRecorder;
 import android.util.Log;
 
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.annotation.RequiresPermission;
 
 import Utils.StringPool.StringBufferBuilderPool;
@@ -40,7 +42,7 @@ public class AudioRecordWorker implements Runnable {
     private AudioRecord audioRecord;
 
     /** AudioRecord.read() が書き込む PCM バッファです。 */
-    private float[] audioBuffer;
+    private final float[] audioBuffer;
 
     /**
      * AudioRecord から読み出した PCM チャンクを受け取る listener です。
@@ -52,7 +54,7 @@ public class AudioRecordWorker implements Runnable {
          * @param samples 16kHz・モノラル・float PCM
          * @param length samples のうち有効な要素数
          */
-        void onAudioChunk(float[] samples, int length);
+        void onAudioChunk(final float[] samples, final int length);
     }
 
     /**
@@ -64,15 +66,16 @@ public class AudioRecordWorker implements Runnable {
      * @param listener PCM チャンクの通知先
      */
     public AudioRecordWorker(
-            int sampleRate,
-            int bufferSize,
-            String stopEventId,
-            AudioChunkListener listener
+            final int sampleRate,
+            final int bufferSize,
+            final String stopEventId,
+            final AudioChunkListener listener
     ) {
         this.sampleRate = sampleRate;
         this.bufferSize = bufferSize;
         this.stopEventId = stopEventId;
         this.listener = listener;
+        this.audioBuffer = new float[Math.max(1, bufferSize / Float.BYTES)];
     }
 
     /**
@@ -81,8 +84,8 @@ public class AudioRecordWorker implements Runnable {
      * @param sampleRate 録音サンプリングレート
      * @return AudioRecord 用バッファサイズ。失敗時は -1
      */
-    public static int createBufferSize(int sampleRate) {
-        int minBufferSize = AudioRecord.getMinBufferSize(
+    public static int createBufferSize(final int sampleRate) {
+        final int minBufferSize = AudioRecord.getMinBufferSize(
                 sampleRate,
                 AudioFormat.CHANNEL_IN_MONO,
                 AudioFormat.ENCODING_PCM_FLOAT
@@ -97,7 +100,7 @@ public class AudioRecordWorker implements Runnable {
             return -1;
         }
 
-        int halfSecondBytes = sampleRate * Float.BYTES / 2;
+        final int halfSecondBytes = sampleRate * Float.BYTES / 2;
         return Math.max(minBufferSize * 2, halfSecondBytes);
     }
 
@@ -112,12 +115,11 @@ public class AudioRecordWorker implements Runnable {
             return true;
         }
 
-        audioRecord = createAudioRecord();
+        audioRecord = createAudioRecord(sampleRate,bufferSize);
         if (audioRecord == null) {
             return false;
         }
 
-        audioBuffer = new float[Math.max(1, bufferSize / Float.BYTES)];
         running = true;
         workerThread = new Thread(this, "AudioRecordThread");
         workerThread.start();
@@ -135,7 +137,7 @@ public class AudioRecordWorker implements Runnable {
      * スレッドがまだ生きている場合 true を返します。
      */
     public boolean isAlive() {
-        Thread thread = workerThread;
+        final Thread thread = workerThread;
         return thread != null && thread.isAlive();
     }
 
@@ -145,13 +147,21 @@ public class AudioRecordWorker implements Runnable {
     public synchronized boolean requestStop() {
         running = false;
 
-        Thread thread = workerThread;
+        final Thread thread = workerThread;
         if (thread == null) {
             return false;
         }
 
+        // スレッドを停止するメッセージを送ります。
         thread.interrupt();
-        stopAudioRecord();
+
+        // AudioRecord.read() のブロックを解除するために録音を停止します
+        if (audioRecord == null) { return true;}
+        try {
+            audioRecord.stop();
+        } catch (IllegalStateException e) {
+            Log.w(TAG, "AudioRecord stop failed", e);
+        }
         return true;
     }
 
@@ -162,7 +172,7 @@ public class AudioRecordWorker implements Runnable {
      */
     @Override
     public void run() {
-        Thread currentThread = Thread.currentThread();
+        final Thread currentThread = Thread.currentThread();
         String stopErrorMessage = null;
 
         try {
@@ -192,9 +202,10 @@ public class AudioRecordWorker implements Runnable {
      *
      * @return 初期化済み AudioRecord。失敗時は null
      */
+    @Nullable
     @RequiresPermission(value = "android.permission.RECORD_AUDIO")
-    private AudioRecord createAudioRecord() {
-        AudioRecord record = new AudioRecord(
+    private static AudioRecord createAudioRecord(final int sampleRate,final int bufferSize) {
+        final AudioRecord record = new AudioRecord(
                 MediaRecorder.AudioSource.MIC,
                 sampleRate,
                 AudioFormat.CHANNEL_IN_MONO,
@@ -215,7 +226,7 @@ public class AudioRecordWorker implements Runnable {
      * AudioRecord から 1 チャンク分の PCM を読み、listener へ渡します。
      */
     private void readNextAudioChunk() {
-        int dataSize = audioRecord.read(
+        final int dataSize = audioRecord.read(
                 audioBuffer,
                 0,
                 audioBuffer.length,
@@ -234,27 +245,12 @@ public class AudioRecordWorker implements Runnable {
     }
 
     /**
-     * AudioRecord.read() のブロックを解除するために録音を停止します。
-     */
-    private void stopAudioRecord() {
-        if (audioRecord == null) {
-            return;
-        }
-
-        try {
-            audioRecord.stop();
-        } catch (IllegalStateException e) {
-            Log.w(TAG, "AudioRecord stop failed", e);
-        }
-    }
-
-    /**
      * 録音スレッドが停止したことをイベントとして通知します。
      *
      * @param thread 停止したスレッド
      * @param errorMessage エラー終了した場合のメッセージ
      */
-    private void publishStoppedEvent(Thread thread, String errorMessage) {
+    private void publishStoppedEvent(@NonNull Thread thread, String errorMessage) {
         SystemEventHub.publish(new ThreadStoppedEvent(
                 stopEventId,
                 "Record",

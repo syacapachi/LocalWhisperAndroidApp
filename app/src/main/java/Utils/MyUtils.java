@@ -2,6 +2,8 @@ package Utils;
 
 import android.content.Context;
 
+import androidx.annotation.NonNull;
+
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -9,7 +11,8 @@ import java.io.InputStream;
 import java.io.OutputStream;
 
 public class MyUtils {
-    public static String prepareModelPath(Context context,String assetName) throws IOException {
+    @NonNull
+    public static String prepareModelPath(@NonNull final Context context, final String assetName) throws IOException {
         File modelFile = new File(context.getFilesDir(), assetName);
 
         if (!modelFile.exists()) {

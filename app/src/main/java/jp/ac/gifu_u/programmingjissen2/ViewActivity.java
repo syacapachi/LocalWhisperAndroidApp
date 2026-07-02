@@ -10,6 +10,8 @@ import android.graphics.Rect;
 import android.view.MotionEvent;
 import android.view.View;
 
+import androidx.annotation.NonNull;
+
 import java.util.ArrayList;
 /**
  * 画面の制御クラス Viewを継承したクラス
@@ -70,7 +72,7 @@ public class ViewActivity  extends View {
      * タッチパネルを操作した時に呼ばれるメソッド
      */
     @Override
-    public boolean onTouchEvent(MotionEvent event) {
+    public boolean onTouchEvent(@NonNull MotionEvent event) {
         // 座標を取得
         int x = (int) event.getX();
         int y = (int) event.getY();

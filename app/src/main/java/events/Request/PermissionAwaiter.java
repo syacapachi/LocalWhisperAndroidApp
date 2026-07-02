@@ -3,6 +3,8 @@ package events.Request;
 import android.content.pm.PackageManager;
 import android.util.Log;
 
+import androidx.annotation.NonNull;
+
 import java.util.function.Consumer;
 
 import Utils.StringPool.StringBufferBuilderPool;
@@ -18,8 +20,8 @@ public class PermissionAwaiter extends EventAwaiter<RequestPermissionResultEvent
     private Consumer<Boolean> callback;
 
     public void initialize(
-            int requestCode,
-            Consumer<Boolean> callback)
+            final int requestCode,
+            final Consumer<Boolean> callback)
     {
         DebugLog("Initialized: ", requestCode);
         this.requestCode = requestCode;
@@ -27,12 +29,12 @@ public class PermissionAwaiter extends EventAwaiter<RequestPermissionResultEvent
     }
 
     @Override
-    protected boolean match(RequestPermissionResultEvent event) {
+    protected boolean match(@NonNull final RequestPermissionResultEvent event) {
         return event.requestCode() == requestCode;
     }
 
     @Override
-    protected void onReceive(RequestPermissionResultEvent event) {
+    protected void onReceive(@NonNull final RequestPermissionResultEvent event) {
         DebugLog("onReceived: ", event.requestCode());
 
         boolean granted = false;

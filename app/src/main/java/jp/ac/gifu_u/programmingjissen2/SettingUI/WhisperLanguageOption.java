@@ -1,4 +1,6 @@
-package jp.ac.gifu_u.programmingjissen2.UI;
+package jp.ac.gifu_u.programmingjissen2.SettingUI;
+
+import androidx.annotation.NonNull;
 
 /** Whisper の language パラメータに渡す値と、設定 UI に表示する文字を対応させます。 */
 public enum WhisperLanguageOption {
@@ -14,7 +16,7 @@ public enum WhisperLanguageOption {
     private final String value;
     private final String displayText;
 
-    WhisperLanguageOption(String value, String displayText) {
+    WhisperLanguageOption(final String value, final String displayText) {
         this.value = value;
         this.displayText = displayText;
     }
@@ -30,7 +32,7 @@ public enum WhisperLanguageOption {
     }
 
     /** 保存済み文字列から対応する enum を返します。 */
-    public static WhisperLanguageOption fromValue(String value) {
+    public static WhisperLanguageOption fromValue(final String value) {
         if (value != null) {
             for (WhisperLanguageOption option : values()) {
                 if (option.value.equals(value.trim())) {
@@ -41,6 +43,7 @@ public enum WhisperLanguageOption {
         return JAPANESE;
     }
 
+    @NonNull
     @Override
     public String toString() {
         return displayText + " (" + value + ")";

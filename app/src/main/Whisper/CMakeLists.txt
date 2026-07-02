@@ -30,7 +30,6 @@ if(ANDROID AND CMAKE_ANDROID_ARCH_ABI STREQUAL "arm64-v8a")
 endif()
 
 # Android NDKでは通常OpenMP(処理のマルチスレッド化)を利用すると高速化できる
-# libomp依存を避ける目的
 set(GGML_OPENMP ON CACHE BOOL "" FORCE)
 
 # 共有ライブラリのABIバージョン

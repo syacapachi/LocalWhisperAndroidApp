@@ -1,7 +1,9 @@
-package jp.ac.gifu_u.programmingjissen2;
+package jp.ac.gifu_u.programmingjissen2.Transscripts;
 
 import android.content.Context;
 import android.util.Log;
+
+import androidx.annotation.NonNull;
 
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.TimeUnit;
@@ -49,7 +51,7 @@ public class TranscriptionJsonWorker implements Runnable {
      * @param context ファイル保存先を取得するための Context
      * @param sessionId 録音 session ID
      */
-    public TranscriptionJsonWorker(Context context, String sessionId) {
+    public TranscriptionJsonWorker(@NonNull final Context context, final String sessionId) {
         this.context = context.getApplicationContext();
         this.sessionId = sessionId;
         this.stopEventId = StringBufferBuilderPool.Join("", sessionId, ":json");
@@ -83,7 +85,7 @@ public class TranscriptionJsonWorker implements Runnable {
      * @return worker スレッドが生存している場合 true
      */
     public boolean isAlive() {
-        Thread thread = workerThread;
+        final Thread thread = workerThread;
         return thread != null && thread.isAlive();
     }
 
@@ -92,7 +94,7 @@ public class TranscriptionJsonWorker implements Runnable {
      *
      * @param event Whisper 推論結果イベント
      */
-    public void submit(WhisperTranscriptionEvent event) {
+    public void submit(final WhisperTranscriptionEvent event) {
         if (!running || event == null || event.hasError()) {
             return;
         }
@@ -112,7 +114,7 @@ public class TranscriptionJsonWorker implements Runnable {
     public synchronized boolean requestStop() {
         running = false;
 
-        Thread thread = workerThread;
+        final Thread thread = workerThread;
         if (thread == null) {
             return false;
         }
@@ -129,12 +131,18 @@ public class TranscriptionJsonWorker implements Runnable {
      */
     @Override
     public void run() {
-        Thread currentThread = Thread.currentThread();
+        final Thread currentThread = Thread.currentThread();
         String stopErrorMessage = null;
 
         try {
             writer = new TranscriptionJsonWriter(context, sessionId);
-            consumeEventsUntilStopped(currentThread);
+            // 停止要求または interrupt まで JSON 保存イベントを消費します。
+            while (running && !currentThread.isInterrupted()) {
+                final WhisperTranscriptionEvent event = eventQueue.poll(200, TimeUnit.MILLISECONDS);
+                if (event != null) {
+                    appendEvent(event);
+                }
+            }
         } catch (InterruptedException e) {
             currentThread.interrupt();
         } catch (Exception e) {
@@ -143,7 +151,11 @@ public class TranscriptionJsonWorker implements Runnable {
                     ? e.getClass().getSimpleName()
                     : e.getMessage();
         } finally {
-            drainQueuedEvents();
+            // 停止時にキューへ残っているイベントをすべて JSON へ保存します。
+            WhisperTranscriptionEvent event;
+            while ((event = eventQueue.poll()) != null) {
+                appendEvent(event);
+            }
             finishWriter();
             running = false;
             workerThread = null;
@@ -152,36 +164,11 @@ public class TranscriptionJsonWorker implements Runnable {
     }
 
     /**
-     * 停止要求または interrupt まで JSON 保存イベントを消費します。
-     *
-     * @param currentThread worker 自身のスレッド
-     * @throws InterruptedException キュー待機中に interrupt された場合
-     */
-    private void consumeEventsUntilStopped(Thread currentThread) throws InterruptedException {
-        while (running && !currentThread.isInterrupted()) {
-            WhisperTranscriptionEvent event = eventQueue.poll(200, TimeUnit.MILLISECONDS);
-            if (event != null) {
-                appendEvent(event);
-            }
-        }
-    }
-
-    /**
-     * 停止時にキューへ残っているイベントをすべて JSON へ保存します。
-     */
-    private void drainQueuedEvents() {
-        WhisperTranscriptionEvent event;
-        while ((event = eventQueue.poll()) != null) {
-            appendEvent(event);
-        }
-    }
-
-    /**
      * 1 件の Whisper 推論イベントを JSON writer へ渡します。
      *
      * @param event Whisper 推論結果イベント
      */
-    private void appendEvent(WhisperTranscriptionEvent event) {
+    private void appendEvent(final WhisperTranscriptionEvent event) {
         if (writer != null) {
             writer.append(event);
         }
@@ -210,7 +197,7 @@ public class TranscriptionJsonWorker implements Runnable {
      * @param thread 停止したスレッド
      * @param errorMessage エラー終了した場合のメッセージ
      */
-    private void publishStoppedEvent(Thread thread, String errorMessage) {
+    private void publishStoppedEvent(@NonNull final Thread thread, final String errorMessage) {
         SystemEventHub.publish(new ThreadStoppedEvent(
                 stopEventId,
                 "Json",

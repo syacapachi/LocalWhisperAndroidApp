@@ -41,13 +41,13 @@ public class SensorActivity implements SensorEventListener, LocationListener {
     /// ⚫ Wifi などから大まかな位置情報を取得する ACCESS_COARSE_LOCATION
     /// ⚫ GPS などにより詳細な位置情報を取得する ACCESS_FINE_LOCATION
     private final LocationManager localeManager;
-    public  SensorActivity(Activity activity){
+    public  SensorActivity(@NonNull Activity activity){
         this.activity = activity;
         //マネージャークラス取得
         sensorManager = (SensorManager) activity.getSystemService(Context.SENSOR_SERVICE);
         localeManager = (LocationManager) activity.getSystemService(Context.LOCATION_SERVICE);
     }
-    public void AddSensorListener(int sensorType){
+    public void AddSensorListener(final int sensorType){
         // 対応するセンサーのリストを取得
         List<Sensor> sensors =
                 sensorManager.getSensorList(sensorType);
@@ -62,7 +62,7 @@ public class SensorActivity implements SensorEventListener, LocationListener {
      *
      */
     static final int REQUESTCODE = 1000;
-    public void requestLocationUpdate(long msvc, float meter){
+    public void requestLocationUpdate(final long msvc, final float meter){
 
         //権限があるかをチェック
         if (ActivityCompat.checkSelfPermission(activity,
@@ -79,7 +79,7 @@ public class SensorActivity implements SensorEventListener, LocationListener {
                     && ActivityCompat.shouldShowRequestPermissionRationale(activity,
                     Manifest.permission.ACCESS_COARSE_LOCATION))
             {
-                PermissionAwaiter awaiter = AwaiterHub.rentAwaiter(PermissionAwaiter.class);
+                final PermissionAwaiter awaiter = AwaiterHub.rentAwaiter(PermissionAwaiter.class);
                 awaiter.initialize(
                         REQUESTCODE,
                         //内部で匿名クラスのインスタンスになるので、引数を個別に保存できる。
@@ -114,8 +114,6 @@ public class SensorActivity implements SensorEventListener, LocationListener {
 
                 isRequested = true;
             }
-
-
             return;
         }
         //以前のやつを消す。
@@ -140,9 +138,9 @@ public class SensorActivity implements SensorEventListener, LocationListener {
 
     //センサーの値が更新された時
     @Override
-    public void onSensorChanged(SensorEvent event) {
+    public void onSensorChanged(@NonNull SensorEvent event) {
         // 明るさセンサが変化したとき
-        int sensorType = event.sensor.getType();
+        final int sensorType = event.sensor.getType();
         String str = "";
         if (sensorType == Sensor.TYPE_LIGHT) {
             // 明るさの値（単位ルクス）を取得
@@ -171,8 +169,8 @@ public class SensorActivity implements SensorEventListener, LocationListener {
     @Override
     public void onLocationChanged(@NonNull Location location) {
         // 得られた緯度経度の情報を表示
-        double lat = location.getLatitude(); // 緯度
-        double lng = location.getLongitude(); // 経度
+        final double lat = location.getLatitude(); // 緯度
+        final double lng = location.getLongitude(); // 経度
 
         //画面にテキストビューアを追加してidをstatus_textに
         TextView textview =
@@ -189,7 +187,8 @@ public class SensorActivity implements SensorEventListener, LocationListener {
      * @param unit 表示単位
      * @return TextView 表示用文字列
      */
-    private String buildSensorText(float intensity, String unit) {
+    @NonNull
+    private String buildSensorText(final float intensity, final String unit) {
         return StringBufferBuilderPool.Join("", Float.toString(intensity), unit);
     }
 }
