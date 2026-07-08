@@ -18,6 +18,7 @@ import java.util.function.Consumer;
 
 import jp.ac.gifu_u.programmingjissen2.Record.RecordActivity;
 import jp.ac.gifu_u.programmingjissen2.ResultUI.TranscriptionListActivity;
+import jp.ac.gifu_u.programmingjissen2.ResultUI.TranscriptionTextListActivity;
 import jp.ac.gifu_u.programmingjissen2.SettingUI.WhisperRecordControls;
 
 import events.AwaitEvent.AwaiterHub;
@@ -88,9 +89,13 @@ public class MainActivity extends AppCompatActivity {
         TextView whisperStatusText = findViewById(R.id.whisperStatusText);
         TextView whisperBenchmarkText = findViewById(R.id.whisperBenchmarkText);
         Button transcriptionHistoryButton = findViewById(R.id.transcriptionHistoryButton);
+        Button transcriptionTextHistoryButton = findViewById(R.id.transcriptionTextHistoryButton);
         Button audioFileTranscriptionButton = findViewById(R.id.audioFileTranscriptionButton);
         transcriptionHistoryButton.setOnClickListener((view) -> startActivity(
                 new Intent(this, TranscriptionListActivity.class)
+        ));
+        transcriptionTextHistoryButton.setOnClickListener((view) -> startActivity(
+                new Intent(this, TranscriptionTextListActivity.class)
         ));
         audioFileTranscriptionButton.setOnClickListener((view) -> audioFilePicker.launch(
                 new String[]{"audio/*", "video/*", "application/octet-stream"}

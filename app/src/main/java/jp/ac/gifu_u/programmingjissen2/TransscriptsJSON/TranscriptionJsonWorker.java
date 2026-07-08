@@ -12,6 +12,7 @@ import Utils.StringPool.StringBufferBuilderPool;
 import events.SystemEventHub;
 import events.Threading.ThreadStoppedEvent;
 import events.Whisper.WhisperTranscriptionEvent;
+import jp.ac.gifu_u.programmingjissen2.TranscriptionText.TranscriptionTextRepository;
 
 /**
  * Whisper の文字起こし結果を別スレッドで JSON ファイルへ保存する worker です。
@@ -183,12 +184,34 @@ public class TranscriptionJsonWorker implements Runnable {
         }
 
         writer.finish();
+        saveTextFromJson(writer.getOutputFile());
         Log.d(TAG, StringBufferBuilderPool.Join(
                 "",
                 "Transcription JSON saved: ",
                 writer.getOutputFile().getAbsolutePath()
         ));
         writer = null;
+    }
+
+    /**
+     * 保存済みJSONから整形テキストを生成して保存します。
+     *
+     * @param jsonFile 変換元JSONファイル。例: {@code writer.getOutputFile()}
+     */
+    private void saveTextFromJson(@NonNull final java.io.File jsonFile) {
+        try {
+            final java.io.File textFile = TranscriptionTextRepository.saveFromJsonFile(
+                    context,
+                    jsonFile
+            );
+            Log.d(TAG, StringBufferBuilderPool.Join(
+                    "",
+                    "Transcription text saved: ",
+                    textFile.getAbsolutePath()
+            ));
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to save transcription text", e);
+        }
     }
 
     /**

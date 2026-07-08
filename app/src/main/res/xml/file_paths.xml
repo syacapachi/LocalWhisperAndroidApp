@@ -3,4 +3,7 @@
     <files-path
         name="transcriptions"
         path="transcriptions/" />
+    <files-path
+        name="transcription_texts"
+        path="transcription_texts/" />
 </paths>

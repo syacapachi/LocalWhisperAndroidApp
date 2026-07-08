@@ -16,8 +16,11 @@ import Utils.StringPool.StringBufferBuilderPool;
 import Whisper.WhisperBridge;
 import events.SystemEventHub;
 import events.Whisper.WhisperTranscriptionEvent;
+import events.Whisper.WhisperTranscriptionTag;
 import jp.ac.gifu_u.programmingjissen2.Record.Utility.AudioFilePcmDecoder;
 import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.WhisperSettings;
+import jp.ac.gifu_u.programmingjissen2.TranscriptionText.TranscriptionTextFormatter;
+import jp.ac.gifu_u.programmingjissen2.TranscriptionText.TranscriptionTextRepository;
 
 /** 既存音声ファイルを読み込み、Whisper.cpp で一括文字起こしする worker です。 */
 public final class WhisperFileTranscriptionWorker implements Runnable {
@@ -149,7 +152,7 @@ public final class WhisperFileTranscriptionWorker implements Runnable {
         params.printProgress = false;
         params.printSpecial = false;
         params.printRealtime = false;
-        params.printTimestamps = settings.printTimestamps();
+        params.printTimestamps = true;
         params.noContext = settings.noContext();
         params.language = settings.language();
         params.nThreads = Math.min(
@@ -161,17 +164,41 @@ public final class WhisperFileTranscriptionWorker implements Runnable {
 
     private void publishResult(final long whisperContext, final long durationMs,
             final long processingTimeMs) {
-        try (PooledStringBuilder sb = ScopableUtility.getBuilder()) {
-            final int segmentCount = WhisperBridge.fullNSegments(whisperContext);
+        final FileTranscriptionText transcriptionText = collectTimestampedText(whisperContext);
+        try {
+            TranscriptionTextRepository.saveFilteredText(
+                    context,
+                    sessionId,
+                    transcriptionText.text
+            );
+        } catch (IOException e) {
+            Log.e(TAG, "Failed to save file transcription text", e);
+        }
+
+        SystemEventHub.publish(new WhisperTranscriptionEvent(sessionId, 0, transcriptionText.text,
+                transcriptionText.speakerChanged, true, null, 0, durationMs, processingTimeMs,
+                settings.model().key(), WhisperTranscriptionTag.FileTranscribing));
+    }
+
+    /**
+     * Whisperセグメントからタイムスタンプ付きテキストを作成します。
+     *
+     * @param whisperContext 推論済み Whisper context。例: {@code whisperContext}
+     * @return 文字起こし本文と話者変化フラグ。例: {@code new FileTranscriptionText("[00:00.000] ...", false)}
+     */
+    @NonNull
+    private FileTranscriptionText collectTimestampedText(final long whisperContext) {
+        final int segmentCount = WhisperBridge.fullNSegments(whisperContext);
+        try(PooledStringBuilder builder = ScopableUtility.getBuilder()) {
             boolean speakerChanged = false;
             for (int i = 0; i < segmentCount; i++) {
-                sb.append(WhisperBridge.fullSegmentText(whisperContext, i));
+                builder.append(TranscriptionTextFormatter.formatLine(
+                        WhisperBridge.fullSegmentT0(whisperContext, i) * 10L,
+                        WhisperBridge.fullSegmentText(whisperContext, i)
+                ));
                 speakerChanged |= WhisperBridge.fullSegmentSpeakerTurnNext(whisperContext, i);
             }
-
-            SystemEventHub.publish(new WhisperTranscriptionEvent(sessionId, 0, sb.toString(),
-                    speakerChanged, true, null, 0, durationMs, processingTimeMs,
-                    settings.model().key()));
+            return new FileTranscriptionText(builder.toString(), speakerChanged);
         }
     }
 
@@ -186,7 +213,19 @@ public final class WhisperFileTranscriptionWorker implements Runnable {
                 0,
                 0,
                 0,
-                settings.model().key()
+                settings.model().key(),
+                WhisperTranscriptionTag.FileTranscribing
         ));
+    }
+
+    /** ファイル文字起こしで作成したテキストと補助情報です。 */
+    private static final class FileTranscriptionText {
+        final String text;
+        final boolean speakerChanged;
+
+        FileTranscriptionText(final String text, final boolean speakerChanged) {
+            this.text = text == null ? "" : text;
+            this.speakerChanged = speakerChanged;
+        }
     }
 }

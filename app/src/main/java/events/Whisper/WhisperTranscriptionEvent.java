@@ -15,6 +15,7 @@ import androidx.annotation.Nullable;
  * @param durationMs この結果が対象にしている音声の長さ。ミリ秒
  * @param processingTimeMs Whisper 推論 1 回にかかった処理時間。ミリ秒
  * @param modelKey 推論に使ったモデルの識別子
+ * @param tag 録音、ファイル文字起こしなどの発行元タグ
  */
 public record WhisperTranscriptionEvent(
         String sessionId,
@@ -26,7 +27,8 @@ public record WhisperTranscriptionEvent(
         long startMs,
         long durationMs,
         long processingTimeMs,
-        String modelKey
+        String modelKey,
+        WhisperTranscriptionTag tag
 ) {
     /**
      * このイベントがエラー通知かどうかを返します。

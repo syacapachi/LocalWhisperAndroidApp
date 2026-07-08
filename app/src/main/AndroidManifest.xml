@@ -40,6 +40,10 @@
         <activity
             android:name=".ResultUI.TranscriptionListActivity"
             android:exported="false" />
+        <!-- 整形済み文字起こしテキストUI画面 -->
+        <activity
+            android:name=".ResultUI.TranscriptionTextListActivity"
+            android:exported="false" />
         <!-- 外部サービス的なやつ。ファイル管理 -->
         <provider
             android:name="androidx.core.content.FileProvider"

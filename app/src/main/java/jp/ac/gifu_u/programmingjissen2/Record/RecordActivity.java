@@ -22,6 +22,7 @@ import events.Request.PermissionAwaiter;
 import events.SystemEventHub;
 import events.Whisper.WhisperRecordingStateEvent;
 import events.Whisper.WhisperTranscriptionEvent;
+import events.Whisper.WhisperTranscriptionTag;
 import jp.ac.gifu_u.programmingjissen2.Transcription.BackgroundWhisperService;
 import jp.ac.gifu_u.programmingjissen2.R;
 import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.WhisperInferenceStats;
@@ -53,13 +54,11 @@ public class RecordActivity {
             this::onTranscriptionEvent;
     private final Consumer<WhisperRecordingStateEvent> stateListener = this::onRecordingStateEvent;
 
-    private volatile boolean isRecording;
-    private volatile boolean isStopping;
-    private volatile boolean isFileTranscribing;
+    private volatile RecordTranscriptionState state;
+    private volatile boolean isTranscribing;
     private WhisperSettings currentSettings;
     private boolean updatingModelSelector;
     private WhisperFileTranscriptionWorker fileTranscriptionWorker;
-    private String fileSessionId;
 
     /** 従来の最小 UI で録音制御クラスを作成します。 */
     public RecordActivity(Activity activity, Button button, TextView resultTextView) {
@@ -96,7 +95,8 @@ public class RecordActivity {
 
     private void setupRecordButton() {
         recordButton.setOnClickListener((view) -> {
-            if (!isRecording && !isStopping) {
+            if (state != RecordTranscriptionState.Recording
+                    && state != RecordTranscriptionState.Stopping) {
                 if (StartRecord()) {
                     recordButton.setText("停止");
                 }
@@ -134,7 +134,7 @@ public class RecordActivity {
                 return;
             }
 
-            if (isRecording || isStopping) {
+            if (isTranscribing) {
                 outputMessage("モデル変更は録音停止後に反映できます");
                 syncModelSelector(currentSettings.model());
                 return;
@@ -148,13 +148,14 @@ public class RecordActivity {
 
     /** 設定画面から戻ったときなどに、保存済み設定を録音画面へ反映します。 */
     public void RefreshSettings() {
-        if (!isRecording && !isStopping) {
+        if (!isTranscribing) {
             currentSettings = settingsStore.load();
             syncModelSelector(currentSettings.model());
         }
-        isRecording = BackgroundWhisperService.isRunning();
-        isStopping = BackgroundWhisperService.isStopping();
-        recordButton.setText(isRecording ? "停止" : (isStopping ? "停止中" : "録音"));
+        syncStateFromBackgroundService();
+        recordButton.setText(state == RecordTranscriptionState.Recording
+                ? "停止"
+                : (state == RecordTranscriptionState.Stopping ? "停止中" : "録音"));
         refreshWhisperInfo();
 
         String latest = BackgroundWhisperService.latestText();
@@ -165,8 +166,12 @@ public class RecordActivity {
 
     /** 録音権限を確認し、バックグラウンド録音サービスを開始します。 */
     public boolean StartRecord() {
-        if (isStopping) {
+        if (state == RecordTranscriptionState.Stopping) {
             outputMessage("停止処理中です");
+            return false;
+        }
+        if (state == RecordTranscriptionState.FileTranscribing) {
+            outputMessage("音声ファイル文字起こし中です");
             return false;
         }
 
@@ -200,8 +205,7 @@ public class RecordActivity {
         requestPostNotificationPermissionIfNeeded();
         currentSettings = settingsStore.load();
         BackgroundWhisperService.startRecording(activity);
-        isRecording = true;
-        isStopping = false;
+        setState(RecordTranscriptionState.Recording);
         recordButton.setText("停止");
         outputMessage(StringBufferBuilderPool.Join(
                 "",
@@ -214,16 +218,15 @@ public class RecordActivity {
 
     /** バックグラウンド録音サービスへ停止を要求します。 */
     public boolean StopRecord() {
-        if (isStopping) {
+        if (state == RecordTranscriptionState.Stopping) {
             return true;
         }
 
-        if (!isRecording && !BackgroundWhisperService.isRunning()) {
+        if (state != RecordTranscriptionState.Recording && !BackgroundWhisperService.isRunning()) {
             return false;
         }
 
-        isRecording = false;
-        isStopping = true;
+        setState(RecordTranscriptionState.Stopping);
         BackgroundWhisperService.stopRecording(activity);
         recordButton.setText("停止中");
         refreshWhisperInfo();
@@ -238,17 +241,19 @@ public class RecordActivity {
      * @throws SecurityException URI の読み取り許可が失効している場合、worker 側でエラーイベントに変換します
      */
     public boolean TranscribeAudioFile(@NonNull final Uri uri) {
-        if (isRecording || isStopping || BackgroundWhisperService.isRunning()) {
+        if (state == RecordTranscriptionState.Recording
+                || state == RecordTranscriptionState.Stopping
+                || BackgroundWhisperService.isRunning()) {
             outputMessage("録音停止後に音声ファイルを文字起こしできます");
             return false;
         }
-        if (isFileTranscribing) {
+        if (state == RecordTranscriptionState.FileTranscribing) {
             outputMessage("音声ファイルを文字起こし中です");
             return false;
         }
 
         currentSettings = settingsStore.load();
-        fileSessionId = StringBufferBuilderPool.Join(
+        final String sessionId = StringBufferBuilderPool.Join(
                 "-",
                 "file",
                 Long.toHexString(System.currentTimeMillis()),
@@ -257,16 +262,16 @@ public class RecordActivity {
         fileTranscriptionWorker = new WhisperFileTranscriptionWorker(
                 activity,
                 uri,
-                fileSessionId,
+                sessionId,
                 currentSettings,
                 this::onFileTranscriptionComplete
         );
-        isFileTranscribing = true;
+        setState(RecordTranscriptionState.FileTranscribing);
         outputMessage("音声ファイルを読み込み中...");
         refreshWhisperInfo();
 
         if (!fileTranscriptionWorker.start()) {
-            isFileTranscribing = false;
+            setState(null);
             fileTranscriptionWorker = null;
             outputMessage("音声ファイル文字起こしを開始できませんでした");
             refreshWhisperInfo();
@@ -284,7 +289,7 @@ public class RecordActivity {
     private void onTranscriptionEvent(final WhisperTranscriptionEvent event) {
         activity.runOnUiThread(() -> {
             outputTranscription(event);
-            if (isFileEvent(event) && !event.hasError()) {
+            if (event.tag() == WhisperTranscriptionTag.FileTranscribing && !event.hasError()) {
                 settingsStore.recordInference(event.modelKey(), event.processingTimeMs());
             }
             refreshWhisperInfo();
@@ -299,10 +304,8 @@ public class RecordActivity {
      */
     private void onFileTranscriptionComplete(final String sessionId, final String errorMessage) {
         activity.runOnUiThread(() -> {
-            if (fileSessionId != null && fileSessionId.equals(sessionId)) {
-                isFileTranscribing = false;
-                fileTranscriptionWorker = null;
-            }
+            setState(null);
+            fileTranscriptionWorker = null;
             if (errorMessage != null && !errorMessage.isEmpty()) {
                 outputMessage(StringBufferBuilderPool.Join(
                         "",
@@ -316,9 +319,12 @@ public class RecordActivity {
 
     private void onRecordingStateEvent(WhisperRecordingStateEvent event) {
         activity.runOnUiThread(() -> {
-            isRecording = event.recording();
-            isStopping = event.stopping();
-            recordButton.setText(isRecording ? "停止" : (isStopping ? "停止中" : "録音"));
+            setState(event.stopping()
+                    ? RecordTranscriptionState.Stopping
+                    : (event.recording() ? RecordTranscriptionState.Recording : null));
+            recordButton.setText(state == RecordTranscriptionState.Recording
+                    ? "停止"
+                    : (state == RecordTranscriptionState.Stopping ? "停止中" : "録音"));
             if (!event.latestText().isEmpty()) {
                 resultTextView.setText(event.latestText());
             } else if (!event.message().isEmpty()) {
@@ -370,13 +376,11 @@ public class RecordActivity {
 
     private void refreshWhisperInfo() {
         final WhisperSettings settings = currentSettings;
-        final String state = isFileTranscribing
-                ? "ファイル文字起こし中"
-                : (isRecording ? "録音中" : (isStopping ? "停止中" : "待機中"));
+        final String stateText = stateText();
         setStatusText(StringBufferBuilderPool.Join(
                 "",
                 "状態: ",
-                state,
+                stateText,
                 " / モデル: ",
                 settings.model().displayName(),
                 " / 言語: ",
@@ -464,8 +468,45 @@ public class RecordActivity {
         activity.runOnUiThread(() -> resultTextView.setText(message));
     }
 
-    private boolean isFileEvent(@NonNull final WhisperTranscriptionEvent event) {
-        return fileSessionId != null && fileSessionId.equals(event.sessionId());
+    /**
+     * 録音サービスの状態を RecordActivity のステートへ反映します。
+     */
+    private void syncStateFromBackgroundService() {
+        if (state == RecordTranscriptionState.FileTranscribing) {
+            return;
+        }
+        setState(BackgroundWhisperService.isStopping()
+                ? RecordTranscriptionState.Stopping
+                : (BackgroundWhisperService.isRunning() ? RecordTranscriptionState.Recording : null));
+    }
+
+    /**
+     * 文字起こし状態を更新し、isTranscribing も同期します。
+     *
+     * @param nextState 次の状態。例: {@code RecordTranscriptionState.Recording}
+     */
+    private void setState(final RecordTranscriptionState nextState) {
+        state = nextState;
+        isTranscribing = nextState != null;
+    }
+
+    /**
+     * 現在のステートを画面表示用テキストへ変換します。
+     *
+     * @return 表示用ステート。例: {@code "録音中"}
+     */
+    @NonNull
+    private String stateText() {
+        if (state == RecordTranscriptionState.Recording) {
+            return "録音中";
+        }
+        if (state == RecordTranscriptionState.FileTranscribing) {
+            return "ファイル文字起こし中";
+        }
+        if (state == RecordTranscriptionState.Stopping) {
+            return "停止中";
+        }
+        return "待機中";
     }
 
     private void setStatusText(final String value) {

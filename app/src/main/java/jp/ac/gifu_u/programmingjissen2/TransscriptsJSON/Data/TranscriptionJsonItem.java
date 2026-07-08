@@ -7,6 +7,7 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import events.Whisper.WhisperTranscriptionEvent;
+import events.Whisper.WhisperTranscriptionTag;
 
 /**
  * JSON に保存する 1 件分の文字起こし結果です。
@@ -39,8 +40,21 @@ public class TranscriptionJsonItem {
     /** 録音停止時など、最後の推論結果なら true です。 */
     public final boolean finalResult;
 
+    /** 録音、ファイル文字起こしなどの発行元タグです。 */
+    public final WhisperTranscriptionTag tag;
+
     /**
      * JSON 保存用の文字起こし結果を作成します。
+     *
+     * @param sequence 同一session内の番号。例: {@code 0}
+     * @param recordingTimeMs 録音開始からの開始時刻ms。例: {@code 1000}
+     * @param durationMs 対象音声の長さms。例: {@code 5000}
+     * @param processingTimeMs 推論時間ms。例: {@code 1200}
+     * @param modelKey モデル識別子。例: {@code "base"}
+     * @param text 文字起こし本文。例: {@code "こんにちは"}
+     * @param speakerChanged 話者変化の可能性。例: {@code false}
+     * @param finalResult 最終結果かどうか。例: {@code true}
+     * @param tag 発行元タグ。例: {@code WhisperTranscriptionTag.Recording}
      */
     public TranscriptionJsonItem(
             int sequence,
@@ -50,7 +64,8 @@ public class TranscriptionJsonItem {
             String modelKey,
             String text,
             boolean speakerChanged,
-            boolean finalResult
+            boolean finalResult,
+            WhisperTranscriptionTag tag
     ) {
         this.sequence = sequence;
         this.recordingTimeMs = recordingTimeMs;
@@ -60,6 +75,7 @@ public class TranscriptionJsonItem {
         this.text = text == null ? "" : text;
         this.speakerChanged = speakerChanged;
         this.finalResult = finalResult;
+        this.tag = tag == null ? WhisperTranscriptionTag.Recording : tag;
     }
 
     /**
@@ -79,7 +95,8 @@ public class TranscriptionJsonItem {
                 event.modelKey(),
                 event.text(),
                 event.speakerChanged(),
-                event.finalResult()
+                event.finalResult(),
+                event.tag()
         );
     }
 
@@ -99,6 +116,7 @@ public class TranscriptionJsonItem {
         object.put("text", text);
         object.put("speakerChanged", speakerChanged);
         object.put("finalResult", finalResult);
+        object.put("tag", tag.name());
         return object;
     }
 }

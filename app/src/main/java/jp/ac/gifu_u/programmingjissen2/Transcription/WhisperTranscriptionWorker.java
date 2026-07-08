@@ -18,6 +18,7 @@ import Whisper.WhisperBridge;
 import events.SystemEventHub;
 import events.Threading.ThreadStoppedEvent;
 import events.Whisper.WhisperTranscriptionEvent;
+import events.Whisper.WhisperTranscriptionTag;
 import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.WhisperSettings;
 
 /**
@@ -298,7 +299,8 @@ public class WhisperTranscriptionWorker implements Runnable {
                 null,
                 startMs,
                 durationMs,
-                processingTimeMs
+                processingTimeMs,
+                finalResult ? WhisperTranscriptionTag.Stopping : WhisperTranscriptionTag.Recording
         );
 
         final int discardSamples = finalResult
@@ -397,6 +399,7 @@ public class WhisperTranscriptionWorker implements Runnable {
      * @param startMs 録音開始からの開始時刻。ミリ秒
      * @param durationMs 対象音声の長さ。ミリ秒
      * @param processingTimeMs Whisper 推論 1 回にかかった処理時間。ミリ秒
+     * @param tag 文字起こしの発行元タグ。例: {@code WhisperTranscriptionTag.Recording}
      */
     private void output(
             final String text,
@@ -405,7 +408,8 @@ public class WhisperTranscriptionWorker implements Runnable {
             final String errorMessage,
             final long startMs,
             final long durationMs,
-            final long processingTimeMs
+            final long processingTimeMs,
+            final WhisperTranscriptionTag tag
     ) {
         SystemEventHub.publish(new WhisperTranscriptionEvent(
                 sessionId,
@@ -417,12 +421,14 @@ public class WhisperTranscriptionWorker implements Runnable {
                 startMs,
                 durationMs,
                 processingTimeMs,
-                settings.model().key()
+                settings.model().key(),
+                tag
         ));
     }
 
     private void outputError(final String message) {
-        output("", false, false, message, samplesToMs(processedSamples), 0, 0);
+        output("", false, false, message, samplesToMs(processedSamples), 0, 0,
+                WhisperTranscriptionTag.Stopping);
     }
 
     /**
