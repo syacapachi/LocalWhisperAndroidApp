@@ -1,4 +1,4 @@
-package jp.ac.gifu_u.programmingjissen2.Transscripts;
+package jp.ac.gifu_u.programmingjissen2.TransscriptsJSON;
 
 import android.content.Context;
 import android.util.Log;
@@ -16,6 +16,7 @@ import java.nio.charset.StandardCharsets;
 
 import Utils.StringPool.StringBufferBuilderPool;
 import events.Whisper.WhisperTranscriptionEvent;
+import jp.ac.gifu_u.programmingjissen2.TransscriptsJSON.Data.TranscriptionJsonItem;
 
 /**
  * 1 回の録音 session に対応する文字起こし JSON ファイルを管理するクラスです。

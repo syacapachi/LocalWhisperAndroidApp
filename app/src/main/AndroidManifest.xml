@@ -29,7 +29,7 @@
         android:theme="@style/Theme.ProgrammingJissen2">
         <!-- バックグラウンドで実行されるクラス -->
         <service
-            android:name=".BackgroundWhisperService"
+            android:name=".Transcription.BackgroundWhisperService"
             android:exported="false"
             android:foregroundServiceType="microphone" />
         <!-- 設定UI画面 -->
@@ -38,7 +38,7 @@
             android:exported="false" />
         <!-- 文字起こし結果UI画面 -->
         <activity
-            android:name=".TranscriptionListActivity"
+            android:name=".ResultUI.TranscriptionListActivity"
             android:exported="false" />
         <!-- 外部サービス的なやつ。ファイル管理 -->
         <provider

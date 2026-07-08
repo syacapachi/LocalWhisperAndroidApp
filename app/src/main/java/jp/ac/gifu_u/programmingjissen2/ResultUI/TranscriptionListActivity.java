@@ -1,4 +1,4 @@
-package jp.ac.gifu_u.programmingjissen2;
+package jp.ac.gifu_u.programmingjissen2.ResultUI;
 
 import android.content.ClipData;
 import android.content.Intent;
@@ -34,7 +34,7 @@ import java.util.Date;
 import java.util.Locale;
 
 import Utils.StringPool.StringBufferBuilderPool;
-import jp.ac.gifu_u.programmingjissen2.Transscripts.TranscriptionJsonWriter;
+import jp.ac.gifu_u.programmingjissen2.TransscriptsJSON.TranscriptionJsonWriter;
 
 /** 保存済みの文字起こし JSON を一覧表示し、内容確認と共有を行う画面です。 */
 public class TranscriptionListActivity extends AppCompatActivity {

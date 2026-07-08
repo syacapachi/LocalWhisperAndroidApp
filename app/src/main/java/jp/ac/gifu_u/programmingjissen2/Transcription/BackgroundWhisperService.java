@@ -1,4 +1,4 @@
-package jp.ac.gifu_u.programmingjissen2;
+package jp.ac.gifu_u.programmingjissen2.Transcription;
 
 import android.Manifest;
 import android.app.Notification;
@@ -16,7 +16,6 @@ import android.util.Log;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
-import androidx.annotation.RequiresApi;
 import androidx.core.app.NotificationCompat;
 import androidx.core.content.ContextCompat;
 
@@ -29,9 +28,11 @@ import events.SystemEventHub;
 import events.Threading.ThreadStoppedEvent;
 import events.Whisper.WhisperRecordingStateEvent;
 import events.Whisper.WhisperTranscriptionEvent;
+import jp.ac.gifu_u.programmingjissen2.MainActivity;
+import jp.ac.gifu_u.programmingjissen2.R;
 import jp.ac.gifu_u.programmingjissen2.Record.AudioRecordWorker;
-import jp.ac.gifu_u.programmingjissen2.Transscripts.TranscriptionJsonWorker;
-import jp.ac.gifu_u.programmingjissen2.SettingUI.WhisperSettings;
+import jp.ac.gifu_u.programmingjissen2.TransscriptsJSON.TranscriptionJsonWorker;
+import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.WhisperSettings;
 import jp.ac.gifu_u.programmingjissen2.SettingUI.WhisperSettingsStore;
 
 /** バックグラウンドでも録音と Whisper 文字起こしを続ける foreground service です。 */

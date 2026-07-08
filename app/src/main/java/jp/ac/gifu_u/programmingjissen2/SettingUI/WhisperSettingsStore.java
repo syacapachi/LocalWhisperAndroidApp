@@ -8,6 +8,9 @@ import androidx.annotation.NonNull;
 import org.jetbrains.annotations.Contract;
 
 import Utils.StringPool.StringBufferBuilderPool;
+import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.WhisperInferenceStats;
+import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.WhisperModelOption;
+import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.WhisperSettings;
 
 /** Whisper 設定とモデル別推論時間統計の保存を担当します。 */
 public final class WhisperSettingsStore {

@@ -1,4 +1,4 @@
-package jp.ac.gifu_u.programmingjissen2;
+package jp.ac.gifu_u.programmingjissen2.Transcription;
 
 import android.util.Log;
 
@@ -18,7 +18,7 @@ import Whisper.WhisperBridge;
 import events.SystemEventHub;
 import events.Threading.ThreadStoppedEvent;
 import events.Whisper.WhisperTranscriptionEvent;
-import jp.ac.gifu_u.programmingjissen2.SettingUI.WhisperSettings;
+import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.WhisperSettings;
 
 /**
  * 録音スレッドから受け取った音声チャンクを、別スレッドで Whisper.cpp に渡すクラスです。

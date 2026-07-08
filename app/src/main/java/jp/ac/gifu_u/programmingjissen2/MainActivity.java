@@ -1,6 +1,7 @@
 package jp.ac.gifu_u.programmingjissen2;
 import android.hardware.Sensor;
 import android.content.Intent;
+import android.net.Uri;
 import android.os.Bundle;
 import android.util.Log;
 import android.widget.Button;
@@ -9,17 +10,21 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.appcompat.app.AppCompatActivity;
 
 import java.util.function.Consumer;
 
 import jp.ac.gifu_u.programmingjissen2.Record.RecordActivity;
+import jp.ac.gifu_u.programmingjissen2.ResultUI.TranscriptionListActivity;
 import jp.ac.gifu_u.programmingjissen2.SettingUI.WhisperRecordControls;
 
 import events.AwaitEvent.AwaiterHub;
 import events.Request.RequestPermissionResultEvent;
 import events.SampleEvent.SampleRecordEvent;
 import events.SystemEventHub;
+import jp.ac.gifu_u.programmingjissen2.Transcription.BackgroundWhisperService;
 
 /// アプリの状態を監視するクラス
 
@@ -27,6 +32,7 @@ public class MainActivity extends AppCompatActivity {
     private final static String TAG = MainActivity.class.getSimpleName();
     private SensorActivity sensorActivity;
     private RecordActivity recordActivity;
+    private ActivityResultLauncher<String[]> audioFilePicker;
 
     Consumer<SampleRecordEvent> eventListener1 = this::EventListener;
     Consumer<SampleRecordEvent> eventListener2 = this::EventListener2;
@@ -36,6 +42,10 @@ public class MainActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 //      EdgeToEdge.enable(this);
+        audioFilePicker = registerForActivityResult(
+                new ActivityResultContracts.OpenDocument(),
+                this::onAudioFileSelected
+        );
         setContentView(R.layout.activity_main);
         //ログの書き方,Tagはクラス名が多い
         Log.d(TAG, "onCreate");
@@ -78,8 +88,12 @@ public class MainActivity extends AppCompatActivity {
         TextView whisperStatusText = findViewById(R.id.whisperStatusText);
         TextView whisperBenchmarkText = findViewById(R.id.whisperBenchmarkText);
         Button transcriptionHistoryButton = findViewById(R.id.transcriptionHistoryButton);
+        Button audioFileTranscriptionButton = findViewById(R.id.audioFileTranscriptionButton);
         transcriptionHistoryButton.setOnClickListener((view) -> startActivity(
                 new Intent(this, TranscriptionListActivity.class)
+        ));
+        audioFileTranscriptionButton.setOnClickListener((view) -> audioFilePicker.launch(
+                new String[]{"audio/*", "video/*", "application/octet-stream"}
         ));
         recordActivity = new RecordActivity(this, new WhisperRecordControls(
                 recordButton,
@@ -157,6 +171,27 @@ public class MainActivity extends AppCompatActivity {
     }
     private void EventListener2(@NonNull SampleRecordEvent s){
         Log.d(TAG,s.message());
+    }
+
+    /**
+     * 音声ファイル選択結果を録音画面コントローラへ渡します。
+     *
+     * @param uri 選択されたファイル URI。例: {@code content://media/external/audio/media/1}
+     */
+    private void onAudioFileSelected(final Uri uri) {
+        if (uri == null || recordActivity == null) {
+            return;
+        }
+
+        try {
+            getContentResolver().takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION
+            );
+        } catch (SecurityException ignored) {
+            // 一時許可だけで読める provider もあるため、永続化失敗は処理継続します。
+        }
+        recordActivity.TranscribeAudioFile(uri);
     }
 
     /**

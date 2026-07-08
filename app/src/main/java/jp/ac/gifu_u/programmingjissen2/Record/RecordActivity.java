@@ -4,6 +4,7 @@ import android.Manifest;
 import android.app.Activity;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.net.Uri;
 import android.os.Build;
 import android.widget.Button;
 import android.widget.RadioGroup;
@@ -21,15 +22,15 @@ import events.Request.PermissionAwaiter;
 import events.SystemEventHub;
 import events.Whisper.WhisperRecordingStateEvent;
 import events.Whisper.WhisperTranscriptionEvent;
-import jp.ac.gifu_u.programmingjissen2.BackgroundWhisperService;
+import jp.ac.gifu_u.programmingjissen2.Transcription.BackgroundWhisperService;
 import jp.ac.gifu_u.programmingjissen2.R;
-import jp.ac.gifu_u.programmingjissen2.SettingUI.WhisperInferenceStats;
-import jp.ac.gifu_u.programmingjissen2.SettingUI.WhisperModelOption;
+import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.WhisperInferenceStats;
+import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.WhisperModelOption;
 import jp.ac.gifu_u.programmingjissen2.SettingUI.WhisperRecordControls;
-import jp.ac.gifu_u.programmingjissen2.SettingUI.WhisperSettings;
+import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.WhisperSettings;
 import jp.ac.gifu_u.programmingjissen2.SettingUI.WhisperSettingsActivity;
 import jp.ac.gifu_u.programmingjissen2.SettingUI.WhisperSettingsStore;
-import jp.ac.gifu_u.programmingjissen2.WhisperTranscriptionWorker;
+import jp.ac.gifu_u.programmingjissen2.Transcription.WhisperTranscriptionWorker;
 
 /** 録音画面の UI とバックグラウンド Whisper サービスを接続するクラスです。 */
 public class RecordActivity {
@@ -54,8 +55,11 @@ public class RecordActivity {
 
     private volatile boolean isRecording;
     private volatile boolean isStopping;
+    private volatile boolean isFileTranscribing;
     private WhisperSettings currentSettings;
     private boolean updatingModelSelector;
+    private WhisperFileTranscriptionWorker fileTranscriptionWorker;
+    private String fileSessionId;
 
     /** 従来の最小 UI で録音制御クラスを作成します。 */
     public RecordActivity(Activity activity, Button button, TextView resultTextView) {
@@ -226,6 +230,51 @@ public class RecordActivity {
         return true;
     }
 
+    /**
+     * 既存の音声ファイルを読み込み、Whisper 文字起こしを開始します。
+     *
+     * @param uri ドキュメントピッカーで選択された音声 URI。例: {@code content://media/external/audio/media/1}
+     * @return 開始できた場合 true。例: {@code true}
+     * @throws SecurityException URI の読み取り許可が失効している場合、worker 側でエラーイベントに変換します
+     */
+    public boolean TranscribeAudioFile(@NonNull final Uri uri) {
+        if (isRecording || isStopping || BackgroundWhisperService.isRunning()) {
+            outputMessage("録音停止後に音声ファイルを文字起こしできます");
+            return false;
+        }
+        if (isFileTranscribing) {
+            outputMessage("音声ファイルを文字起こし中です");
+            return false;
+        }
+
+        currentSettings = settingsStore.load();
+        fileSessionId = StringBufferBuilderPool.Join(
+                "-",
+                "file",
+                Long.toHexString(System.currentTimeMillis()),
+                Long.toHexString(System.nanoTime())
+        );
+        fileTranscriptionWorker = new WhisperFileTranscriptionWorker(
+                activity,
+                uri,
+                fileSessionId,
+                currentSettings,
+                this::onFileTranscriptionComplete
+        );
+        isFileTranscribing = true;
+        outputMessage("音声ファイルを読み込み中...");
+        refreshWhisperInfo();
+
+        if (!fileTranscriptionWorker.start()) {
+            isFileTranscribing = false;
+            fileTranscriptionWorker = null;
+            outputMessage("音声ファイル文字起こしを開始できませんでした");
+            refreshWhisperInfo();
+            return false;
+        }
+        return true;
+    }
+
     /** Activity の破棄時に UI 側の購読だけ解除します。 */
     public void Dispose() {
         SystemEventHub.unsubscribe(WhisperTranscriptionEvent.class, transcriptionListener);
@@ -235,6 +284,32 @@ public class RecordActivity {
     private void onTranscriptionEvent(final WhisperTranscriptionEvent event) {
         activity.runOnUiThread(() -> {
             outputTranscription(event);
+            if (isFileEvent(event) && !event.hasError()) {
+                settingsStore.recordInference(event.modelKey(), event.processingTimeMs());
+            }
+            refreshWhisperInfo();
+        });
+    }
+
+    /**
+     * ファイル文字起こし worker の完了通知を UI 状態へ反映します。
+     *
+     * @param sessionId 完了した session ID。例: {@code "file-1a2b"}
+     * @param errorMessage エラー時のメッセージ。成功時は空文字。例: {@code "audio track not found"}
+     */
+    private void onFileTranscriptionComplete(final String sessionId, final String errorMessage) {
+        activity.runOnUiThread(() -> {
+            if (fileSessionId != null && fileSessionId.equals(sessionId)) {
+                isFileTranscribing = false;
+                fileTranscriptionWorker = null;
+            }
+            if (errorMessage != null && !errorMessage.isEmpty()) {
+                outputMessage(StringBufferBuilderPool.Join(
+                        "",
+                        "音声ファイル文字起こしに失敗しました: ",
+                        errorMessage
+                ));
+            }
             refreshWhisperInfo();
         });
     }
@@ -295,7 +370,9 @@ public class RecordActivity {
 
     private void refreshWhisperInfo() {
         final WhisperSettings settings = currentSettings;
-        final String state = isRecording ? "録音中" : (isStopping ? "停止中" : "待機中");
+        final String state = isFileTranscribing
+                ? "ファイル文字起こし中"
+                : (isRecording ? "録音中" : (isStopping ? "停止中" : "待機中"));
         setStatusText(StringBufferBuilderPool.Join(
                 "",
                 "状態: ",
@@ -385,6 +462,10 @@ public class RecordActivity {
 
     private void outputMessage(final String message) {
         activity.runOnUiThread(() -> resultTextView.setText(message));
+    }
+
+    private boolean isFileEvent(@NonNull final WhisperTranscriptionEvent event) {
+        return fileSessionId != null && fileSessionId.equals(event.sessionId());
     }
 
     private void setStatusText(final String value) {

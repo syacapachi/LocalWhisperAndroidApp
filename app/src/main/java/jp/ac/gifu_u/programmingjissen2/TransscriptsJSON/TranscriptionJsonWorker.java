@@ -1,4 +1,4 @@
-package jp.ac.gifu_u.programmingjissen2.Transscripts;
+package jp.ac.gifu_u.programmingjissen2.TransscriptsJSON;
 
 import android.content.Context;
 import android.util.Log;

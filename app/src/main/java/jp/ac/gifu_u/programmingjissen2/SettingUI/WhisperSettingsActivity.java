@@ -22,6 +22,10 @@ import androidx.appcompat.app.AppCompatActivity;
 import org.jetbrains.annotations.Contract;
 
 import Utils.StringPool.StringBufferBuilderPool;
+import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.WhisperInferenceStats;
+import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.WhisperLanguageOption;
+import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.WhisperModelOption;
+import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.WhisperSettings;
 
 /** Whisper 関連のユーザー設定画面です。 */
 public class WhisperSettingsActivity extends AppCompatActivity {
