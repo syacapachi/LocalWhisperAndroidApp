@@ -31,6 +31,7 @@ import events.Whisper.WhisperTranscriptionEvent;
 import jp.ac.gifu_u.programmingjissen2.MainActivity;
 import jp.ac.gifu_u.programmingjissen2.R;
 import jp.ac.gifu_u.programmingjissen2.Record.AudioRecordWorker;
+import jp.ac.gifu_u.programmingjissen2.Record.RecordTranscriptionState;
 import jp.ac.gifu_u.programmingjissen2.TransscriptsJSON.TranscriptionJsonWorker;
 import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.WhisperSettings;
 import jp.ac.gifu_u.programmingjissen2.SettingUI.WhisperSettingsStore;
@@ -41,6 +42,8 @@ public class BackgroundWhisperService extends Service {
 
     public static final String ACTION_START = "jp.ac.gifu_u.programmingjissen2.whisper.START";
     public static final String ACTION_STOP = "jp.ac.gifu_u.programmingjissen2.whisper.STOP";
+    public static final String ACTION_STOP_INFERENCE =
+            "jp.ac.gifu_u.programmingjissen2.whisper.STOP_INFERENCE";
 
     private static final String CHANNEL_ID = "whisper_recording";
     private static final int NOTIFICATION_ID = 2100;
@@ -48,6 +51,7 @@ public class BackgroundWhisperService extends Service {
     private static volatile boolean active;
     private static volatile boolean recording;
     private static volatile boolean stopping;
+    private static volatile RecordTranscriptionState currentState;
     private static volatile String currentSessionId;
     private static volatile String latestText = "";
     private static volatile String currentModelKey = "";
@@ -79,12 +83,32 @@ public class BackgroundWhisperService extends Service {
         context.startService(intent);
     }
 
+    /**
+     * 推論スレッドにも停止を要求します。
+     *
+     * @param context サービスを起動する Context。例: {@code activity}
+     */
+    public static void stopInference(final Context context) {
+        final Intent intent = new Intent(context, BackgroundWhisperService.class);
+        intent.setAction(ACTION_STOP_INFERENCE);
+        context.startService(intent);
+    }
+
     public static boolean isRunning() {
         return active && recording;
     }
 
     public static boolean isStopping() {
         return stopping;
+    }
+
+    /**
+     * Foreground service が保持している現在の文字起こし状態を返します。
+     *
+     * @return 現在の状態。例: {@code RecordTranscriptionState.StopRecord}
+     */
+    public static RecordTranscriptionState currentState() {
+        return currentState;
     }
 
     public static boolean isServiceActive() {
@@ -131,6 +155,10 @@ public class BackgroundWhisperService extends Service {
             requestStopRecording();
             return START_NOT_STICKY;
         }
+        if (ACTION_STOP_INFERENCE.equals(action)) {
+            requestStopInference();
+            return START_NOT_STICKY;
+        }
 
         startForegroundNotification("Whisper 録音を準備中", "モデルを準備しています");
         startRecordingInternalAsync();
@@ -144,6 +172,7 @@ public class BackgroundWhisperService extends Service {
         active = false;
         recording = false;
         stopping = false;
+        currentState = null;
         super.onDestroy();
     }
 
@@ -156,7 +185,7 @@ public class BackgroundWhisperService extends Service {
     private void startRecordingInternalAsync() {
         if (recording || stopping) {
             updateNotification(latestText.isEmpty() ? "録音中" : latestText);
-            publishState("録音中です");
+            publishState(recording ? "録音中です" : stateMessage());
             return;
         }
 
@@ -188,8 +217,10 @@ public class BackgroundWhisperService extends Service {
         }
 
         String modelPath;
+        String vadModelPath;
         try {
             modelPath = MyUtils.prepareModelPath(this, settings.model().assetName());
+            vadModelPath = MyUtils.prepareModelPath(this, WhisperVadConfig.MODEL_ASSET_NAME);
         } catch (IOException e) {
             Log.e(TAG, "Whisper model prepare failed", e);
             publishState(StringBufferBuilderPool.Join("", "モデル準備に失敗しました: ", e.getMessage()));
@@ -203,6 +234,7 @@ public class BackgroundWhisperService extends Service {
 
         transcriptionWorker = new WhisperTranscriptionWorker(
                 modelPath,
+                vadModelPath,
                 currentSessionId,
                 settings
         );
@@ -225,6 +257,7 @@ public class BackgroundWhisperService extends Service {
 
         recording = true;
         stopping = false;
+        currentState = RecordTranscriptionState.Recording;
         updateNotification("録音中...");
         publishState("バックグラウンド録音中");
     }
@@ -236,8 +269,14 @@ public class BackgroundWhisperService extends Service {
         }
     }
 
+    /**
+     * 録音スレッドだけに停止を要求します。
+     *
+     * <p>推論スレッドは動かしたままにし、ユーザーが推論停止を選ぶまで残します。</p>
+     */
     private void requestStopRecording() {
-        if (stopping) {
+        if (currentState == RecordTranscriptionState.StopRecord
+                || currentState == RecordTranscriptionState.StopAll) {
             return;
         }
 
@@ -248,8 +287,33 @@ public class BackgroundWhisperService extends Service {
 
         recording = false;
         stopping = true;
-        updateNotification(latestText.isEmpty() ? "停止中..." : latestText);
-        publishState("停止中...");
+        currentState = RecordTranscriptionState.StopRecord;
+        updateNotification(latestText.isEmpty() ? "録音停止中..." : latestText);
+        publishState("録音停止: 推論は継続中です");
+        requestRecordThreadStop();
+        completeStopIfNeeded();
+    }
+
+    /**
+     * 推論スレッドの終了を要求します。
+     *
+     * <p>録音スレッドは止め、推論スレッドはキューと残り音声を次の推論で処理してから終了します。</p>
+     */
+    private void requestStopInference() {
+        if (currentState == RecordTranscriptionState.StopAll) {
+            return;
+        }
+
+        if (!recording && recordWorker == null && transcriptionWorker == null) {
+            stopForegroundAndSelf();
+            return;
+        }
+
+        recording = false;
+        stopping = true;
+        currentState = RecordTranscriptionState.StopAll;
+        updateNotification(latestText.isEmpty() ? "推論停止中..." : latestText);
+        publishState("推論停止: 残り音声の推論後に終了します");
         requestRecordThreadStop();
         requestWhisperThreadStop();
         completeStopIfNeeded();
@@ -307,6 +371,9 @@ public class BackgroundWhisperService extends Service {
         if ("Record".equals(event.owner())) {
             recordThreadStopped = true;
             recordWorker = null;
+            if (currentState == RecordTranscriptionState.StopRecord) {
+                publishState("録音停止: 推論は継続中です");
+            }
         } else if ("Whisper".equals(event.owner())) {
             whisperThreadStopped = true;
             transcriptionWorker = null;
@@ -328,11 +395,14 @@ public class BackgroundWhisperService extends Service {
     }
 
     private void completeStopIfNeeded() {
-        if (!stopping || !recordThreadStopped || !whisperThreadStopped || !jsonThreadStopped) {
+        if (currentState != RecordTranscriptionState.StopAll
+                || !recordThreadStopped
+                || !whisperThreadStopped
+                || !jsonThreadStopped) {
             return;
         }
 
-        publishState("録音を停止しました");
+        publishState("推論を停止しました");
         stopForegroundAndSelf();
     }
 
@@ -349,7 +419,7 @@ public class BackgroundWhisperService extends Service {
             settingsStore.recordInference(event.modelKey(), event.processingTimeMs());
         }
         updateNotification(latestText);
-        publishState(recording ? "バックグラウンド録音中" : "停止中...");
+        publishState(recording ? "バックグラウンド録音中" : stateMessage());
     }
 
     private void publishState(String message) {
@@ -361,6 +431,21 @@ public class BackgroundWhisperService extends Service {
                 latestText == null ? "" : latestText,
                 currentModelKey == null ? "" : currentModelKey
         ));
+    }
+
+    /**
+     * 現在の停止状態を表示用メッセージへ変換します。
+     *
+     * @return 表示用メッセージ。例: {@code "録音停止: 推論は継続中です"}
+     */
+    private String stateMessage() {
+        if (currentState == RecordTranscriptionState.StopRecord) {
+            return "録音停止: 推論は継続中です";
+        }
+        if (currentState == RecordTranscriptionState.StopAll) {
+            return "推論停止中...";
+        }
+        return "待機中";
     }
 
     /**
@@ -421,8 +506,9 @@ public class BackgroundWhisperService extends Service {
                 pendingIntentFlags()
         );
 
+        final boolean shouldStopInference = currentState == RecordTranscriptionState.StopRecord;
         final Intent stopIntent = new Intent(this, BackgroundWhisperService.class);
-        stopIntent.setAction(ACTION_STOP);
+        stopIntent.setAction(shouldStopInference ? ACTION_STOP_INFERENCE : ACTION_STOP);
         final PendingIntent stopPendingIntent = PendingIntent.getService(
                 this,
                 1,
@@ -439,7 +525,7 @@ public class BackgroundWhisperService extends Service {
                 .setContentIntent(contentIntent)
                 .setOngoing(true)
                 .setOnlyAlertOnce(true)
-                .addAction(0, "停止", stopPendingIntent)
+                .addAction(0, shouldStopInference ? "推論停止" : "録音停止", stopPendingIntent)
                 .build();
     }
 
@@ -454,6 +540,7 @@ public class BackgroundWhisperService extends Service {
     private void stopForegroundAndSelf() {
         recording = false;
         stopping = false;
+        currentState = null;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             stopForeground(STOP_FOREGROUND_REMOVE);
         } else {

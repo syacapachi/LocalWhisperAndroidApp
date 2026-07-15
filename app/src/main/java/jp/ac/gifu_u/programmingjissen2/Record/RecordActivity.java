@@ -7,7 +7,6 @@ import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
 import android.widget.Button;
-import android.widget.RadioGroup;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
@@ -24,7 +23,6 @@ import events.Whisper.WhisperRecordingStateEvent;
 import events.Whisper.WhisperTranscriptionEvent;
 import events.Whisper.WhisperTranscriptionTag;
 import jp.ac.gifu_u.programmingjissen2.Transcription.BackgroundWhisperService;
-import jp.ac.gifu_u.programmingjissen2.R;
 import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.WhisperInferenceStats;
 import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.WhisperModelOption;
 import jp.ac.gifu_u.programmingjissen2.SettingUI.WhisperRecordControls;
@@ -42,12 +40,7 @@ public class RecordActivity {
     static final int REQUESTCODE = 2000;
 
     private final Activity activity;
-    private final Button recordButton;
-    private final Button settingsButton;
-    private final RadioGroup modelRadioGroup;
-    private final TextView resultTextView;
-    private final TextView statusTextView;
-    private final TextView benchmarkTextView;
+    private final RecordScreenBinder screenBinder;
     private final WhisperSettingsStore settingsStore;
 
     private final Consumer<WhisperTranscriptionEvent> transcriptionListener =
@@ -57,7 +50,6 @@ public class RecordActivity {
     private volatile RecordTranscriptionState state;
     private volatile boolean isTranscribing;
     private WhisperSettings currentSettings;
-    private boolean updatingModelSelector;
     private WhisperFileTranscriptionWorker fileTranscriptionWorker;
 
     /** 従来の最小 UI で録音制御クラスを作成します。 */
@@ -75,12 +67,7 @@ public class RecordActivity {
     /** 録音 UI とバックグラウンド Whisper サービスの制御クラスを作成します。 */
     public RecordActivity(Activity activity, @NonNull WhisperRecordControls controls) {
         this.activity = activity;
-        this.recordButton = controls.recordButton;
-        this.settingsButton = controls.settingsButton;
-        this.modelRadioGroup = controls.modelRadioGroup;
-        this.resultTextView = controls.resultTextView;
-        this.statusTextView = controls.statusTextView;
-        this.benchmarkTextView = controls.benchmarkTextView;
+        this.screenBinder = new RecordScreenBinder(controls);
         this.settingsStore = new WhisperSettingsStore(activity);
         this.currentSettings = settingsStore.load();
 
@@ -94,49 +81,32 @@ public class RecordActivity {
     }
 
     private void setupRecordButton() {
-        recordButton.setOnClickListener((view) -> {
+        screenBinder.setRecordClickListener((view) -> {
             if (state != RecordTranscriptionState.Recording
-                    && state != RecordTranscriptionState.Stopping) {
-                if (StartRecord()) {
-                    recordButton.setText("停止");
-                }
+                    && state != RecordTranscriptionState.StopRecord) {
+                StartRecord();
             } else {
-                if (StopRecord()) {
-                    recordButton.setText("停止中");
-                }
+                StopRecord();
             }
         });
     }
 
     private void setupSettingsButton() {
-        if (settingsButton == null) {
-            return;
-        }
         // 設定UI画面を上に重ねる
-        settingsButton.setOnClickListener((view) -> activity.startActivity(
+        screenBinder.setSettingsClickListener((view) -> activity.startActivity(
                 new Intent(activity, WhisperSettingsActivity.class)
         ));
     }
 
     private void setupModelSelector() {
-        syncModelSelector(currentSettings.model());
-        if (modelRadioGroup == null) {
-            return;
-        }
-
-        modelRadioGroup.setOnCheckedChangeListener((group, checkedId) -> {
-            if (updatingModelSelector) {
-                return;
-            }
-
-            final WhisperModelOption selected = modelFromRadioId(checkedId);
+        screenBinder.bindModelSelector(currentSettings.model(), (selected) -> {
             if (selected == currentSettings.model()) {
                 return;
             }
 
             if (isTranscribing) {
                 outputMessage("モデル変更は録音停止後に反映できます");
-                syncModelSelector(currentSettings.model());
+                screenBinder.syncModelSelector(currentSettings.model());
                 return;
             }
 
@@ -150,24 +120,23 @@ public class RecordActivity {
     public void RefreshSettings() {
         if (!isTranscribing) {
             currentSettings = settingsStore.load();
-            syncModelSelector(currentSettings.model());
+            screenBinder.syncModelSelector(currentSettings.model());
         }
         syncStateFromBackgroundService();
-        recordButton.setText(state == RecordTranscriptionState.Recording
-                ? "停止"
-                : (state == RecordTranscriptionState.Stopping ? "停止中" : "録音"));
+        screenBinder.setRecordButtonState(state);
         refreshWhisperInfo();
 
         String latest = BackgroundWhisperService.latestText();
         if (latest != null && !latest.isEmpty()) {
-            resultTextView.setText(latest);
+            screenBinder.showMessage(latest);
         }
     }
 
     /** 録音権限を確認し、バックグラウンド録音サービスを開始します。 */
     public boolean StartRecord() {
-        if (state == RecordTranscriptionState.Stopping) {
-            outputMessage("停止処理中です");
+        if (state == RecordTranscriptionState.StopRecord
+                || state == RecordTranscriptionState.StopAll) {
+            outputMessage("録音停止後の推論処理中です");
             return false;
         }
         if (state == RecordTranscriptionState.FileTranscribing) {
@@ -185,7 +154,7 @@ public class RecordActivity {
                             requestPostNotificationPermissionIfNeeded();
                             activity.runOnUiThread(() -> {
                                 if (StartRecord()) {
-                                    recordButton.setText("停止");
+                                    screenBinder.setRecordButtonState(state);
                                 }
                             });
                         } else {
@@ -206,7 +175,7 @@ public class RecordActivity {
         currentSettings = settingsStore.load();
         BackgroundWhisperService.startRecording(activity);
         setState(RecordTranscriptionState.Recording);
-        recordButton.setText("停止");
+        screenBinder.setRecordButtonState(state);
         outputMessage(StringBufferBuilderPool.Join(
                 "",
                 "バックグラウンド録音を開始します: ",
@@ -218,7 +187,15 @@ public class RecordActivity {
 
     /** バックグラウンド録音サービスへ停止を要求します。 */
     public boolean StopRecord() {
-        if (state == RecordTranscriptionState.Stopping) {
+        if (state == RecordTranscriptionState.StopAll) {
+            return true;
+        }
+
+        if (state == RecordTranscriptionState.StopRecord) {
+            setState(RecordTranscriptionState.StopAll);
+            BackgroundWhisperService.stopInference(activity);
+            screenBinder.setRecordButtonState(state);
+            refreshWhisperInfo();
             return true;
         }
 
@@ -226,9 +203,9 @@ public class RecordActivity {
             return false;
         }
 
-        setState(RecordTranscriptionState.Stopping);
+        setState(RecordTranscriptionState.StopRecord);
         BackgroundWhisperService.stopRecording(activity);
-        recordButton.setText("停止中");
+        screenBinder.setRecordButtonState(state);
         refreshWhisperInfo();
         return true;
     }
@@ -242,7 +219,8 @@ public class RecordActivity {
      */
     public boolean TranscribeAudioFile(@NonNull final Uri uri) {
         if (state == RecordTranscriptionState.Recording
-                || state == RecordTranscriptionState.Stopping
+                || state == RecordTranscriptionState.StopRecord
+                || state == RecordTranscriptionState.StopAll
                 || BackgroundWhisperService.isRunning()) {
             outputMessage("録音停止後に音声ファイルを文字起こしできます");
             return false;
@@ -288,7 +266,7 @@ public class RecordActivity {
 
     private void onTranscriptionEvent(final WhisperTranscriptionEvent event) {
         activity.runOnUiThread(() -> {
-            outputTranscription(event);
+            screenBinder.showTranscription(event);
             if (event.tag() == WhisperTranscriptionTag.FileTranscribing && !event.hasError()) {
                 settingsStore.recordInference(event.modelKey(), event.processingTimeMs());
             }
@@ -320,58 +298,16 @@ public class RecordActivity {
     private void onRecordingStateEvent(WhisperRecordingStateEvent event) {
         activity.runOnUiThread(() -> {
             setState(event.stopping()
-                    ? RecordTranscriptionState.Stopping
+                    ? BackgroundWhisperService.currentState()
                     : (event.recording() ? RecordTranscriptionState.Recording : null));
-            recordButton.setText(state == RecordTranscriptionState.Recording
-                    ? "停止"
-                    : (state == RecordTranscriptionState.Stopping ? "停止中" : "録音"));
+            screenBinder.setRecordButtonState(state);
             if (!event.latestText().isEmpty()) {
-                resultTextView.setText(event.latestText());
+                screenBinder.showMessage(event.latestText());
             } else if (!event.message().isEmpty()) {
-                resultTextView.setText(event.message());
+                screenBinder.showMessage(event.message());
             }
             refreshWhisperInfo();
         });
-    }
-
-    /** Whisper のイベント結果を画面に出力します。 */
-    public void outputTranscription(@NonNull final WhisperTranscriptionEvent event) {
-        if (event.hasError()) {
-            resultTextView.setText(StringBufferBuilderPool.Join(
-                    "",
-                    "Whisper エラー: ",
-                    event.errorMessage()
-            ));
-            return;
-        }
-
-        final String label = event.finalResult() ? "最終結果" : "認識中";
-        final String text = event.text().isEmpty() ? "..." : event.text();
-        resultTextView.setText(buildTranscriptionViewText(label, text, event));
-    }
-
-    @NonNull
-    private String buildTranscriptionViewText(
-            @NonNull final String label,
-            @NonNull final String text,
-            @NonNull final WhisperTranscriptionEvent event
-    ) {
-        WhisperModelOption model = WhisperModelOption.fromKey(event.modelKey());
-        return StringBufferBuilderPool.Join(
-                "",
-                label,
-                " ",
-                event.startMs(),
-                "ms-",
-                event.startMs() + event.durationMs(),
-                "ms\n",
-                "モデル: ",
-                model.displayName(),
-                " / 推論: ",
-                event.processingTimeMs(),
-                "ms\n",
-                text
-        );
     }
 
     private void refreshWhisperInfo() {
@@ -391,7 +327,7 @@ public class RecordActivity {
                 settings.overlapMs(),
                 "ms"
         ));
-        setBenchmarkText(buildBenchmarkText());
+        screenBinder.setBenchmarkText(buildBenchmarkText());
     }
 
     @NonNull
@@ -428,25 +364,6 @@ public class RecordActivity {
         );
     }
 
-    private void syncModelSelector(final WhisperModelOption model) {
-        if (modelRadioGroup == null) {
-            return;
-        }
-
-        updatingModelSelector = true;
-        modelRadioGroup.check(model == WhisperModelOption.SMALL
-                ? R.id.whisperModelSmall
-                : R.id.whisperModelBase);
-        updatingModelSelector = false;
-    }
-
-    private WhisperModelOption modelFromRadioId(int checkedId) {
-        if (checkedId == R.id.whisperModelSmall) {
-            return WhisperModelOption.SMALL;
-        }
-        return WhisperModelOption.BASE;
-    }
-
     private void requestPostNotificationPermissionIfNeeded() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
             return;
@@ -465,7 +382,7 @@ public class RecordActivity {
     }
 
     private void outputMessage(final String message) {
-        activity.runOnUiThread(() -> resultTextView.setText(message));
+        activity.runOnUiThread(() -> screenBinder.showMessage(message));
     }
 
     /**
@@ -476,7 +393,7 @@ public class RecordActivity {
             return;
         }
         setState(BackgroundWhisperService.isStopping()
-                ? RecordTranscriptionState.Stopping
+                ? BackgroundWhisperService.currentState()
                 : (BackgroundWhisperService.isRunning() ? RecordTranscriptionState.Recording : null));
     }
 
@@ -503,21 +420,16 @@ public class RecordActivity {
         if (state == RecordTranscriptionState.FileTranscribing) {
             return "ファイル文字起こし中";
         }
-        if (state == RecordTranscriptionState.Stopping) {
-            return "停止中";
+        if (state == RecordTranscriptionState.StopRecord) {
+            return "録音停止";
+        }
+        if (state == RecordTranscriptionState.StopAll) {
+            return "推論停止";
         }
         return "待機中";
     }
 
     private void setStatusText(final String value) {
-        if (statusTextView != null) {
-            statusTextView.setText(value);
-        }
-    }
-
-    private void setBenchmarkText(final String value) {
-        if (benchmarkTextView != null) {
-            benchmarkTextView.setText(value);
-        }
+        screenBinder.setStatusText(value);
     }
 }

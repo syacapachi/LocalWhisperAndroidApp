@@ -41,6 +41,9 @@ public class WhisperTranscriptionWorker implements Runnable {
     /** Whisper モデルファイルの実ファイルパスです。 */
     private final String modelPath;
 
+    /** whisper.cpp内蔵VADが読み込むモデルファイルの実ファイルパスです。 */
+    private final String vadModelPath;
+
     /** 録音開始ごとに作られる session ID です。 */
     private final String sessionId;
 
@@ -79,6 +82,9 @@ public class WhisperTranscriptionWorker implements Runnable {
     /** worker スレッドの継続フラグです。 */
     private volatile boolean running;
 
+    /** 停止要求時に残り音声を最終推論してから終了する場合 true です。 */
+    private volatile boolean finishAfterQueuedAudio;
+
     /** Whisper 推論を実行している Java スレッドです。 */
     private Thread workerThread;
 
@@ -98,7 +104,7 @@ public class WhisperTranscriptionWorker implements Runnable {
      * @param sessionId 録音 session ID
      */
     public WhisperTranscriptionWorker(final String modelPath, final String sessionId) {
-        this(modelPath, sessionId, WhisperSettings.defaultSettings());
+        this(modelPath, null, sessionId, WhisperSettings.defaultSettings());
     }
 
     /**
@@ -113,7 +119,24 @@ public class WhisperTranscriptionWorker implements Runnable {
             final String sessionId,
             final WhisperSettings settings
     ) {
-        this(modelPath, sessionId, DEFAULT_SAMPLE_RATE, settings);
+        this(modelPath, null, sessionId, DEFAULT_SAMPLE_RATE, settings);
+    }
+
+    /**
+     * 既定のサンプリングレートでVAD付きWhisper推論workerを作成します。
+     *
+     * @param modelPath Whisperモデルの実ファイルパス。例: {@code "/data/.../ggml-base.bin"}
+     * @param vadModelPath VADモデルの実ファイルパス。例: {@code "/data/.../ggml-silero-v6.2.0.bin"}
+     * @param sessionId 録音session ID。例: {@code "recording-1"}
+     * @param settings Whisper推論設定。例: {@code WhisperSettings.defaultSettings()}
+     */
+    public WhisperTranscriptionWorker(
+            final String modelPath,
+            final String vadModelPath,
+            final String sessionId,
+            final WhisperSettings settings
+    ) {
+        this(modelPath, vadModelPath, sessionId, DEFAULT_SAMPLE_RATE, settings);
     }
 
     /**
@@ -130,7 +153,27 @@ public class WhisperTranscriptionWorker implements Runnable {
             final int sampleRate,
             final WhisperSettings settings
     ) {
+        this(modelPath, null, sessionId, sampleRate, settings);
+    }
+
+    /**
+     * サンプリングレートを指定してVAD付きWhisper推論workerを作成します。
+     *
+     * @param modelPath Whisperモデルの実ファイルパス。例: {@code "/data/.../ggml-base.bin"}
+     * @param vadModelPath VADモデルの実ファイルパス。例: {@code "/data/.../ggml-silero-v6.2.0.bin"}
+     * @param sessionId 録音session ID。例: {@code "recording-1"}
+     * @param sampleRate 入力PCMのHz。例: {@code 16000}
+     * @param settings Whisper推論設定。例: {@code WhisperSettings.defaultSettings()}
+     */
+    public WhisperTranscriptionWorker(
+            final String modelPath,
+            final String vadModelPath,
+            final String sessionId,
+            final int sampleRate,
+            final WhisperSettings settings
+    ) {
         this.modelPath = modelPath;
+        this.vadModelPath = vadModelPath;
         this.sessionId = sessionId;
         this.stopEventId = StringBufferBuilderPool.Join("", sessionId, ":whisper");
         this.settings = settings == null ? WhisperSettings.defaultSettings() : settings;
@@ -197,12 +240,12 @@ public class WhisperTranscriptionWorker implements Runnable {
      */
     public synchronized boolean requestStop() {
         running = false;
+        finishAfterQueuedAudio = true;
 
         if (workerThread == null) {
             return false;
         }
 
-        workerThread.interrupt();
         return true;
     }
 
@@ -258,8 +301,21 @@ public class WhisperTranscriptionWorker implements Runnable {
      * @param currentThread worker 自身のスレッド
      */
     private void transcribeRemainingAudio(@NonNull final Thread currentThread) {
-        if (!currentThread.isInterrupted() && pendingAudio.size() >= minFinalSamples) {
+        drainQueuedAudio();
+        final boolean hasRequiredAudio = pendingAudio.size() >= minFinalSamples;
+        final boolean hasForcedFinalAudio = finishAfterQueuedAudio && pendingAudio.size() > 0;
+        if (!currentThread.isInterrupted() && (hasRequiredAudio || hasForcedFinalAudio)) {
             transcribeNextWindow(true);
+        }
+    }
+
+    /**
+     * 停止要求前にキューへ入っていた音声を pendingAudio に移します。
+     */
+    private void drainQueuedAudio() {
+        FloatAudioBuffer chunk;
+        while ((chunk = audioQueue.poll()) != null) {
+            pendingAudio.append(chunk);
         }
     }
 
@@ -330,6 +386,9 @@ public class WhisperTranscriptionWorker implements Runnable {
                 settings.maxThreads(),
                 Math.max(1, Runtime.getRuntime().availableProcessors())
         );
+        if (vadModelPath != null && !vadModelPath.trim().isEmpty()) {
+            WhisperVadConfig.enable(params, vadModelPath);
+        }
 
         final int result = WhisperBridge.full(context, params, samples);
         if (result != 0) {
@@ -358,6 +417,9 @@ public class WhisperTranscriptionWorker implements Runnable {
                 settings.maxThreads(),
                 Math.max(1, Runtime.getRuntime().availableProcessors())
         );
+        if (vadModelPath != null && !vadModelPath.trim().isEmpty()) {
+            WhisperVadConfig.enable(params, vadModelPath);
+        }
 
         final int result = WhisperBridge.fullParallel(context, params, samples,params.nThreads);
         if (result != 0) {

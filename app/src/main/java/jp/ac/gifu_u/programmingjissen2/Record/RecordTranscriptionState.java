@@ -4,5 +4,6 @@ package jp.ac.gifu_u.programmingjissen2.Record;
 public enum RecordTranscriptionState {
     Recording,
     FileTranscribing,
-    Stopping
+    StopRecord,
+    StopAll
 }

@@ -21,6 +21,7 @@ import jp.ac.gifu_u.programmingjissen2.Record.Utility.AudioFilePcmDecoder;
 import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.WhisperSettings;
 import jp.ac.gifu_u.programmingjissen2.TranscriptionText.TranscriptionTextFormatter;
 import jp.ac.gifu_u.programmingjissen2.TranscriptionText.TranscriptionTextRepository;
+import jp.ac.gifu_u.programmingjissen2.Transcription.WhisperVadConfig;
 
 /** 既存音声ファイルを読み込み、Whisper.cpp で一括文字起こしする worker です。 */
 public final class WhisperFileTranscriptionWorker implements Runnable {
@@ -103,8 +104,12 @@ public final class WhisperFileTranscriptionWorker implements Runnable {
         String errorMessage = "";
         try {
             final String modelPath = MyUtils.prepareModelPath(context, settings.model().assetName());
+            final String vadModelPath = MyUtils.prepareModelPath(
+                    context,
+                    WhisperVadConfig.MODEL_ASSET_NAME
+            );
             final DecodedAudio audio = AudioFilePcmDecoder.decodeToWhisperPcm(context, audioUri);
-            transcribe(modelPath, audio);
+            transcribe(modelPath, vadModelPath, audio);
         } catch (Exception e) {
             Log.e(TAG, "File transcription failed", e);
             errorMessage = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
@@ -117,8 +122,17 @@ public final class WhisperFileTranscriptionWorker implements Runnable {
         }
     }
 
+    /**
+     * 読み込み済み音声を内蔵VADで発話区間へ絞ってから文字起こしします。
+     *
+     * @param modelPath Whisperモデルの実ファイルパス。例: {@code "/data/.../ggml-base.bin"}
+     * @param vadModelPath VADモデルの実ファイルパス。例: {@code "/data/.../ggml-silero-v6.2.0.bin"}
+     * @param audio 16kHz・モノラルへ変換済みの音声。例: {@code decodedAudio}
+     * @throws IOException モデル初期化または推論に失敗した場合
+     */
     private void transcribe(
             @NonNull final String modelPath,
+            @NonNull final String vadModelPath,
             @NonNull final DecodedAudio audio
     ) throws IOException {
         final WhisperBridge.ContextParams contextParams = WhisperBridge.defaultContextParams();
@@ -130,7 +144,7 @@ public final class WhisperFileTranscriptionWorker implements Runnable {
 
         try {
             final long startedAt = System.nanoTime();
-            final int result = WhisperBridge.full(whisperContext, createFullParams(),
+            final int result = WhisperBridge.full(whisperContext, createFullParams(vadModelPath),
                     audio.samples());
             final long processingTimeMs = TimeUnit.NANOSECONDS.toMillis(
                     System.nanoTime() - startedAt);
@@ -145,8 +159,15 @@ public final class WhisperFileTranscriptionWorker implements Runnable {
         }
     }
 
+    /**
+     * ファイル文字起こし用の推論設定を作り、内蔵VADを有効化します。
+     *
+     * @param vadModelPath VADモデルの実ファイルパス。例: {@code "/data/.../ggml-silero-v6.2.0.bin"}
+     * @return VADが有効な推論設定。例: {@code params.vad == true}
+     * @throws IllegalArgumentException vadModelPathがnullまたは空文字の場合
+     */
     @NonNull
-    private WhisperBridge.FullParams createFullParams() {
+    private WhisperBridge.FullParams createFullParams(@NonNull final String vadModelPath) {
         final WhisperBridge.FullParams params =
                 WhisperBridge.defaultFullParams(WhisperBridge.SAMPLING_GREEDY);
         params.printProgress = false;
@@ -159,7 +180,7 @@ public final class WhisperFileTranscriptionWorker implements Runnable {
                 settings.maxThreads(),
                 Math.max(1, Runtime.getRuntime().availableProcessors())
         );
-        return params;
+        return WhisperVadConfig.enable(params, vadModelPath);
     }
 
     private void publishResult(final long whisperContext, final long durationMs,
