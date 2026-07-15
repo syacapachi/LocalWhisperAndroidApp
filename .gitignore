@@ -17,3 +17,6 @@ app/src/main/assets/ggml-base.bin
 /app/src/main/export
 app/release/app-release.apk
 /app/src/main/assets
+!/app/src/main/assets/
+/app/src/main/assets/*
+!/app/src/main/assets/ggml-silero-v6.2.0.bin
