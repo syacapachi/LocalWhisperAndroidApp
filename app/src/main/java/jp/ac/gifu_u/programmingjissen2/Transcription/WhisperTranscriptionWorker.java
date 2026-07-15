@@ -36,7 +36,7 @@ public class WhisperTranscriptionWorker implements Runnable {
     public static final int DEFAULT_SAMPLE_RATE = 16000;
 
     /** 録音スレッドから受け取る音声チャンクの最大待機数です。 */
-    private static final int QUEUE_CAPACITY = 32;
+    private static final int QUEUE_CAPACITY = 128;
 
     /** Whisper モデルファイルの実ファイルパスです。 */
     private final String modelPath;
@@ -81,6 +81,15 @@ public class WhisperTranscriptionWorker implements Runnable {
 
     /** worker スレッドの継続フラグです。 */
     private volatile boolean running;
+
+    /** 新しい録音チャンクをキューへ受け付ける場合 true です。 */
+    private volatile boolean acceptingAudio;
+
+    /** キューを処理し終えた時点で停止する要求がある場合 true です。 */
+    private volatile boolean drainStopRequested;
+
+    /** 終了処理へ入っており、停止要求を取り消せない場合 true です。 */
+    private volatile boolean terminating;
 
     /** 停止要求時に残り音声を最終推論してから終了する場合 true です。 */
     private volatile boolean finishAfterQueuedAudio;
@@ -191,6 +200,9 @@ public class WhisperTranscriptionWorker implements Runnable {
         }
 
         running = true;
+        acceptingAudio = true;
+        drainStopRequested = false;
+        terminating = false;
         workerThread = new Thread(this, "WhisperTranscriptionWorker");
         workerThread.start();
     }
@@ -211,26 +223,32 @@ public class WhisperTranscriptionWorker implements Runnable {
      *
      * @param samples 16kHz・モノラル・float PCM
      * @param length samples のうち有効な要素数
+     * @return キューへ追加できた場合true。例: {@code true}
      */
-    public void submit(final float[] samples, final int length) {
-        if (!running || samples == null || length <= 0) {
-            return;
+    public boolean submit(final float[] samples, final int length) {
+        if (!running || !acceptingAudio || samples == null || samples.length == 0 || length <= 0) {
+            return false;
         }
-        final FloatAudioBuffer copy = audioBufferPool.getOrCreate();
-        copy.append(samples);
+        final FloatAudioBuffer copy;
+        synchronized (audioBufferPool) {
+            copy = audioBufferPool.getOrCreate();
+        }
+        copy.append(samples, Math.min(length, samples.length));
         
         if (!audioQueue.offer(copy)) {
             final FloatAudioBuffer old = audioQueue.poll();
             if(old != null) {
-                audioBufferPool.releaseOrDelete(old);
+                releaseAudioBuffer(old);
                 Log.w(TAG, "Whisper queue is full. Dropped old audio chunk.");
             }
             if(!audioQueue.offer(copy)) {
-                audioBufferPool.releaseOrDelete(copy);
+                releaseAudioBuffer(copy);
                 Log.w(TAG, "Whisper queue is full. Dropped current audio chunk.");
+                return false;
             }
 
         }
+        return true;
     }
 
     /**
@@ -239,14 +257,35 @@ public class WhisperTranscriptionWorker implements Runnable {
      * <p>Thread.join() では待たず、{@link ThreadStoppedEvent} を Awaiter で待ってください。</p>
      */
     public synchronized boolean requestStop() {
-        running = false;
+        acceptingAudio = false;
+        drainStopRequested = true;
         finishAfterQueuedAudio = true;
 
-        if (workerThread == null) {
+        return workerThread != null;
+    }
+
+    /**
+     * キュー排出後の停止を取り消し、新しい音声の受付を再開します。
+     *
+     * @return 同じworkerで再開できた場合true。例: {@code true}
+     */
+    public synchronized boolean resumeAudioSubmission() {
+        if (!running || workerThread == null || terminating) {
             return false;
         }
-
+        drainStopRequested = false;
+        finishAfterQueuedAudio = false;
+        acceptingAudio = true;
         return true;
+    }
+
+    /**
+     * 新しい音声を受け付けているか返します。
+     *
+     * @return 受付中ならtrue。例: {@code false}
+     */
+    public boolean isAcceptingAudio() {
+        return running && acceptingAudio;
     }
 
     /**
@@ -271,10 +310,14 @@ public class WhisperTranscriptionWorker implements Runnable {
                 if (chunk != null) {
                     // 窓に追加
                     pendingAudio.append(chunk);
+                    releaseAudioBuffer(chunk);
                     // 一定以上ある場合は推論
                     while (pendingAudio.size() >= windowSamples && !currentThread.isInterrupted()) {
                         transcribeNextWindow(false);
                     }
+                }
+                if (beginTerminationIfDrained()) {
+                    break;
                 }
             }
             transcribeRemainingAudio(currentThread);
@@ -291,6 +334,9 @@ public class WhisperTranscriptionWorker implements Runnable {
             // バッファクリア
             pendingAudio.clear();
             running = false;
+            acceptingAudio = false;
+            drainStopRequested = false;
+            terminating = true;
             workerThread = null;
             publishStoppedEvent(currentThread, "");
         }
@@ -316,7 +362,32 @@ public class WhisperTranscriptionWorker implements Runnable {
         FloatAudioBuffer chunk;
         while ((chunk = audioQueue.poll()) != null) {
             pendingAudio.append(chunk);
+            releaseAudioBuffer(chunk);
         }
+    }
+
+    /**
+     * 複数スレッドから安全に音声バッファをプールへ返します。
+     * @param buffer 返却対象。例: {@code chunk}
+     */
+    private void releaseAudioBuffer(@NonNull final FloatAudioBuffer buffer) {
+        synchronized (audioBufferPool) {
+            audioBufferPool.releaseOrDelete(buffer);
+        }
+    }
+
+    /**
+     * 停止要求後に入力キューが空なら終了状態へ遷移します。
+     *
+     * @return 終了処理へ進む場合true。例: {@code true}
+     */
+    private synchronized boolean beginTerminationIfDrained() {
+        if (!drainStopRequested || !audioQueue.isEmpty()) {
+            return false;
+        }
+        acceptingAudio = false;
+        terminating = true;
+        return true;
     }
 
     /** native の Whisper context を作成します。 */

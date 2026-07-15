@@ -49,6 +49,9 @@ public class RecordActivity {
 
     private volatile RecordTranscriptionState state;
     private volatile boolean isTranscribing;
+    private volatile boolean recording;
+    private volatile boolean inferenceAlive;
+    private volatile boolean inferenceAccepting;
     private WhisperSettings currentSettings;
     private WhisperFileTranscriptionWorker fileTranscriptionWorker;
 
@@ -56,6 +59,7 @@ public class RecordActivity {
     public RecordActivity(Activity activity, Button button, TextView resultTextView) {
         this(activity, new WhisperRecordControls(
                 button,
+                null,
                 null,
                 null,
                 resultTextView,
@@ -75,6 +79,7 @@ public class RecordActivity {
         SystemEventHub.subscribe(WhisperRecordingStateEvent.class, stateListener);
 
         setupRecordButton();
+        setupInferenceButton();
         setupSettingsButton();
         setupModelSelector();
         RefreshSettings();
@@ -82,11 +87,20 @@ public class RecordActivity {
 
     private void setupRecordButton() {
         screenBinder.setRecordClickListener((view) -> {
-            if (state != RecordTranscriptionState.Recording
-                    && state != RecordTranscriptionState.StopRecord) {
-                StartRecord();
-            } else {
+            if (recording) {
                 StopRecord();
+            } else {
+                StartRecord();
+            }
+        });
+    }
+
+    private void setupInferenceButton() {
+        screenBinder.setInferenceClickListener((view) -> {
+            if (inferenceAccepting) {
+                StopInference();
+            } else {
+                ResumeInference();
             }
         });
     }
@@ -124,6 +138,7 @@ public class RecordActivity {
         }
         syncStateFromBackgroundService();
         screenBinder.setRecordButtonState(state);
+        screenBinder.setInferenceButtonState(recording, inferenceAlive, inferenceAccepting);
         refreshWhisperInfo();
 
         String latest = BackgroundWhisperService.latestText();
@@ -134,11 +149,6 @@ public class RecordActivity {
 
     /** 録音権限を確認し、バックグラウンド録音サービスを開始します。 */
     public boolean StartRecord() {
-        if (state == RecordTranscriptionState.StopRecord
-                || state == RecordTranscriptionState.StopAll) {
-            outputMessage("録音停止後の推論処理中です");
-            return false;
-        }
         if (state == RecordTranscriptionState.FileTranscribing) {
             outputMessage("音声ファイル文字起こし中です");
             return false;
@@ -174,8 +184,12 @@ public class RecordActivity {
         requestPostNotificationPermissionIfNeeded();
         currentSettings = settingsStore.load();
         BackgroundWhisperService.startRecording(activity);
+        recording = true;
+        inferenceAlive = true;
+        inferenceAccepting = true;
         setState(RecordTranscriptionState.Recording);
         screenBinder.setRecordButtonState(state);
+        screenBinder.setInferenceButtonState(recording, inferenceAlive, inferenceAccepting);
         outputMessage(StringBufferBuilderPool.Join(
                 "",
                 "バックグラウンド録音を開始します: ",
@@ -187,25 +201,49 @@ public class RecordActivity {
 
     /** バックグラウンド録音サービスへ停止を要求します。 */
     public boolean StopRecord() {
-        if (state == RecordTranscriptionState.StopAll) {
-            return true;
-        }
-
-        if (state == RecordTranscriptionState.StopRecord) {
-            setState(RecordTranscriptionState.StopAll);
-            BackgroundWhisperService.stopInference(activity);
-            screenBinder.setRecordButtonState(state);
-            refreshWhisperInfo();
-            return true;
-        }
-
-        if (state != RecordTranscriptionState.Recording && !BackgroundWhisperService.isRunning()) {
+        if (!recording && !BackgroundWhisperService.isRunning()) {
             return false;
         }
 
+        recording = false;
         setState(RecordTranscriptionState.StopRecord);
         BackgroundWhisperService.stopRecording(activity);
         screenBinder.setRecordButtonState(state);
+        screenBinder.setInferenceButtonState(recording, inferenceAlive, false);
+        refreshWhisperInfo();
+        return true;
+    }
+
+    /**
+     * リアルタイム推論への新規音声投入を止め、キュー排出後の停止を要求します。
+     *
+     * @return 録音中に停止要求を送れた場合true。例: {@code true}
+     */
+    public boolean StopInference() {
+        if (!recording || !inferenceAlive) {
+            return false;
+        }
+        inferenceAccepting = false;
+        BackgroundWhisperService.stopInference(activity);
+        screenBinder.setInferenceButtonState(recording, inferenceAlive, false);
+        refreshWhisperInfo();
+        return true;
+    }
+
+    /**
+     * 録音中のリアルタイム推論を再開します。
+     *
+     * @return 再開要求を送れた場合true。録音していない場合false。例: {@code true}
+     */
+    public boolean ResumeInference() {
+        if (!recording) {
+            outputMessage("録音中のみ推論を再開できます");
+            return false;
+        }
+        inferenceAlive = true;
+        inferenceAccepting = true;
+        BackgroundWhisperService.resumeInference(activity);
+        screenBinder.setInferenceButtonState(recording, true, true);
         refreshWhisperInfo();
         return true;
     }
@@ -218,10 +256,7 @@ public class RecordActivity {
      * @throws SecurityException URI の読み取り許可が失効している場合、worker 側でエラーイベントに変換します
      */
     public boolean TranscribeAudioFile(@NonNull final Uri uri) {
-        if (state == RecordTranscriptionState.Recording
-                || state == RecordTranscriptionState.StopRecord
-                || state == RecordTranscriptionState.StopAll
-                || BackgroundWhisperService.isRunning()) {
+        if (recording || inferenceAlive || BackgroundWhisperService.isServiceActive()) {
             outputMessage("録音停止後に音声ファイルを文字起こしできます");
             return false;
         }
@@ -297,10 +332,18 @@ public class RecordActivity {
 
     private void onRecordingStateEvent(WhisperRecordingStateEvent event) {
         activity.runOnUiThread(() -> {
+            recording = event.recording();
+            inferenceAlive = event.inferenceAlive();
+            inferenceAccepting = event.inferenceAccepting();
             setState(event.stopping()
-                    ? BackgroundWhisperService.currentState()
+                    ? RecordTranscriptionState.StopRecord
                     : (event.recording() ? RecordTranscriptionState.Recording : null));
             screenBinder.setRecordButtonState(state);
+            screenBinder.setInferenceButtonState(
+                    recording,
+                    inferenceAlive,
+                    inferenceAccepting
+            );
             if (!event.latestText().isEmpty()) {
                 screenBinder.showMessage(event.latestText());
             } else if (!event.message().isEmpty()) {
@@ -392,9 +435,12 @@ public class RecordActivity {
         if (state == RecordTranscriptionState.FileTranscribing) {
             return;
         }
+        recording = BackgroundWhisperService.isRunning();
+        inferenceAlive = BackgroundWhisperService.isInferenceAlive();
+        inferenceAccepting = BackgroundWhisperService.isInferenceAccepting();
         setState(BackgroundWhisperService.isStopping()
                 ? BackgroundWhisperService.currentState()
-                : (BackgroundWhisperService.isRunning() ? RecordTranscriptionState.Recording : null));
+                : (recording ? RecordTranscriptionState.Recording : null));
     }
 
     /**
@@ -404,7 +450,9 @@ public class RecordActivity {
      */
     private void setState(final RecordTranscriptionState nextState) {
         state = nextState;
-        isTranscribing = nextState != null;
+        isTranscribing = nextState == RecordTranscriptionState.FileTranscribing
+                || recording
+                || inferenceAlive;
     }
 
     /**
@@ -424,7 +472,7 @@ public class RecordActivity {
             return "録音停止";
         }
         if (state == RecordTranscriptionState.StopAll) {
-            return "推論停止";
+            return recording ? "録音中（推論停止）" : "推論停止";
         }
         return "待機中";
     }

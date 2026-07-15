@@ -11,13 +11,13 @@ import android.widget.RadioButton;
 import android.widget.RadioGroup;
 import android.widget.ScrollView;
 import android.widget.Spinner;
-import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.appcompat.widget.SwitchCompat;
 
 import org.jetbrains.annotations.Contract;
 
@@ -44,9 +44,11 @@ public class WhisperSettingsActivity extends AppCompatActivity {
     private EditText minFinalEdit;
     /** 推論に使う最大スレッド数の 入力フィールド */
     private EditText maxThreadsEdit;
-    private Switch noContextSwitch;
-    private Switch timestampSwitch;
-    private Switch useGpuSwitch;
+    private SwitchCompat noContextSwitch;
+    private SwitchCompat timestampSwitch;
+    private SwitchCompat useGpuSwitch;
+    private SwitchCompat audioRecordingSwitch;
+    private SwitchCompat autoRetranscribeSwitch;
     private TextView statsText;
 
     @Override
@@ -107,6 +109,18 @@ public class WhisperSettingsActivity extends AppCompatActivity {
         noContextSwitch = addSwitchRow(root, "前回文脈を使わない", "リアルタイム推論では安定しやすい設定です。", true);
         timestampSwitch = addSwitchRow(root, "Whisper 内部タイムスタンプ出力", "通常はオフのままで十分です。", false);
         useGpuSwitch = addSwitchRow(root,"推論にGPUを使う","機種によっては対応していません",false);
+
+        root.addView(sectionText("音声記録"));
+        audioRecordingSwitch = addSwitchRow(root, "音声記録を有効にする",
+                "録音ごとに16kHz・モノラルのWAVファイルをアプリ内へ保存します。", false);
+        autoRetranscribeSwitch = addSwitchRow(root, "録音終了時に自動で再推論する",
+                "リアルタイム推論の終了後、保存音声全体を専用スレッドで再推論します。", false);
+        audioRecordingSwitch.setOnCheckedChangeListener((button, checked) -> {
+            autoRetranscribeSwitch.setEnabled(checked);
+            if (!checked) {
+                autoRetranscribeSwitch.setChecked(false);
+            }
+        });
 
         // モデルの推論統計を出す
         root.addView(sectionText("処理時間"));
@@ -211,13 +225,13 @@ public class WhisperSettingsActivity extends AppCompatActivity {
     }
 
     @NonNull
-    private Switch addSwitchRow(
+    private SwitchCompat addSwitchRow(
             @NonNull final LinearLayout root,
             final String label,
             final String description,
             boolean checked
     ) {
-        final Switch switchView = new Switch(this);
+        final SwitchCompat switchView = new SwitchCompat(this);
         switchView.setText(label);
         switchView.setChecked(checked);
         switchView.setMinHeight(dp(48));
@@ -240,6 +254,9 @@ public class WhisperSettingsActivity extends AppCompatActivity {
         noContextSwitch.setChecked(settings.noContext());
         timestampSwitch.setChecked(settings.printTimestamps());
         useGpuSwitch.setChecked(settings.useGpu());
+        audioRecordingSwitch.setChecked(settings.audioRecordingEnabled());
+        autoRetranscribeSwitch.setEnabled(settings.audioRecordingEnabled());
+        autoRetranscribeSwitch.setChecked(settings.autoRetranscribeEnabled());
     }
 
     /**
@@ -261,7 +278,9 @@ public class WhisperSettingsActivity extends AppCompatActivity {
                 parseInt(maxThreadsEdit, WhisperSettings.DEFAULT_MAX_THREADS),
                 noContextSwitch.isChecked(),
                 timestampSwitch.isChecked(),
-                useGpuSwitch.isChecked()
+                useGpuSwitch.isChecked(),
+                audioRecordingSwitch.isChecked(),
+                autoRetranscribeSwitch.isChecked()
         );
         store.save(settings);
         bindSettings(settings);

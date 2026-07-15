@@ -6,4 +6,7 @@
     <files-path
         name="transcription_texts"
         path="transcription_texts/" />
+    <files-path
+        name="recordings"
+        path="recordings/" />
 </paths>

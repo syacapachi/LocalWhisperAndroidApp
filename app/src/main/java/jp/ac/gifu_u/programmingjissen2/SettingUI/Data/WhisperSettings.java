@@ -15,6 +15,8 @@ public final class WhisperSettings {
     public static final boolean DEFAULT_NO_CONTEXT = true;
     public static final boolean DEFAULT_PRINT_TIMESTAMPS = false;
     public static final boolean DEFAULT_USE_GPU = false;
+    public static final boolean DEFAULT_AUDIO_RECORDING_ENABLED = false;
+    public static final boolean DEFAULT_AUTO_RETRANSCRIBE_ENABLED = false;
     private final WhisperModelOption model;
     private final String language;
     private final int windowMs;
@@ -24,7 +26,24 @@ public final class WhisperSettings {
     private final boolean noContext;
     private final boolean printTimestamps;
     private final boolean useGpu;
+    private final boolean audioRecordingEnabled;
+    private final boolean autoRetranscribeEnabled;
 
+    /**
+     * Whisper設定を作成します。数値は対応範囲へ補正され、自動再推論は音声記録OFF時にOFFになります。
+     *
+     * @param model モデル。例: {@code WhisperModelOption.BASE}
+     * @param language 言語。例: {@code "ja"}
+     * @param windowMs 推論窓ms。例: {@code 5000}
+     * @param overlapMs 重なりms。例: {@code 1000}
+     * @param minFinalMs 最終推論の最小ms。例: {@code 1000}
+     * @param maxThreads 最大スレッド数。例: {@code 4}
+     * @param noContext 文脈を引き継がない場合true。例: {@code true}
+     * @param printTimestamps タイムスタンプを出す場合true。例: {@code false}
+     * @param useGpu GPUを使う場合true。例: {@code false}
+     * @param audioRecordingEnabled WAV保存する場合true。例: {@code true}
+     * @param autoRetranscribeEnabled 停止後に再推論する場合true。例: {@code true}
+     */
     public WhisperSettings(
             final WhisperModelOption model,
             final String language,
@@ -34,7 +53,9 @@ public final class WhisperSettings {
             final int maxThreads,
             final boolean noContext,
             final boolean printTimestamps,
-            final boolean useGpu
+            final boolean useGpu,
+            final boolean audioRecordingEnabled,
+            final boolean autoRetranscribeEnabled
     ) {
         this.model = model == null ? DEFAULT_MODEL : model;
         this.language = normalizeLanguage(language);
@@ -45,6 +66,8 @@ public final class WhisperSettings {
         this.noContext = noContext;
         this.printTimestamps = printTimestamps;
         this.useGpu = useGpu;
+        this.audioRecordingEnabled = audioRecordingEnabled;
+        this.autoRetranscribeEnabled = audioRecordingEnabled && autoRetranscribeEnabled;
     }
 
     @NonNull
@@ -59,7 +82,9 @@ public final class WhisperSettings {
                 DEFAULT_MAX_THREADS,
                 DEFAULT_NO_CONTEXT,
                 DEFAULT_PRINT_TIMESTAMPS,
-                DEFAULT_USE_GPU
+                DEFAULT_USE_GPU,
+                DEFAULT_AUDIO_RECORDING_ENABLED,
+                DEFAULT_AUTO_RETRANSCRIBE_ENABLED
         );
     }
 
@@ -75,7 +100,9 @@ public final class WhisperSettings {
                 maxThreads,
                 noContext,
                 printTimestamps,
-                useGpu
+                useGpu,
+                audioRecordingEnabled,
+                autoRetranscribeEnabled
         );
     }
 
@@ -111,6 +138,8 @@ public final class WhisperSettings {
         return printTimestamps;
     }
     public boolean useGpu() {return useGpu;}
+    public boolean audioRecordingEnabled() { return audioRecordingEnabled; }
+    public boolean autoRetranscribeEnabled() { return autoRetranscribeEnabled; }
 
     private static String normalizeLanguage(final String value) {
         return WhisperLanguageOption.fromValue(value).value();

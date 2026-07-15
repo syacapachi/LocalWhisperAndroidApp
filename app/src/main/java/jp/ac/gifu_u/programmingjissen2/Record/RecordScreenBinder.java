@@ -29,7 +29,7 @@ public final class RecordScreenBinder {
     /**
      * 録音画面UI binderを作成します。
      *
-     * @param controls 録音画面のUI参照。例: {@code new WhisperRecordControls(button, settings, group, result, status, benchmark)}
+     * @param controls 録音画面のUI参照。例: {@code new WhisperRecordControls(record, inference, settings, group, result, status, benchmark)}
      */
     public RecordScreenBinder(@NonNull final WhisperRecordControls controls) {
         this.controls = controls;
@@ -43,6 +43,17 @@ public final class RecordScreenBinder {
     public void setRecordClickListener(final View.OnClickListener listener) {
         if (controls.recordButton != null) {
             controls.recordButton.setOnClickListener(listener);
+        }
+    }
+
+    /**
+     * 推論ボタンのクリック処理を設定します。
+     *
+     * @param listener クリック時処理。例: {@code view -> pauseOrResumeInference()}
+     */
+    public void setInferenceClickListener(final View.OnClickListener listener) {
+        if (controls.inferenceButton != null) {
+            controls.inferenceButton.setOnClickListener(listener);
         }
     }
 
@@ -107,10 +118,29 @@ public final class RecordScreenBinder {
             return;
         }
         controls.recordButton.setText(state == RecordTranscriptionState.Recording
-                ? "録音停止"
-                : (state == RecordTranscriptionState.StopRecord
-                ? "推論停止"
-                : (state == RecordTranscriptionState.StopAll ? "推論停止中" : "録音")));
+                ? "録音停止" : "録音開始");
+    }
+
+    /**
+     * 推論ボタンの表示・文言・操作可否を更新します。
+     *
+     * @param recording 録音中ならtrue。例: {@code true}
+     * @param inferenceAlive 推論workerが生存中ならtrue。例: {@code true}
+     * @param inferenceAccepting 音声受付中ならtrue。例: {@code false}
+     */
+    public void setInferenceButtonState(
+            final boolean recording,
+            final boolean inferenceAlive,
+            final boolean inferenceAccepting
+    ) {
+        if (controls.inferenceButton == null) {
+            return;
+        }
+        controls.inferenceButton.setVisibility(
+                recording || inferenceAlive ? View.VISIBLE : View.GONE
+        );
+        controls.inferenceButton.setText(inferenceAccepting ? "推論停止" : "推論再開");
+        controls.inferenceButton.setEnabled(recording);
     }
 
     /**

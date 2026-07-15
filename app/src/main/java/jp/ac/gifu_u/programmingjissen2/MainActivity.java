@@ -83,6 +83,7 @@ public class MainActivity extends AppCompatActivity {
 
         //録音のインスタンスを作成。
         Button recordButton = (Button) findViewById(R.id.recordButton);
+        Button inferenceButton = (Button) findViewById(R.id.inferenceButton);
         Button whisperSettingsButton = (Button) findViewById(R.id.whisperSettingsButton);
         RadioGroup whisperModelRadioGroup = findViewById(R.id.whisperModelRadioGroup);
         TextView recordText = findViewById(R.id.recordText);
@@ -102,6 +103,7 @@ public class MainActivity extends AppCompatActivity {
         ));
         recordActivity = new RecordActivity(this, new WhisperRecordControls(
                 recordButton,
+                inferenceButton,
                 whisperSettingsButton,
                 whisperModelRadioGroup,
                 recordText,

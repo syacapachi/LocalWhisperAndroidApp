@@ -25,6 +25,8 @@ public final class WhisperSettingsStore {
     private static final String KEY_NO_CONTEXT = "no_context";
     private static final String KEY_PRINT_TIMESTAMPS = "print_timestamps";
     private static final String KEY_USE_GPU = "use_gpu";
+    private static final String KEY_AUDIO_RECORDING_ENABLED = "audio_recording_enabled";
+    private static final String KEY_AUTO_RETRANSCRIBE_ENABLED = "auto_retranscribe_enabled";
     private static final String STATS_COUNT = "stats_count";
     private static final String STATS_TOTAL_MS = "stats_total_ms";
     private static final String STATS_LAST_MS = "stats_last_ms";
@@ -58,7 +60,11 @@ public final class WhisperSettingsStore {
                         KEY_PRINT_TIMESTAMPS,
                         WhisperSettings.DEFAULT_PRINT_TIMESTAMPS
                 ),
-                preferences.getBoolean(KEY_USE_GPU,WhisperSettings.DEFAULT_USE_GPU)
+                preferences.getBoolean(KEY_USE_GPU,WhisperSettings.DEFAULT_USE_GPU),
+                preferences.getBoolean(KEY_AUDIO_RECORDING_ENABLED,
+                        WhisperSettings.DEFAULT_AUDIO_RECORDING_ENABLED),
+                preferences.getBoolean(KEY_AUTO_RETRANSCRIBE_ENABLED,
+                        WhisperSettings.DEFAULT_AUTO_RETRANSCRIBE_ENABLED)
         );
     }
 
@@ -74,6 +80,8 @@ public final class WhisperSettingsStore {
                 .putBoolean(KEY_NO_CONTEXT, value.noContext())
                 .putBoolean(KEY_PRINT_TIMESTAMPS, value.printTimestamps())
                 .putBoolean(KEY_USE_GPU, value.useGpu())
+                .putBoolean(KEY_AUDIO_RECORDING_ENABLED, value.audioRecordingEnabled())
+                .putBoolean(KEY_AUTO_RETRANSCRIBE_ENABLED, value.autoRetranscribeEnabled())
                 .apply();
     }
 
