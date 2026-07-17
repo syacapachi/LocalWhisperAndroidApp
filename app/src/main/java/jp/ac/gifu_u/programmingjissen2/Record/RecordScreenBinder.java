@@ -1,6 +1,8 @@
 package jp.ac.gifu_u.programmingjissen2.Record;
 
 import android.view.View;
+import android.widget.AdapterView;
+import android.widget.ArrayAdapter;
 import android.widget.RadioGroup;
 
 import androidx.annotation.NonNull;
@@ -11,10 +13,21 @@ import jp.ac.gifu_u.programmingjissen2.R;
 import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.WhisperModelOption;
 import jp.ac.gifu_u.programmingjissen2.SettingUI.WhisperRecordControls;
 
+import java.util.List;
+
 /** 録音画面の UI 部品への反映とイベント配線だけを担当します。 */
 public final class RecordScreenBinder {
     private final WhisperRecordControls controls;
     private boolean updatingModelSelector;
+
+    /** 録音入力の変更を通知するlistenerです。 */
+    public interface AudioSourceSelectedListener {
+        /**
+         * 選択された録音入力を通知します。
+         * @param source 録音入力。例: {@code RecordingAudioSource.APP_CAPTURE}
+         */
+        void onAudioSourceSelected(RecordingAudioSource source);
+    }
 
     /** モデル選択変更を通知する listener です。 */
     public interface ModelSelectedListener {
@@ -65,6 +78,95 @@ public final class RecordScreenBinder {
     public void setSettingsClickListener(final View.OnClickListener listener) {
         if (controls.settingsButton != null) {
             controls.settingsButton.setOnClickListener(listener);
+        }
+    }
+
+    /**
+     * 録音入力とキャプチャ対象アプリのプルダウンを構成します。
+     * @param apps キャプチャ対象候補。例: {@code List.of(new CaptureTargetApp("YouTube", "com.google.android.youtube", 10123))}
+     * @param listener 入力変更通知先。例: {@code source -> refreshSourceUi(source)}
+     */
+    public void bindAudioSourceSelectors(
+            @NonNull final List<CaptureTargetApp> apps,
+            @NonNull final AudioSourceSelectedListener listener
+    ) {
+        if (controls.recordingSourceSpinner == null) {
+            return;
+        }
+        final ArrayAdapter<RecordingAudioSource> sourceAdapter = new ArrayAdapter<>(
+                controls.recordingSourceSpinner.getContext(),
+                android.R.layout.simple_spinner_item,
+                RecordingAudioSource.values()
+        );
+        sourceAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        controls.recordingSourceSpinner.setAdapter(sourceAdapter);
+        controls.recordingSourceSpinner.setOnItemSelectedListener(
+                new AdapterView.OnItemSelectedListener() {
+                    @Override
+                    public void onItemSelected(
+                            final AdapterView<?> parent,
+                            final View view,
+                            final int position,
+                            final long id
+                    ) {
+                        final RecordingAudioSource source = RecordingAudioSource.values()[position];
+                        setCaptureAppSelectorVisible(source.requiresAppCapture());
+                        listener.onAudioSourceSelected(source);
+                    }
+
+                    @Override
+                    public void onNothingSelected(final AdapterView<?> parent) { }
+                }
+        );
+        if (controls.captureTargetAppSpinner != null) {
+            final ArrayAdapter<CaptureTargetApp> appAdapter = new ArrayAdapter<>(
+                    controls.captureTargetAppSpinner.getContext(),
+                    android.R.layout.simple_spinner_item,
+                    apps
+            );
+            appAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+            controls.captureTargetAppSpinner.setAdapter(appAdapter);
+        }
+    }
+
+    /** @return 選択中の入力。例: {@code RecordingAudioSource.MICROPHONE} */
+    @NonNull
+    public RecordingAudioSource selectedAudioSource() {
+        if (controls.recordingSourceSpinner == null
+                || controls.recordingSourceSpinner.getSelectedItem() == null) {
+            return RecordingAudioSource.MICROPHONE;
+        }
+        return (RecordingAudioSource) controls.recordingSourceSpinner.getSelectedItem();
+    }
+
+    /** @return 選択中の対象アプリ。未選択ならnull。例: {@code new CaptureTargetApp("YouTube", "com.google.android.youtube", 10123)} */
+    public CaptureTargetApp selectedCaptureTargetApp() {
+        if (controls.captureTargetAppSpinner == null) {
+            return null;
+        }
+        return (CaptureTargetApp) controls.captureTargetAppSpinner.getSelectedItem();
+    }
+
+    /**
+     * 録音入力選択を操作可能または固定状態へします。
+     * @param enabled 操作可能ならtrue。例: {@code false}
+     */
+    public void setAudioSourceSelectorsEnabled(final boolean enabled) {
+        if (controls.recordingSourceSpinner != null) {
+            controls.recordingSourceSpinner.setEnabled(enabled);
+        }
+        if (controls.captureTargetAppSpinner != null) {
+            controls.captureTargetAppSpinner.setEnabled(enabled);
+        }
+    }
+
+    /**
+     * キャプチャ対象アプリ選択の表示状態を切り替えます。
+     * @param visible 表示する場合true。例: {@code true}
+     */
+    private void setCaptureAppSelectorVisible(final boolean visible) {
+        if (controls.captureTargetAppSpinner != null) {
+            controls.captureTargetAppSpinner.setVisibility(visible ? View.VISIBLE : View.GONE);
         }
     }
 

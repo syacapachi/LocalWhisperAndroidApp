@@ -6,11 +6,13 @@ import android.os.Bundle;
 import android.util.Log;
 import android.widget.Button;
 import android.widget.RadioGroup;
+import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.ActivityResult;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.appcompat.app.AppCompatActivity;
 
@@ -34,6 +36,7 @@ public class MainActivity extends AppCompatActivity {
     private SensorActivity sensorActivity;
     private RecordActivity recordActivity;
     private ActivityResultLauncher<String[]> audioFilePicker;
+    private ActivityResultLauncher<Intent> mediaProjectionPermissionLauncher;
 
     Consumer<SampleRecordEvent> eventListener1 = this::EventListener;
     Consumer<SampleRecordEvent> eventListener2 = this::EventListener2;
@@ -46,6 +49,10 @@ public class MainActivity extends AppCompatActivity {
         audioFilePicker = registerForActivityResult(
                 new ActivityResultContracts.OpenDocument(),
                 this::onAudioFileSelected
+        );
+        mediaProjectionPermissionLauncher = registerForActivityResult(
+                new ActivityResultContracts.StartActivityForResult(),
+                this::onMediaProjectionPermissionResult
         );
         setContentView(R.layout.activity_main);
         //ログの書き方,Tagはクラス名が多い
@@ -85,6 +92,8 @@ public class MainActivity extends AppCompatActivity {
         Button recordButton = (Button) findViewById(R.id.recordButton);
         Button inferenceButton = (Button) findViewById(R.id.inferenceButton);
         Button whisperSettingsButton = (Button) findViewById(R.id.whisperSettingsButton);
+        Spinner recordingSourceSpinner = findViewById(R.id.recordingSourceSpinner);
+        Spinner captureTargetAppSpinner = findViewById(R.id.captureTargetAppSpinner);
         RadioGroup whisperModelRadioGroup = findViewById(R.id.whisperModelRadioGroup);
         TextView recordText = findViewById(R.id.recordText);
         TextView whisperStatusText = findViewById(R.id.whisperStatusText);
@@ -105,11 +114,14 @@ public class MainActivity extends AppCompatActivity {
                 recordButton,
                 inferenceButton,
                 whisperSettingsButton,
+                recordingSourceSpinner,
+                captureTargetAppSpinner,
                 whisperModelRadioGroup,
                 recordText,
                 whisperStatusText,
                 whisperBenchmarkText
         ));
+        recordActivity.setProjectionPermissionLauncher(mediaProjectionPermissionLauncher);
 
         //イベントが親クラスに行くかの確認。
         //SampleTest.CheckTest();
@@ -199,6 +211,19 @@ public class MainActivity extends AppCompatActivity {
             // 一時許可だけで読める provider もあるため、永続化失敗は処理継続します。
         }
         recordActivity.TranscribeAudioFile(uri);
+    }
+
+    /**
+     * MediaProjectionのユーザー許可結果を録音画面controllerへ渡します。
+     * @param result 許可結果。例: {@code new ActivityResult(Activity.RESULT_OK, dataIntent)}
+     */
+    private void onMediaProjectionPermissionResult(@NonNull final ActivityResult result) {
+        if (recordActivity != null) {
+            recordActivity.onMediaProjectionPermissionResult(
+                    result.getResultCode(),
+                    result.getData()
+            );
+        }
     }
 
     /**

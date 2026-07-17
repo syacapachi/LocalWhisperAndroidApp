@@ -57,6 +57,32 @@
                 android:layout_weight="1"
                 android:text="録音" />
 
+            <Spinner
+                android:id="@+id/recordingSourceSpinner"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:layout_weight="2"
+                android:contentDescription="録音する音声入力"
+                android:spinnerMode="dropdown" />
+        </LinearLayout>
+
+        <Spinner
+            android:id="@+id/captureTargetAppSpinner"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:contentDescription="キャプチャ対象アプリ"
+            android:spinnerMode="dropdown"
+            android:visibility="gone" />
+
+        <LinearLayout
+            style="?android:attr/buttonBarStyle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:orientation="horizontal">
+
             <Button
                 android:id="@+id/inferenceButton"
                 style="?android:attr/buttonBarButtonStyle"

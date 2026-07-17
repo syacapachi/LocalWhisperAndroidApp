@@ -1,11 +1,18 @@
 package jp.ac.gifu_u.programmingjissen2.Transcription;
 
 import android.Manifest;
+import android.app.Activity;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.content.pm.ServiceInfo;
+import android.media.projection.MediaProjection;
+import android.media.projection.MediaProjectionManager;
+import android.os.Build;
+import android.os.Handler;
 import android.os.IBinder;
+import android.os.Looper;
 import android.util.Log;
 
 import androidx.annotation.NonNull;
@@ -27,6 +34,7 @@ import events.Whisper.WhisperTranscriptionEvent;
 import jp.ac.gifu_u.programmingjissen2.Record.AudioRecordWorker;
 import jp.ac.gifu_u.programmingjissen2.Record.RecordTranscriptionState;
 import jp.ac.gifu_u.programmingjissen2.Record.RecordedAudioFileWriter;
+import jp.ac.gifu_u.programmingjissen2.Record.RecordingAudioSource;
 import jp.ac.gifu_u.programmingjissen2.Record.WhisperFileTranscriptionWorker;
 import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.WhisperSettings;
 import jp.ac.gifu_u.programmingjissen2.SettingUI.WhisperSettingsStore;
@@ -42,6 +50,10 @@ public class BackgroundWhisperService extends Service {
             "jp.ac.gifu_u.programmingjissen2.whisper.STOP_INFERENCE";
     public static final String ACTION_RESUME_INFERENCE =
             "jp.ac.gifu_u.programmingjissen2.whisper.RESUME_INFERENCE";
+    private static final String EXTRA_AUDIO_SOURCE = "audioSource";
+    private static final String EXTRA_CAPTURE_TARGET_UID = "captureTargetUid";
+    private static final String EXTRA_PROJECTION_RESULT_CODE = "projectionResultCode";
+    private static final String EXTRA_PROJECTION_DATA = "projectionData";
 
     private static volatile boolean active;
     private static volatile boolean recording;
@@ -66,6 +78,12 @@ public class BackgroundWhisperService extends Service {
     private TranscriptionJsonWorker transcriptionJsonWorker;
     private volatile RecordedAudioFileWriter audioFileWriter;
     private WhisperFileTranscriptionWorker retranscriptionWorker;
+    private RecordingAudioSource requestedAudioSource = RecordingAudioSource.MICROPHONE;
+    private int requestedCaptureTargetUid = -1;
+    private int projectionResultCode = Activity.RESULT_CANCELED;
+    private Intent projectionResultData;
+    private MediaProjection mediaProjection;
+    private MediaProjection.Callback mediaProjectionCallback;
 
     private boolean pendingRecordingStart;
     private boolean pendingInferenceResume;
@@ -80,7 +98,34 @@ public class BackgroundWhisperService extends Service {
 
     /** @param context 開始要求元。例: {@code activity} */
     public static void startRecording(final Context context) {
-        sendAction(context, ACTION_START, true);
+        startRecording(context, RecordingAudioSource.MICROPHONE,
+                -1, Activity.RESULT_CANCELED, null);
+    }
+
+    /**
+     * 録音入力とMediaProjection許可を指定してForeground Serviceを開始します。
+     * @param context 開始要求元。例: {@code activity}
+     * @param source 音声入力。例: {@code RecordingAudioSource.APP_CAPTURE}
+     * @param captureTargetUid 対象UID。マイクのみなら-1。例: {@code 10123}
+     * @param resultCode MediaProjection結果。例: {@code Activity.RESULT_OK}
+     * @param projectionData MediaProjection token。マイクのみならnull。例: {@code resultIntent}
+     */
+    public static void startRecording(
+            @NonNull final Context context,
+            @NonNull final RecordingAudioSource source,
+            final int captureTargetUid,
+            final int resultCode,
+            @Nullable final Intent projectionData
+    ) {
+        final Intent intent = new Intent(context, BackgroundWhisperService.class)
+                .setAction(ACTION_START)
+                .putExtra(EXTRA_AUDIO_SOURCE, source.name())
+                .putExtra(EXTRA_CAPTURE_TARGET_UID, captureTargetUid)
+                .putExtra(EXTRA_PROJECTION_RESULT_CODE, resultCode);
+        if (projectionData != null) {
+            intent.putExtra(EXTRA_PROJECTION_DATA, projectionData);
+        }
+        ContextCompat.startForegroundService(context, intent);
     }
 
     /** @param context 停止要求元。例: {@code activity} */
@@ -140,7 +185,13 @@ public class BackgroundWhisperService extends Service {
         } else if (ACTION_RESUME_INFERENCE.equals(action)) {
             requestResumeInference();
         } else {
-            notificationController.start("Whisper 録音を準備中", "モデルを準備しています", recording);
+            readRecordingRequest(intent);
+            notificationController.start(
+                    "Whisper 録音を準備中",
+                    "モデルを準備しています",
+                    recording,
+                    foregroundServiceTypes(requestedAudioSource)
+            );
             startRecordingInternalAsync();
         }
         return START_NOT_STICKY;
@@ -151,6 +202,7 @@ public class BackgroundWhisperService extends Service {
         SystemEventHub.unsubscribe(WhisperTranscriptionEvent.class, transcriptionListener);
         SystemEventHub.unsubscribe(ThreadStoppedEvent.class, threadStoppedListener);
         closeAudioFile(false);
+        releaseMediaProjection();
         active = false;
         recording = false;
         inferenceAlive = false;
@@ -183,6 +235,49 @@ public class BackgroundWhisperService extends Service {
         }
     }
 
+    /**
+     * 録音開始Intentから入力・対象UID・MediaProjection結果を読み込みます。
+     * @param intent 開始Intent。例: {@code new Intent().putExtra("audioSource", "APP_CAPTURE")}
+     */
+    @SuppressWarnings("deprecation")
+    private void readRecordingRequest(@Nullable final Intent intent) {
+        if (intent == null) {
+            requestedAudioSource = RecordingAudioSource.MICROPHONE;
+            requestedCaptureTargetUid = -1;
+            projectionResultCode = Activity.RESULT_CANCELED;
+            projectionResultData = null;
+            return;
+        }
+        try {
+            requestedAudioSource = RecordingAudioSource.fromName(
+                    intent.getStringExtra(EXTRA_AUDIO_SOURCE));
+        } catch (IllegalArgumentException e) {
+            requestedAudioSource = RecordingAudioSource.MICROPHONE;
+        }
+        requestedCaptureTargetUid = intent.getIntExtra(EXTRA_CAPTURE_TARGET_UID, -1);
+        projectionResultCode = intent.getIntExtra(
+                EXTRA_PROJECTION_RESULT_CODE, Activity.RESULT_CANCELED);
+        projectionResultData = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+                ? intent.getParcelableExtra(EXTRA_PROJECTION_DATA, Intent.class)
+                : intent.getParcelableExtra(EXTRA_PROJECTION_DATA);
+    }
+
+    /**
+     * 入力に必要なForeground Service typeを返します。
+     * @param source 音声入力。例: {@code RecordingAudioSource.MICROPHONE_AND_APP}
+     * @return ServiceInfoのbit mask。例: {@code FOREGROUND_SERVICE_TYPE_MICROPHONE | FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION}
+     */
+    private static int foregroundServiceTypes(@NonNull final RecordingAudioSource source) {
+        if (source == RecordingAudioSource.APP_CAPTURE) {
+            return ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION;
+        }
+        if (source == RecordingAudioSource.MICROPHONE_AND_APP) {
+            return ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+                    | ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION;
+        }
+        return ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE;
+    }
+
     /** 録音開始処理を専用スレッドへ渡します。 */
     private void startRecordingInternalAsync() {
         new Thread(this::startRecordingInternal, "BackgroundWhisperStart").start();
@@ -210,7 +305,6 @@ public class BackgroundWhisperService extends Service {
             stopForegroundAndSelf();
             return;
         }
-
         settings = settingsStore.load();
         currentModelKey = settings.model().key();
         try {
@@ -241,15 +335,25 @@ public class BackgroundWhisperService extends Service {
             stopInferenceIfNotRecording();
             return;
         }
+        if (!prepareMediaProjectionIfNeeded()) {
+            closeAudioFile(false);
+            publishState("アプリ音声のキャプチャ許可を開始できませんでした");
+            stopInferenceIfNotRecording();
+            return;
+        }
         pendingRecordingStart = false;
         recordWorker = new AudioRecordWorker(
                 sampleRate,
                 bufferSize,
                 recordingSessionId + ":record",
-                this::onAudioChunk
+                this::onAudioChunk,
+                requestedAudioSource,
+                mediaProjection,
+                requestedCaptureTargetUid
         );
         if (!recordWorker.start()) {
             recordWorker = null;
+            releaseMediaProjection();
             closeAudioFile(false);
             publishState("AudioRecord の初期化に失敗しました");
             stopInferenceIfNotRecording();
@@ -403,6 +507,7 @@ public class BackgroundWhisperService extends Service {
     /** 録音ファイルを確定し、再開待ちまたは推論キュー排出へ進みます。 */
     private void finishRecordThread() {
         recordWorker = null;
+        releaseMediaProjection();
         closeAudioFile(true);
         if (pendingRecordingStart) {
             startRecordingInternalAsync();
@@ -581,6 +686,66 @@ public class BackgroundWhisperService extends Service {
                 startNextRetranscriptionOrStop();
             }
         }
+    }
+
+    /**
+     * アプリ音声入力時だけ、Foreground化後にMediaProjection tokenを実体化します。
+     * @return 不要または準備成功ならtrue。例: {@code true}
+     * @throws SecurityException 無効または再利用済みtokenをOSが拒否した場合は捕捉してfalseへ変換します
+     */
+    private boolean prepareMediaProjectionIfNeeded() {
+        if (!requestedAudioSource.requiresAppCapture()) {
+            return true;
+        }
+        if (projectionResultCode != Activity.RESULT_OK
+                || projectionResultData == null
+                || requestedCaptureTargetUid < 0) {
+            return false;
+        }
+        try {
+            final MediaProjectionManager manager = getSystemService(MediaProjectionManager.class);
+            if (manager == null) {
+                return false;
+            }
+            mediaProjection = manager.getMediaProjection(
+                    projectionResultCode, projectionResultData);
+            projectionResultData = null;
+            mediaProjectionCallback = new MediaProjection.Callback() {
+                @Override
+                public void onStop() {
+                    synchronized (BackgroundWhisperService.this) {
+                        if (recording) {
+                            publishState("アプリ音声のキャプチャ許可が終了しました");
+                            requestStopRecording();
+                        }
+                    }
+                }
+            };
+            mediaProjection.registerCallback(
+                    mediaProjectionCallback,
+                    new Handler(Looper.getMainLooper())
+            );
+            return true;
+        } catch (SecurityException | IllegalStateException e) {
+            Log.e(TAG, "MediaProjection initialization failed", e);
+            releaseMediaProjection();
+            return false;
+        }
+    }
+
+    /** MediaProjection callbackを解除し、現在のキャプチャ許可を返却します。 */
+    private void releaseMediaProjection() {
+        final MediaProjection projection = mediaProjection;
+        final MediaProjection.Callback callback = mediaProjectionCallback;
+        mediaProjection = null;
+        mediaProjectionCallback = null;
+        if (projection == null) {
+            return;
+        }
+        if (callback != null) {
+            projection.unregisterCallback(callback);
+        }
+        projection.stop();
     }
 
     /** @throws IOException WhisperまたはVADモデルをassetsから準備できない場合 */

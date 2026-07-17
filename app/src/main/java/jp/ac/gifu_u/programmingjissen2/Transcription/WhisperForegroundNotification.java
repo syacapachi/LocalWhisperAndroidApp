@@ -43,11 +43,16 @@ final class WhisperForegroundNotification {
      * @param title 通知タイトル。例: {@code "Whisper 録音"}
      * @param text 通知本文。例: {@code "録音中"}
      * @param recording 録音中ならtrue。例: {@code true}
+     * @param foregroundServiceTypes Service種別bit mask。例: {@code ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE}
      */
-    void start(final String title, final String text, final boolean recording) {
+    void start(
+            final String title,
+            final String text,
+            final boolean recording,
+            final int foregroundServiceTypes
+    ) {
         final Notification notification = build(title, text, recording);
-        service.startForeground(NOTIFICATION_ID, notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE);
+        service.startForeground(NOTIFICATION_ID, notification, foregroundServiceTypes);
     }
 
     /**

@@ -2,6 +2,14 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <!-- キャプチャ対象選択に表示する、起動可能アプリの照会条件 -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+    </queries>
+
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <!-- 録音権限 -->
@@ -12,6 +20,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <!-- Android15以上(具体的な権限必須) 通知を送りながらバックグラウンドで録音実行 -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <!-- Android14以降 MediaProjectionで対象アプリの再生音声をキャプチャ -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
     <!--
      allowBackup FileDir(),getDir(),getDataBase(),getExternalFilesDir()のフォルダのバックアップ
      icon アイコンのパス
@@ -31,7 +41,7 @@
         <service
             android:name=".Transcription.BackgroundWhisperService"
             android:exported="false"
-            android:foregroundServiceType="microphone" />
+            android:foregroundServiceType="microphone|mediaProjection" />
         <!-- 設定UI画面 -->
         <activity
             android:name=".SettingUI.WhisperSettingsActivity"
