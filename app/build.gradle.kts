@@ -20,6 +20,9 @@ android {
 
         externalNativeBuild {
             cmake {
+                // APKへ公開するJNIターゲットだけをGradleのnativeビルド対象にする。
+                targets += listOf("whisper-lib", "ctranslate2-jni")
+
                 // 左から
                 // -std=c++17 : G++17以上、
                 // -O3 : 積極的な最適化(O3)(エラーが出たらO2(推奨最適化))、

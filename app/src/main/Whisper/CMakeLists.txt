@@ -76,6 +76,31 @@ add_subdirectory(ggml)
 # whisperライブラリを生成する
 add_subdirectory(src)
 
+# CTranslate2 は Android で利用できない MKL/CUDA を無効化し、Ruy を使う CPU 専用の
+# 静的ライブラリとして JNI 共有ライブラリへ組み込む。
+set(WITH_MKL OFF CACHE BOOL "" FORCE)
+set(WITH_DNNL OFF CACHE BOOL "" FORCE)
+set(WITH_ACCELERATE OFF CACHE BOOL "" FORCE)
+set(WITH_OPENBLAS OFF CACHE BOOL "" FORCE)
+set(WITH_RUY ON CACHE BOOL "" FORCE)
+set(WITH_CUDA OFF CACHE BOOL "" FORCE)
+set(WITH_CUDNN OFF CACHE BOOL "" FORCE)
+set(WITH_HIP OFF CACHE BOOL "" FORCE)
+set(OPENMP_RUNTIME NONE CACHE STRING "" FORCE)
+set(ENABLE_CPU_DISPATCH OFF CACHE BOOL "" FORCE)
+set(BUILD_CLI OFF CACHE BOOL "" FORCE)
+set(BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+set(RUY_MINIMAL_BUILD ON CACHE BOOL "" FORCE)
+set(CPUINFO_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
+set(CPUINFO_BUILD_PKG_CONFIG OFF CACHE BOOL "" FORCE)
+add_subdirectory(
+        ../CTranslate2/upstream
+        ${CMAKE_CURRENT_BINARY_DIR}/ctranslate2
+)
+# JNI共有ライブラリへ静的リンクするため、上流本体もPICでコンパイルする。
+set_target_properties(ctranslate2 PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
 # LTO有効化
 if (IPO_SUPPORTED)
 
@@ -123,6 +148,22 @@ add_library(
         native-lib.cpp
 )
 
+# CTranslate2 のモデル管理、log-Mel生成、Whisper生成処理をJavaへ公開するJNI。
+add_library(
+        ctranslate2-jni
+        SHARED
+        ../CTranslate2/ctranslate2-jni.cpp
+        ../CTranslate2/whisper-feature-extractor.cpp
+        ../CTranslate2/whisper-token-decoder.cpp
+)
+
+target_include_directories(
+        ctranslate2-jni
+        PRIVATE
+        ../CTranslate2
+        ../CTranslate2/upstream/include
+)
+
 # JNI側も-O3
 target_compile_options(
         whisper-lib
@@ -155,5 +196,11 @@ target_link_libraries(
         # Whisper本体
         whisper
         # logライブラリ
+        ${log-lib}
+)
+
+target_link_libraries(
+        ctranslate2-jni
+        ctranslate2
         ${log-lib}
 )
