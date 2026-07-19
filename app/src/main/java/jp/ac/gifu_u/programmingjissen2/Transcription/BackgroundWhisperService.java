@@ -748,10 +748,18 @@ public class BackgroundWhisperService extends Service {
         projection.stop();
     }
 
-    /** @throws IOException WhisperまたはVADモデルをassetsから準備できない場合 */
+    /** @throws IOException 選択したWhisperモデルまたはVADモデルをassetsから準備できない場合 */
     private void prepareModels() throws IOException {
-        modelPath = MyUtils.prepareModelPath(this, settings.model().assetName());
-        vadModelPath = MyUtils.prepareModelPath(this, WhisperVadConfig.MODEL_ASSET_NAME);
+        if (settings.useCTranslate2()) {
+            modelPath = MyUtils.prepareModelDirectory(
+                    this,
+                    settings.model().cTranslate2AssetDirectory()
+            );
+            vadModelPath = null;
+        } else {
+            modelPath = MyUtils.prepareModelPath(this, settings.model().assetName());
+            vadModelPath = MyUtils.prepareModelPath(this, WhisperVadConfig.MODEL_ASSET_NAME);
+        }
     }
 
     /** 録音開始失敗時、先に起動した推論workerを排出停止します。 */

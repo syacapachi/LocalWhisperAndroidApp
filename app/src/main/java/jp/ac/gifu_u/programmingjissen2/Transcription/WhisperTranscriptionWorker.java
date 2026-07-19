@@ -14,6 +14,7 @@ import Utils.Pool.ObjectPool;
 import Utils.ScopableUtility;
 import Utils.StringPool.PooledStringBuilder;
 import Utils.StringPool.StringBufferBuilderPool;
+import CTranslate2.CTranslate2Bridge;
 import Whisper.WhisperBridge;
 import events.SystemEventHub;
 import events.Threading.ThreadStoppedEvent;
@@ -99,6 +100,9 @@ public class WhisperTranscriptionWorker implements Runnable {
 
     /** native 側の Whisper context ハンドルです。 */
     private long context;
+
+    /** CTranslate2有効時のモデルハンドルです。 */
+    private CTranslate2Bridge cTranslate2Bridge;
 
     /** 同じ録音 session 内で発行する推論結果番号です。 */
     private int sequence;
@@ -327,7 +331,11 @@ public class WhisperTranscriptionWorker implements Runnable {
             Log.e(TAG, "Whisper worker error", e);
             outputError(e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage());
         } finally {
-            if (context != 0) {
+            if (cTranslate2Bridge != null) {
+                cTranslate2Bridge.close();
+                cTranslate2Bridge = null;
+                context = 0;
+            } else if (context != 0) {
                 WhisperBridge.freeContext(context);
                 context = 0;
             }
@@ -390,8 +398,22 @@ public class WhisperTranscriptionWorker implements Runnable {
         return true;
     }
 
-    /** native の Whisper context を作成します。 */
+    /**
+     * 選択された推論エンジンのnative contextを作成します。
+     * @param settings 推論設定。例: {@code WhisperSettings.defaultSettings()}
+     * @return 初期化成功時は0以外。例: {@code 1L}
+     * @throws IllegalStateException CTranslate2モデルを読み込めない場合
+     */
     private long openContext(@NonNull final WhisperSettings settings) {
+        if (settings.useCTranslate2()) {
+            cTranslate2Bridge = new CTranslate2Bridge(
+                    modelPath,
+                    settings.model().computeType(),
+                    Math.min(settings.maxThreads(),
+                            Math.max(1, Runtime.getRuntime().availableProcessors()))
+            );
+            return 1L;
+        }
         final WhisperBridge.ContextParams params = WhisperBridge.defaultContextParams();
         params.useGpu = settings.useGpu();
         return WhisperBridge.initFromFile(modelPath, params);
@@ -445,6 +467,12 @@ public class WhisperTranscriptionWorker implements Runnable {
      */
     @NonNull
     private TranscriptionResult transcribe(@NonNull final float[] samples) {
+        if (settings.useCTranslate2()) {
+            return new TranscriptionResult(
+                    cTranslate2Bridge.transcribe(samples, settings.language()),
+                    false
+            );
+        }
         final WhisperBridge.FullParams params =
                 WhisperBridge.defaultFullParams(WhisperBridge.SAMPLING_GREEDY);
         params.printProgress = false;

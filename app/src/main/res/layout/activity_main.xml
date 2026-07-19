@@ -103,27 +103,13 @@
                 android:text="設定" />
         </LinearLayout>
 
-        <RadioGroup
-            android:id="@+id/whisperModelRadioGroup"
+        <Spinner
+            android:id="@+id/whisperModelSpinner"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
-            android:orientation="horizontal">
-
-            <RadioButton
-                android:id="@+id/whisperModelBase"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="base" />
-
-            <RadioButton
-                android:id="@+id/whisperModelSmall"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="small" />
-        </RadioGroup>
+            android:contentDescription="Whisperモデルのassetsパス"
+            android:spinnerMode="dropdown" />
 
         <TextView
             android:id="@+id/whisperStatusText"

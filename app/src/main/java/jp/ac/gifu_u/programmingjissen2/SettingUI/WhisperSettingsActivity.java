@@ -7,8 +7,6 @@ import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
-import android.widget.RadioButton;
-import android.widget.RadioGroup;
 import android.widget.ScrollView;
 import android.widget.Spinner;
 import android.widget.TextView;
@@ -31,9 +29,7 @@ import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.WhisperSettings;
 public class WhisperSettingsActivity extends AppCompatActivity {
     private WhisperSettingsStore store;
 
-    private RadioGroup modelGroup;
-    private int baseRadioId;
-    private int smallRadioId;
+    private Spinner modelSpinner;
     /**  言語選択のドロップダウン */
     private Spinner languageSpinner;
     /** 推論窓の大きさの 入力フィールド */
@@ -85,18 +81,20 @@ public class WhisperSettingsActivity extends AppCompatActivity {
         root.addView(title);
         root.addView(descriptionText("録音中の文字起こしに使うモデルと推論パラメータを変更します。"));
 
-        // モデル選択のラジオボタン
+        // モデルassetsパス選択のドロップダウン
         root.addView(sectionText("モデル"));
-        modelGroup = new RadioGroup(this);
-        // 縦に伸びる
-        modelGroup.setOrientation(RadioGroup.VERTICAL);
-        // ボタンのIDを取得
-        baseRadioId = View.generateViewId();
-        smallRadioId = View.generateViewId();
-        // コンテンツにバインド
-        modelGroup.addView(modelRadioButton(baseRadioId, WhisperModelOption.BASE));
-        modelGroup.addView(modelRadioButton(smallRadioId, WhisperModelOption.SMALL));
-        root.addView(modelGroup);
+        modelSpinner = new Spinner(this);
+        final ArrayAdapter<WhisperModelOption> modelAdapter = new ArrayAdapter<>(
+                this,
+                android.R.layout.simple_spinner_item,
+                WhisperModelOption.values()
+        );
+        modelAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        modelSpinner.setAdapter(modelAdapter);
+        root.addView(modelSpinner, fullWidthParams());
+        root.addView(descriptionText(
+                "モデルパスからWhisper.cppまたはCTranslate2を自動選択します。"
+        ));
 
         // 設定の入力フィールド
         root.addView(sectionText("推論"));
@@ -153,26 +151,6 @@ public class WhisperSettingsActivity extends AppCompatActivity {
         root.addView(closeButton, fullWidthParams());
 
         return scrollView;
-    }
-
-    /**
-     * モデル選択のラジオボタンを生成します。
-     * @param id ラジオボタンのID
-     * @param option モデルオプション
-     * @return モデル選択のラジオボタンコンテンツ
-     */
-    @NonNull
-    private RadioButton modelRadioButton(final int id, @NonNull final WhisperModelOption option) {
-        final RadioButton button = new RadioButton(this);
-        button.setId(id);
-        button.setText(StringBufferBuilderPool.Join(
-                "",
-                option.displayName(),
-                " - ",
-                option.description()
-        ));
-        button.setMinHeight(dp(48));
-        return button;
     }
 
     /**
@@ -245,7 +223,7 @@ public class WhisperSettingsActivity extends AppCompatActivity {
      * @param settings 表示する設定
      */
     private void bindSettings(@NonNull final WhisperSettings settings) {
-        modelGroup.check(settings.model() == WhisperModelOption.SMALL ? smallRadioId : baseRadioId);
+        modelSpinner.setSelection(settings.model().ordinal());
         languageSpinner.setSelection(WhisperLanguageOption.fromValue(settings.language()).ordinal());
         windowEdit.setText(String.valueOf(settings.windowMs()));
         overlapEdit.setText(String.valueOf(settings.overlapMs()));
@@ -264,9 +242,7 @@ public class WhisperSettingsActivity extends AppCompatActivity {
      * 内部でUIの更新も行います。
      */
     private void saveSettings() {
-        final WhisperModelOption model = modelGroup.getCheckedRadioButtonId() == smallRadioId
-                ? WhisperModelOption.SMALL
-                : WhisperModelOption.BASE;
+        final WhisperModelOption model = (WhisperModelOption) modelSpinner.getSelectedItem();
         final WhisperLanguageOption language = (WhisperLanguageOption) languageSpinner.getSelectedItem();
 
         WhisperSettings settings = new WhisperSettings(
@@ -279,6 +255,7 @@ public class WhisperSettingsActivity extends AppCompatActivity {
                 noContextSwitch.isChecked(),
                 timestampSwitch.isChecked(),
                 useGpuSwitch.isChecked(),
+                model.usesCTranslate2(),
                 audioRecordingSwitch.isChecked(),
                 autoRetranscribeSwitch.isChecked()
         );
@@ -292,14 +269,15 @@ public class WhisperSettingsActivity extends AppCompatActivity {
      * WhisperSettingStoreから統計情報を取得し、テキストに表示します。
      */
     private void refreshStats() {
-        final WhisperInferenceStats baseStats = store.loadStats(WhisperModelOption.BASE);
-        final WhisperInferenceStats smallStats = store.loadStats(WhisperModelOption.SMALL);
-        statsText.setText(StringBufferBuilderPool.Join(
-                "\n",
-                formatStats(WhisperModelOption.BASE, baseStats),
-                formatStats(WhisperModelOption.SMALL, smallStats),
-                "録音画面でも推論 1 回ごとの処理時間を確認できます。"
-        ));
+        final StringBuilder builder = new StringBuilder();
+        for (WhisperModelOption model : WhisperModelOption.values()) {
+            if (builder.length() > 0) {
+                builder.append('\n');
+            }
+            builder.append(formatStats(model, store.loadStats(model)));
+        }
+        builder.append("\n録音画面でも推論 1 回ごとの処理時間を確認できます。");
+        statsText.setText(builder.toString());
     }
 
     /**

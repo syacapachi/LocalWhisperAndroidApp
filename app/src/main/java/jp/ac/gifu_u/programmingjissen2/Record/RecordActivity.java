@@ -471,12 +471,14 @@ public class RecordActivity {
 
     @NonNull
     private String buildBenchmarkText() {
-        return StringBufferBuilderPool.Join(
-                "",
-                formatStats(WhisperModelOption.BASE),
-                "\n",
-                formatStats(WhisperModelOption.SMALL)
-        );
+        final StringBuilder builder = new StringBuilder();
+        for (WhisperModelOption model : WhisperModelOption.values()) {
+            if (builder.length() > 0) {
+                builder.append('\n');
+            }
+            builder.append(formatStats(model));
+        }
+        return builder.toString();
     }
 
     @NonNull

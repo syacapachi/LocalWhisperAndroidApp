@@ -4,40 +4,103 @@ import androidx.annotation.NonNull;
 
 /** Whisper で利用できるモデルの選択肢です。 */
 public enum WhisperModelOption {
-    BASE("base", "base", "ggml-base.bin", "速さ優先。録音しながらの確認向き"),
-    SMALL("small", "small", "ggml-small.bin", "精度優先。端末によっては処理が重い");
+    BASE("base", "ggml-base.bin", WhisperInferenceEngine.WHISPER_CPP, "default",
+            "Whisper.cpp base・F16"),
+    BASE_Q8_0("ggml-base-q8-0", "ggml-base_q8_0.bin", WhisperInferenceEngine.WHISPER_CPP,
+            "default", "Whisper.cpp base・Q8_0量子化"),
+    SMALL("small", "ggml-small.bin", WhisperInferenceEngine.WHISPER_CPP, "default",
+            "Whisper.cpp small・F16"),
+    SMALL_Q8_0("ggml-small-q8-0", "ggml-small_q8_0.bin", WhisperInferenceEngine.WHISPER_CPP,
+            "default", "Whisper.cpp small・Q8_0量子化"),
+    KOTOBA_WHISPER_Q8_0("ggml-kotoba-whisper_q8_0", "ggml-kotoba-whisper_q8_0.bin",WhisperInferenceEngine.WHISPER_CPP,
+            "default", "Whisper.cpp small・Q8_0量子化"),
+    CT2_BASE_INT8("ct2-openai-base-int8", "ctranslate2/openai-whisper-base-int8",
+            WhisperInferenceEngine.CTRANSLATE2, "int8", "CTranslate2 openai/whisper-base・int8"),
+    CT2_SMALL_INT8("ct2-openai-small-int8", "ctranslate2/openai-whisper-small-int8",
+            WhisperInferenceEngine.CTRANSLATE2, "int8", "CTranslate2 openai/whisper-small・int8"),
+    CT2_KOTOBA_V2_2_INT8("ct2-kotoba-v2-2-int8", "ctranslate2/kotoba-whisper-v2.2-int8",
+            WhisperInferenceEngine.CTRANSLATE2, "int8", "CTranslate2 kotoba-whisper-v2.2・int8");
 
     private final String key;
-    private final String displayName;
-    private final String assetName;
+    private final String assetPath;
+    private final WhisperInferenceEngine engine;
+    private final String computeType;
     private final String description;
 
-    WhisperModelOption(final String key, final String displayName, final String assetName, final String description) {
+    /**
+     * モデル選択肢を定義します。
+     * @param key 保存キー。例: {@code "ct2-openai-base-int8"}
+     * @param assetPath assets相対パス。例: {@code "ctranslate2/openai-whisper-base-int8"}
+     * @param engine 推論系。例: {@code WhisperInferenceEngine.CTRANSLATE2}
+     * @param computeType 計算型。例: {@code "int8"}
+     * @param description 説明。例: {@code "CTranslate2 base・int8"}
+     */
+    WhisperModelOption(
+            final String key,
+            final String assetPath,
+            final WhisperInferenceEngine engine,
+            final String computeType,
+            final String description
+    ) {
         this.key = key;
-        this.displayName = displayName;
-        this.assetName = assetName;
+        this.assetPath = assetPath;
+        this.engine = engine;
+        this.computeType = computeType;
         this.description = description;
     }
 
+    /** @return 設定保存キー。例: {@code "ggml-base-q8-0"} */
     public String key() {
         return key;
     }
 
+    /** @return UIへ表示するassetsパス。例: {@code "assets/ggml-base.bin"} */
     public String displayName() {
-        return displayName;
+        return "assets/" + assetPath;
     }
 
+    /** @return assets相対パス。例: {@code "ggml-base.bin"} */
     public String assetName() {
-        return assetName;
+        return assetPath;
     }
 
+    /**
+     * assets内の変換済みCTranslate2モデルディレクトリを返します。
+     * @return ディレクトリ。例: {@code "ctranslate2/base"}
+     */
+    public String cTranslate2AssetDirectory() {
+        return assetPath;
+    }
+
+    /** @return 推論ランタイム。例: {@code WhisperInferenceEngine.CTRANSLATE2} */
+    public WhisperInferenceEngine engine() { return engine; }
+
+    /** @return CTranslate2計算型。例: {@code "int8"} */
+    public String computeType() { return computeType; }
+
+    /** @return CTranslate2モデルならtrue。例: {@code true} */
+    public boolean usesCTranslate2() { return engine == WhisperInferenceEngine.CTRANSLATE2; }
+
+    /** @return モデル形式と量子化の説明。例: {@code "Whisper.cpp base・Q8_0量子化"} */
     public String description() {
         return description;
     }
 
+    /** @return ドロップダウン表示。例: {@code "assets/ggml-base_q8_0.bin"} */
+    @NonNull
+    @Override
+    public String toString() { return displayName(); }
+
+    /**
+     * 保存キーからモデルを復元します。
+     * @param key 保存キー。例: {@code "ct2-openai-base-int8"}
+     * @return 対応モデル。不明値は既定モデル。例: {@code WhisperModelOption.CT2_BASE_INT8}
+     */
     @NonNull
     public static WhisperModelOption fromKey(final String key) {
         if (key != null) {
+            if ("base".equals(key)) { return BASE; }
+            if ("small".equals(key)) { return SMALL; }
             for (WhisperModelOption value : values()) {
                 if (value.key.equals(key)) {
                     return value;

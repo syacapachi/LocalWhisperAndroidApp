@@ -15,6 +15,7 @@ public final class WhisperSettings {
     public static final boolean DEFAULT_NO_CONTEXT = true;
     public static final boolean DEFAULT_PRINT_TIMESTAMPS = false;
     public static final boolean DEFAULT_USE_GPU = false;
+    public static final boolean DEFAULT_USE_CTRANSLATE2 = false;
     public static final boolean DEFAULT_AUDIO_RECORDING_ENABLED = false;
     public static final boolean DEFAULT_AUTO_RETRANSCRIBE_ENABLED = false;
     private final WhisperModelOption model;
@@ -26,6 +27,7 @@ public final class WhisperSettings {
     private final boolean noContext;
     private final boolean printTimestamps;
     private final boolean useGpu;
+    private final boolean useCTranslate2;
     private final boolean audioRecordingEnabled;
     private final boolean autoRetranscribeEnabled;
 
@@ -41,6 +43,7 @@ public final class WhisperSettings {
      * @param noContext 文脈を引き継がない場合true。例: {@code true}
      * @param printTimestamps タイムスタンプを出す場合true。例: {@code false}
      * @param useGpu GPUを使う場合true。例: {@code false}
+     * @param useCTranslate2 旧設定との互換引数。例: {@code true}。実際のランタイムはmodelから決定します
      * @param audioRecordingEnabled WAV保存する場合true。例: {@code true}
      * @param autoRetranscribeEnabled 停止後に再推論する場合true。例: {@code true}
      */
@@ -54,6 +57,7 @@ public final class WhisperSettings {
             final boolean noContext,
             final boolean printTimestamps,
             final boolean useGpu,
+            final boolean useCTranslate2,
             final boolean audioRecordingEnabled,
             final boolean autoRetranscribeEnabled
     ) {
@@ -66,6 +70,7 @@ public final class WhisperSettings {
         this.noContext = noContext;
         this.printTimestamps = printTimestamps;
         this.useGpu = useGpu;
+        this.useCTranslate2 = this.model.usesCTranslate2();
         this.audioRecordingEnabled = audioRecordingEnabled;
         this.autoRetranscribeEnabled = audioRecordingEnabled && autoRetranscribeEnabled;
     }
@@ -83,6 +88,7 @@ public final class WhisperSettings {
                 DEFAULT_NO_CONTEXT,
                 DEFAULT_PRINT_TIMESTAMPS,
                 DEFAULT_USE_GPU,
+                DEFAULT_USE_CTRANSLATE2,
                 DEFAULT_AUDIO_RECORDING_ENABLED,
                 DEFAULT_AUTO_RETRANSCRIBE_ENABLED
         );
@@ -101,6 +107,7 @@ public final class WhisperSettings {
                 noContext,
                 printTimestamps,
                 useGpu,
+                useCTranslate2,
                 audioRecordingEnabled,
                 autoRetranscribeEnabled
         );
@@ -138,6 +145,7 @@ public final class WhisperSettings {
         return printTimestamps;
     }
     public boolean useGpu() {return useGpu;}
+    public boolean useCTranslate2() { return useCTranslate2; }
     public boolean audioRecordingEnabled() { return audioRecordingEnabled; }
     public boolean autoRetranscribeEnabled() { return autoRetranscribeEnabled; }
 

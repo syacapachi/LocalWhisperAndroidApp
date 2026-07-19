@@ -10,15 +10,34 @@
 CTranslate2はWhisper.cpp用の `ggml-*.bin` を読み込めません。Transformers版Whisperを
 CTranslate2形式へ変換し、次のディレクトリへ置いてからAPKをビルドしてください。
 
-- base: `app/src/main/assets/ctranslate2/base/`
-- small: `app/src/main/assets/ctranslate2/small/`
+- openai/whisper-base int8: `app/src/main/assets/ctranslate2/openai-whisper-base-int8/`
+- openai/whisper-small int8: `app/src/main/assets/ctranslate2/openai-whisper-small-int8/`
+- kotoba-tech/kotoba-whisper-v2.2 int8: `app/src/main/assets/ctranslate2/kotoba-whisper-v2.2-int8/`
+
+`ct2-transformers-converter` のインストールは以下の方法で行います。
+
+```powershell
+pip install ctranslate2 transformers
+```
 
 各ディレクトリには少なくとも `model.bin`、`config.json`、`vocabulary.json` が必要です。
 変換ツールをインストール済みのPowerShellでは、プロジェクトルートから次のように生成できます。
 
 ```powershell
-ct2-transformers-converter --model openai/whisper-base --output_dir app/src/main/assets/ctranslate2/base --quantization int8
-ct2-transformers-converter --model openai/whisper-small --output_dir app/src/main/assets/ctranslate2/small --quantization int8
+python -m ctranslate2.converters.transformers `
+  --model C:\Users\emthf\Programming\hf\models--openai--whisper-base\snapshots\e37978b90ca9030d5170a5c07aadb050351a65bb `
+  --output_dir app\src\main\assets\ctranslate2\openai-whisper-base-int8 `
+  --quantization int8 --copy_files tokenizer.json preprocessor_config.json --low_cpu_mem_usage
+
+python -m ctranslate2.converters.transformers `
+  --model C:\Users\emthf\Programming\hf\models--openai--whisper-small\snapshots\973afd24965f72e36ca33b3055d56a652f456b4d `
+  --output_dir app\src\main\assets\ctranslate2\openai-whisper-small-int8 `
+  --quantization int8 --copy_files tokenizer.json preprocessor_config.json --low_cpu_mem_usage
+
+python -m ctranslate2.converters.transformers `
+  --model C:\Users\emthf\Programming\hf\models--kotoba-tech--kotoba-whisper-v2.2\snapshots\9d33482a0eb9b57f1ad80708e8ac5538246d8355 `
+  --output_dir app\src\main\assets\ctranslate2\kotoba-whisper-v2.2-int8 `
+  --quantization int8 --copy_files tokenizer.json preprocessor_config.json --low_cpu_mem_usage
 ```
 
 モデルはサイズが大きいため、このリポジトリの `.gitignore` ではassets内のモデルを追跡しません。

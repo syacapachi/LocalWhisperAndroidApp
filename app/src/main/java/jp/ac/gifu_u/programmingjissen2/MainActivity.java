@@ -5,7 +5,6 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.util.Log;
 import android.widget.Button;
-import android.widget.RadioGroup;
 import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -94,7 +93,7 @@ public class MainActivity extends AppCompatActivity {
         Button whisperSettingsButton = (Button) findViewById(R.id.whisperSettingsButton);
         Spinner recordingSourceSpinner = findViewById(R.id.recordingSourceSpinner);
         Spinner captureTargetAppSpinner = findViewById(R.id.captureTargetAppSpinner);
-        RadioGroup whisperModelRadioGroup = findViewById(R.id.whisperModelRadioGroup);
+        Spinner whisperModelSpinner = findViewById(R.id.whisperModelSpinner);
         TextView recordText = findViewById(R.id.recordText);
         TextView whisperStatusText = findViewById(R.id.whisperStatusText);
         TextView whisperBenchmarkText = findViewById(R.id.whisperBenchmarkText);
@@ -116,7 +115,7 @@ public class MainActivity extends AppCompatActivity {
                 whisperSettingsButton,
                 recordingSourceSpinner,
                 captureTargetAppSpinner,
-                whisperModelRadioGroup,
+                whisperModelSpinner,
                 recordText,
                 whisperStatusText,
                 whisperBenchmarkText

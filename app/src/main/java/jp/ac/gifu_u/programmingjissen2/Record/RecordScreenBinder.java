@@ -9,7 +9,6 @@ import androidx.annotation.NonNull;
 
 import Utils.StringPool.StringBufferBuilderPool;
 import events.Whisper.WhisperTranscriptionEvent;
-import jp.ac.gifu_u.programmingjissen2.R;
 import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.WhisperModelOption;
 import jp.ac.gifu_u.programmingjissen2.SettingUI.WhisperRecordControls;
 
@@ -171,7 +170,7 @@ public final class RecordScreenBinder {
     }
 
     /**
-     * モデル選択RadioGroupの変更処理を設定します。
+     * モデルassetsパスのドロップダウンと変更処理を設定します。
      *
      * @param currentModel 現在のモデル。例: {@code WhisperModelOption.BASE}
      * @param listener 選択変更通知先。例: {@code this::onModelSelected}
@@ -180,33 +179,47 @@ public final class RecordScreenBinder {
             @NonNull final WhisperModelOption currentModel,
             @NonNull final ModelSelectedListener listener
     ) {
-        syncModelSelector(currentModel);
-        if (controls.modelRadioGroup == null) {
+        if (controls.modelSpinner == null) {
             return;
         }
-
-        controls.modelRadioGroup.setOnCheckedChangeListener((group, checkedId) -> {
-            if (updatingModelSelector) {
-                return;
+        final ArrayAdapter<WhisperModelOption> adapter = new ArrayAdapter<>(
+                controls.modelSpinner.getContext(),
+                android.R.layout.simple_spinner_item,
+                WhisperModelOption.values()
+        );
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        controls.modelSpinner.setAdapter(adapter);
+        syncModelSelector(currentModel);
+        controls.modelSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(
+                    final AdapterView<?> parent,
+                    final View view,
+                    final int position,
+                    final long id
+            ) {
+                if (!updatingModelSelector) {
+                    listener.onModelSelected(WhisperModelOption.values()[position]);
+                }
             }
-            listener.onModelSelected(modelFromRadioId(checkedId));
+
+            @Override
+            public void onNothingSelected(final AdapterView<?> parent) { }
         });
     }
 
     /**
-     * モデルRadioGroupの選択状態を画面へ反映します。
+     * モデルパスドロップダウンの選択状態を画面へ反映します。
      *
      * @param model 選択状態にするモデル。例: {@code WhisperModelOption.SMALL}
      */
     public void syncModelSelector(@NonNull final WhisperModelOption model) {
-        if (controls.modelRadioGroup == null) {
+        if (controls.modelSpinner == null) {
             return;
         }
 
         updatingModelSelector = true;
-        controls.modelRadioGroup.check(model == WhisperModelOption.SMALL
-                ? R.id.whisperModelSmall
-                : R.id.whisperModelBase);
+        controls.modelSpinner.setSelection(model.ordinal(), false);
         updatingModelSelector = false;
     }
 
@@ -319,11 +332,4 @@ public final class RecordScreenBinder {
         );
     }
 
-    /** RadioButton ID をモデルへ変換します。@param checkedId 例: {@code R.id.whisperModelSmall} @return モデル。例: {@code WhisperModelOption.SMALL} */
-    private WhisperModelOption modelFromRadioId(final int checkedId) {
-        if (checkedId == R.id.whisperModelSmall) {
-            return WhisperModelOption.SMALL;
-        }
-        return WhisperModelOption.BASE;
-    }
 }
