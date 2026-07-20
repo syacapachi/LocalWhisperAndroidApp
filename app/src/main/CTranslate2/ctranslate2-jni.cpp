@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <memory>
+#include <mutex>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -20,6 +21,10 @@ namespace {
 struct WhisperHandle {
   std::unique_ptr<ctranslate2::models::Whisper> model;
   std::unique_ptr<app::ctranslate2_jni::WhisperPromptTokenizer> tokenizer;
+  std::mutex inference_mutex;
+  std::vector<float> pcm_samples;
+  std::vector<float> mel_features;
+  app::ctranslate2_jni::WhisperFeatureWorkspace feature_workspace;
 };
 
 class JStringChars {
@@ -82,6 +87,11 @@ Java_CTranslate2_CTranslate2Bridge_create(
         config);
     handle->tokenizer =
         std::make_unique<app::ctranslate2_jni::WhisperPromptTokenizer>(model_path.str());
+    const size_t n_mels = handle->model->n_mels();
+    handle->pcm_samples.reserve(30 * 16000);
+    handle->mel_features.resize(n_mels * 3000);
+    app::ctranslate2_jni::prepare_whisper_feature_workspace(
+        n_mels, handle->feature_workspace);
     return reinterpret_cast<jlong>(handle.release());
   } catch (const std::invalid_argument& error) {
     throw_java(env, "java/lang/IllegalArgumentException", error.what());
@@ -104,6 +114,7 @@ Java_CTranslate2_CTranslate2Bridge_transcribe(
     jclass,
     jlong native_handle,
     jshortArray pcm,
+    jint sample_count,
     jstring language,
     jboolean translate_to_english,
     jstring initial_prompt,
@@ -117,16 +128,25 @@ Java_CTranslate2_CTranslate2Bridge_transcribe(
       throw std::invalid_argument("native handle is null");
     if (pcm == nullptr)
       throw std::invalid_argument("samples must not be null");
+    const jsize array_length = env->GetArrayLength(pcm);
+    if (sample_count < 0 || sample_count > array_length)
+      throw std::invalid_argument("sampleCount is outside samples");
+    std::lock_guard<std::mutex> inference_lock(handle->inference_mutex);
 
-    std::vector<float> samples = app::native_audio::pcm16_to_float_vector(env, pcm);
+    app::native_audio::pcm16_to_float_vector(
+        env, pcm, handle->pcm_samples, sample_count);
     if (env->ExceptionCheck())
       return nullptr;
 
     const size_t n_mels = handle->model->n_mels();
-    auto values = app::ctranslate2_jni::make_whisper_features(samples, n_mels);
+    app::ctranslate2_jni::make_whisper_features(
+        handle->pcm_samples,
+        n_mels,
+        handle->mel_features,
+        handle->feature_workspace);
     ctranslate2::StorageView features(
         {1, static_cast<ctranslate2::dim_t>(n_mels), 3000},
-        values);
+        handle->mel_features.data());
 
     const JStringChars language_code(env, language);
     const JStringChars prompt_text(env, initial_prompt);

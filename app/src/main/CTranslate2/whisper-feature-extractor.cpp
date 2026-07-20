@@ -23,39 +23,46 @@ size_t smallest_factor(size_t value) {
   return value;
 }
 
-std::vector<std::complex<float>> fft(const std::vector<std::complex<float>>& input) {
-  const size_t n = input.size();
-  if (n <= 1)
-    return input;
+void fft(
+    const std::complex<float>* input,
+    size_t input_stride,
+    std::complex<float>* output,
+    std::complex<float>* scratch,
+    size_t n) {
+  if (n <= 1) {
+    if (n == 1)
+      output[0] = input[0];
+    return;
+  }
   const size_t factor = smallest_factor(n);
   if (factor == n) {
-    std::vector<std::complex<float>> output(n);
     for (size_t k = 0; k < n; ++k) {
+      output[k] = {};
       for (size_t t = 0; t < n; ++t) {
         const float angle = -2.0f * kPi * static_cast<float>(k * t) / static_cast<float>(n);
-        output[k] += input[t] * std::polar(1.0f, angle);
+        output[k] += input[t * input_stride] * std::polar(1.0f, angle);
       }
     }
-    return output;
+    return;
   }
 
   const size_t part_size = n / factor;
-  std::vector<std::vector<std::complex<float>>> parts(factor);
   for (size_t part = 0; part < factor; ++part) {
-    std::vector<std::complex<float>> values(part_size);
-    for (size_t i = 0; i < part_size; ++i)
-      values[i] = input[part + i * factor];
-    parts[part] = fft(values);
+    fft(input + part * input_stride,
+        input_stride * factor,
+        scratch + part * part_size,
+        output + part * part_size,
+        part_size);
   }
 
-  std::vector<std::complex<float>> output(n);
   for (size_t k = 0; k < n; ++k) {
+    output[k] = {};
     for (size_t part = 0; part < factor; ++part) {
       const float angle = -2.0f * kPi * static_cast<float>(part * k) / static_cast<float>(n);
-      output[k] += parts[part][k % part_size] * std::polar(1.0f, angle);
+      output[k] += scratch[part * part_size + k % part_size]
+                   * std::polar(1.0f, angle);
     }
   }
-  return output;
 }
 
 double hz_to_mel(double frequency) {
@@ -108,57 +115,88 @@ float reflected_sample(const std::vector<float>& audio, long index) {
 
 }  // namespace
 
-std::vector<float> make_whisper_features(const std::vector<float>& samples, size_t n_mels) {
+void prepare_whisper_feature_workspace(
+    const size_t n_mels,
+    WhisperFeatureWorkspace& workspace) {
   if (n_mels == 0)
     throw std::invalid_argument("n_mels must be greater than 0");
+  workspace.audio.resize(kChunkSamples);
+  workspace.power.resize(kFftSize / 2 + 1);
+  workspace.fft_input.resize(kFftSize);
+  workspace.fft_output.resize(kFftSize);
+  workspace.fft_scratch.resize(kFftSize);
+  if (workspace.hann.size() != kFftSize) {
+    workspace.hann.resize(kFftSize);
+    for (size_t index = 0; index < kFftSize; ++index) {
+      workspace.hann[index] = 0.5f - 0.5f * std::cos(
+          2.0f * kPi * static_cast<float>(index) / kFftSize);
+    }
+  }
+  if (n_mels != 80 && n_mels != 128
+      && workspace.custom_filter_mels != n_mels) {
+    workspace.custom_filters = make_mel_filters(n_mels);
+    workspace.custom_filter_mels = n_mels;
+  }
+}
 
-  std::vector<float> audio(kChunkSamples, 0.0f);
-  const size_t copied_samples = std::min(samples.size(), audio.size());
-  std::copy_n(samples.begin(), copied_samples, audio.begin());
+void make_whisper_features(
+    const std::vector<float>& samples,
+    const size_t n_mels,
+    std::vector<float>& output,
+    WhisperFeatureWorkspace& workspace) {
+  prepare_whisper_feature_workspace(n_mels, workspace);
+
+  std::fill(workspace.audio.begin(), workspace.audio.end(), 0.0f);
+  const size_t copied_samples = std::min(samples.size(), workspace.audio.size());
+  std::copy_n(samples.begin(), copied_samples, workspace.audio.begin());
   static const auto filters80 = make_mel_filters(80);
   static const auto filters128 = make_mel_filters(128);
-  std::vector<float> custom_filters;
   const std::vector<float>* filters = nullptr;
   if (n_mels == 80)
     filters = &filters80;
   else if (n_mels == 128)
     filters = &filters128;
-  else {
-    custom_filters = make_mel_filters(n_mels);
-    filters = &custom_filters;
-  }
+  else
+    filters = &workspace.custom_filters;
   const size_t bins = kFftSize / 2 + 1;
-  std::vector<float> features(n_mels * kFrames, -10.0f);
-  std::vector<float> power(bins);
+  output.resize(n_mels * kFrames);
+  std::fill(output.begin(), output.end(), -10.0f);
   float maximum = -10.0f;
   const size_t active_frames = std::min(
       kFrames,
       (copied_samples + kFftSize / 2 + kHopLength - 1) / kHopLength);
 
   for (size_t frame = 0; frame < active_frames; ++frame) {
-    std::vector<std::complex<float>> window(kFftSize);
     const long start = static_cast<long>(frame * kHopLength) - static_cast<long>(kFftSize / 2);
     for (size_t i = 0; i < kFftSize; ++i) {
-      const float hann = 0.5f - 0.5f * std::cos(2.0f * kPi * static_cast<float>(i) / kFftSize);
-      window[i] = reflected_sample(audio, start + static_cast<long>(i)) * hann;
+      workspace.fft_input[i] = reflected_sample(
+          workspace.audio, start + static_cast<long>(i)) * workspace.hann[i];
     }
-    const auto spectrum = fft(window);
+    fft(workspace.fft_input.data(), 1, workspace.fft_output.data(),
+        workspace.fft_scratch.data(), kFftSize);
     for (size_t bin = 0; bin < bins; ++bin)
-      power[bin] = std::norm(spectrum[bin]);
+      workspace.power[bin] = std::norm(workspace.fft_output[bin]);
 
     for (size_t mel = 0; mel < n_mels; ++mel) {
       float energy = 0.0f;
       for (size_t bin = 0; bin < bins; ++bin)
-        energy += (*filters)[mel * bins + bin] * power[bin];
+        energy += (*filters)[mel * bins + bin] * workspace.power[bin];
       const float value = std::log10(std::max(energy, 1e-10f));
-      features[mel * kFrames + frame] = value;
+      output[mel * kFrames + frame] = value;
       maximum = std::max(maximum, value);
     }
   }
 
-  for (float& value : features)
+  for (float& value : output)
     value = (std::max(value, maximum - 8.0f) + 4.0f) / 4.0f;
-  return features;
+}
+
+void make_whisper_features(
+    const std::vector<float>& samples,
+    const size_t n_mels,
+    std::vector<float>& output) {
+  thread_local WhisperFeatureWorkspace workspace;
+  make_whisper_features(samples, n_mels, output, workspace);
 }
 
 }  // namespace app::ctranslate2_jni

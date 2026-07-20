@@ -72,13 +72,37 @@ WhisperPromptTokenizer::WhisperPromptTokenizer(const std::string& model_director
   const auto document = nlohmann::json::parse(stream);
   const auto& model = document.at("model");
   vocabulary_ = model.at("vocab").get<std::unordered_map<std::string, size_t>>();
+  const auto& merges = model.at("merges");
+  if (merges.empty())
+    throw std::runtime_error("BPE merges is empty in tokenizer.json");
+  const auto merge_type = merges[0].type();
+  const bool is_array = merge_type == nlohmann::json::value_t::array;
+  if (!is_array && merge_type != nlohmann::json::value_t::string)
+    throw std::runtime_error("unsupported BPE merge type in tokenizer.json");
+
   size_t rank = 0;
-  for (const auto& merge_value : model.at("merges")) {
-    const std::string merge = merge_value.get<std::string>();
-    const size_t separator = merge.find(' ');
-    if (separator == std::string::npos)
-      throw std::runtime_error("invalid BPE merge in tokenizer.json");
-    merge_ranks_.emplace(pair_key(merge.substr(0, separator), merge.substr(separator + 1)), rank++);
+  if (is_array) {
+    for (const auto& merge_value : merges) {
+      if (merge_value.size() != 2)
+        throw std::runtime_error("invalid array BPE merge in tokenizer.json");
+      const std::string left = merge_value[0].get<std::string>();
+      const std::string right = merge_value[1].get<std::string>();
+      if (left.empty() || right.empty())
+        throw std::runtime_error("empty BPE merge token in tokenizer.json");
+      merge_ranks_.emplace(pair_key(left, right), rank++);
+    }
+  } else {
+    for (const auto& merge_value : merges) {
+      const std::string merge = merge_value.get<std::string>();
+      const size_t separator = merge.find(' ');
+      if (separator == std::string::npos)
+        throw std::runtime_error("invalid string BPE merge in tokenizer.json");
+      const std::string left = merge.substr(0, separator);
+      const std::string right = merge.substr(separator + 1);
+      if (left.empty() || right.empty())
+        throw std::runtime_error("empty BPE merge token in tokenizer.json");
+      merge_ranks_.emplace(pair_key(left, right), rank++);
+    }
   }
 }
 

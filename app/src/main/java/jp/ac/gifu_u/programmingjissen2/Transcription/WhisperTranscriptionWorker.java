@@ -70,6 +70,8 @@ public class WhisperTranscriptionWorker implements Runnable {
 
     /** 推論窓に達するまで PCM をためるバッファです。 */
     private final ShortAudioBuffer pendingAudio;
+    /** workerスレッドだけが使う再利用推論窓です。 */
+    private final short[] inferenceWindowBuffer;
 
     /** worker スレッドの継続フラグです。 */
     private volatile boolean running;
@@ -179,6 +181,7 @@ public class WhisperTranscriptionWorker implements Runnable {
         this.overlapSamples = Math.max(0, sampleRate * this.settings.overlapMs() / 1000);
         this.minFinalSamples = Math.max(1, sampleRate * this.settings.minFinalMs() / 1000);
         this.pendingAudio = new ShortAudioBuffer(windowSamples * 2);
+        this.inferenceWindowBuffer = new short[windowSamples];
     }
 
     /** Whisper 推論スレッドを開始します。 */
@@ -377,13 +380,14 @@ public class WhisperTranscriptionWorker implements Runnable {
         final int sampleCount = finalResult
                 ? pendingAudio.size()
                 : windowSamples;
-        final short[] samples = pendingAudio.copyFirst(sampleCount);
+        pendingAudio.writeFirst(sampleCount, inferenceWindowBuffer);
         final long startMs = samplesToMs(processedSamples);
-        final long durationMs = samplesToMs(samples.length);
+        final long durationMs = samplesToMs(sampleCount);
 
         final long startedAt = System.nanoTime();
         Log.d(TAG,"start transcription");
-        final TranscriptionWorkerResult result = cTranslate2Worker.transcribe(samples);
+        final TranscriptionWorkerResult result =
+                cTranslate2Worker.transcribe(inferenceWindowBuffer, sampleCount);
         final long processingTimeMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt);
 
         Log.d(TAG, result.text);
@@ -517,12 +521,6 @@ public class WhisperTranscriptionWorker implements Runnable {
         }
 
 
-        /** 先頭から指定サンプル数をコピーします。 */
-        @NonNull
-        short[] copyFirst(final int count) {
-            int copyLength = Math.min(count, size);
-            return Arrays.copyOf(buffer, copyLength);
-        }
         /** 先頭から指定サンプル数を,対象バッファの先頭からに書き込みます。 */
         int writeFirst(final int count, @NonNull final short[] writeBuffer){
             final int minSize = Math.min(writeBuffer.length, size);

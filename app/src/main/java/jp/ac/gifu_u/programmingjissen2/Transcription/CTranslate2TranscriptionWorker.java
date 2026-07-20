@@ -7,12 +7,15 @@ import androidx.annotation.NonNull;
 import CTranslate2.CTranslate2Bridge;
 import Utils.StringPool.StringBufferBuilderPool;
 import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.WhisperSettings;
+import jp.ac.gifu_u.programmingjissen2.Transcription.Prompt.PreviousContextWordExtractor;
 
 /** リアルタイム音声窓をCTranslate2で推論し、直前文脈を管理するworkerです。 */
 public final class CTranslate2TranscriptionWorker implements AutoCloseable {
+    private static final int PREVIOUS_CONTEXT_MAX_WORDS = 24;
+    private static final int PREVIOUS_CONTEXT_MAX_CODE_POINTS = 100;
     private final CTranslate2Bridge bridge;
     private final WhisperSettings settings;
-    private String previousContext = "";
+    private String previousWordContext = "";
 
     /**
      * CTranslate2モデルを開きます。
@@ -37,18 +40,41 @@ public final class CTranslate2TranscriptionWorker implements AutoCloseable {
     }
 
     /**
-     * 1つの音声窓を推論し、空でない結果の末尾100文字を次回文脈として保存します。
+     * 1つの音声窓を推論し、結果から抽出した直近単語一覧を次回文脈として保存します。
      * @param samples 16kHzモノラルPCM16。例: {@code new short[80000]}
      * @return 本文と話者情報。例: {@code new TranscriptionWorkerResult("こんにちは", false)}
      * @throws IllegalStateException native推論に失敗した場合
      */
     @NonNull
     public TranscriptionWorkerResult transcribe(@NonNull final short[] samples) {
-        final String prompt = previousContext.isEmpty()
-                ? settings.prompt()
-                : StringBufferBuilderPool.Join("\n", settings.prompt(), previousContext);
+        return transcribe(samples, samples.length);
+    }
+
+    /**
+     * 再利用PCM16配列の有効部分だけを推論します。
+     * @param samples PCM16出力バッファ。例: {@code new short[80000]}
+     * @param sampleCount 有効サンプル数。例: {@code 64000}
+     * @return 本文と話者情報。例: {@code new TranscriptionWorkerResult("こんにちは", false)}
+     * @throws IllegalArgumentException sampleCountが配列範囲外の場合
+     * @throws IllegalStateException native推論に失敗した場合
+     */
+    @NonNull
+    public TranscriptionWorkerResult transcribe(
+            @NonNull final short[] samples,
+            final int sampleCount
+    ) {
+        final String prompt;
+        if (previousWordContext.isEmpty()) {
+            prompt = settings.prompt();
+        } else if (settings.prompt().isEmpty()) {
+            prompt = previousWordContext;
+        } else {
+            prompt = StringBufferBuilderPool.Join(
+                    "\n", settings.prompt(), previousWordContext);
+        }
         final String text = bridge.transcribe(
                 samples,
+                sampleCount,
                 settings.language(),
                 settings.translateToEnglish(),
                 prompt,
@@ -56,7 +82,12 @@ public final class CTranslate2TranscriptionWorker implements AutoCloseable {
                 settings.vadThreshold()
         );
         if (text != null && !text.trim().isEmpty()) {
-            previousContext = takeLastCodePoints(text.trim(), 100);
+            previousWordContext = PreviousContextWordExtractor.extractRecentWords(
+                    text,
+                    settings.language(),
+                    PREVIOUS_CONTEXT_MAX_WORDS,
+                    PREVIOUS_CONTEXT_MAX_CODE_POINTS
+            );
         }
         return new TranscriptionWorkerResult(text, false);
     }
@@ -67,21 +98,4 @@ public final class CTranslate2TranscriptionWorker implements AutoCloseable {
         bridge.close();
     }
 
-    /**
-     * 文字列末尾をUnicode code point単位で切り出します。
-     * @param text 元文字列。例: {@code "前の文字起こし"}
-     * @param maxCodePoints 最大文字数。例: {@code 100}
-     * @return 末尾文字列。例: {@code "文字起こし"}。null時は空文字で例外はありません
-     */
-    @NonNull
-    public static String takeLastCodePoints(final String text, final int maxCodePoints) {
-        if (text == null || text.isEmpty() || maxCodePoints <= 0) {
-            return "";
-        }
-        final int count = text.codePointCount(0, text.length());
-        if (count <= maxCodePoints) {
-            return text;
-        }
-        return text.substring(text.offsetByCodePoints(0, count - maxCodePoints));
-    }
 }

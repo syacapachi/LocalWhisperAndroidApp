@@ -146,9 +146,10 @@ public final class AudioFilePcmDecoder {
             codec.release();
         }
 
-        final short[] decoded = samples.toArray();
-        final short[] whisperPcm = Pcm16AudioConverter.resample(decoded, sampleRate,
-                WhisperTranscriptionWorker.DEFAULT_SAMPLE_RATE);
+        final int targetSampleRate = WhisperTranscriptionWorker.DEFAULT_SAMPLE_RATE;
+        final short[] whisperPcm = new short[Pcm16AudioConverter.resampledLength(
+                samples.size(), sampleRate, targetSampleRate)];
+        samples.resampleTo(sampleRate, targetSampleRate, whisperPcm);
         return new DecodedAudio(whisperPcm, WhisperTranscriptionWorker.DEFAULT_SAMPLE_RATE);
     }
 

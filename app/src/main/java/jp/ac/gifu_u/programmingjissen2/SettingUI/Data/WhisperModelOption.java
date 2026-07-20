@@ -6,9 +6,7 @@ import org.jetbrains.annotations.Contract;
 
 /** Whisper で利用できるモデルの選択肢です。 */
 public enum WhisperModelOption {
-    CT2_SMALL("ct2-openai-small", "ctranslate2/openai-whisper-small-int8", "ggml-small.bin",
-            WhisperInferenceEngine.CTRANSLATE2, "default", "CTranslate2 openai/whisper-small"),
-    CT2_BASE_INT8("ct2-openai-base-int8", "ctranslate2/openai-whisper-base-int8", "ggml-base.bin",
+    CT2_BASE_INT8("ct2-openai-base-int8", "ctranslate2/openai-whisper-base-int8", "ggml-base_q8_0.bin",
             WhisperInferenceEngine.CTRANSLATE2, "int8", "CTranslate2 openai/whisper-base・int8"),
     CT2_SMALL_INT8("ct2-openai-small-int8", "ctranslate2/openai-whisper-small-int8", "ggml-small_q8_0.bin",
             WhisperInferenceEngine.CTRANSLATE2, "int8", "CTranslate2 openai/whisper-small・int8"),

@@ -68,29 +68,80 @@ public final class Pcm16AudioConverter {
             final int sourceSampleRate,
             final int targetSampleRate
     ) {
+        final short[] output = new short[resampledLength(
+                samples.length, sourceSampleRate, targetSampleRate)];
+        resampleTo(samples, samples.length, sourceSampleRate, targetSampleRate, output);
+        return output;
+    }
+
+    /**
+     * PCM16を呼び出し側が再利用できる出力配列へリサンプリングします。
+     * @param samples 入力PCM16。例: {@code new short[]{0, 16384}}
+     * @param sampleCount 有効入力数。例: {@code 2}
+     * @param sourceSampleRate 入力Hz。例: {@code 44100}
+     * @param targetSampleRate 出力Hz。例: {@code 16000}
+     * @param output 出力先。例: {@code new short[1]}
+     * @return 書き込んだサンプル数。例: {@code 1}
+     * @throws IllegalArgumentException サンプル数、レート、出力容量が不正な場合
+     */
+    public static int resampleTo(
+            @NonNull final short[] samples,
+            final int sampleCount,
+            final int sourceSampleRate,
+            final int targetSampleRate,
+            @NonNull final short[] output
+    ) {
         if (sourceSampleRate <= 0 || targetSampleRate <= 0) {
             throw new IllegalArgumentException("sample rate must be positive");
         }
-        if (samples.length == 0 || sourceSampleRate == targetSampleRate) {
-            return Arrays.copyOf(samples, samples.length);
+        if (sampleCount < 0 || sampleCount > samples.length) {
+            throw new IllegalArgumentException("sampleCount is outside samples");
         }
-
-        final int outputLength = Math.max(
-                1,
-                (int) Math.round(samples.length * (double) targetSampleRate / sourceSampleRate)
-        );
-        final short[] output = new short[outputLength];
+        final int outputLength = resampledLength(
+                sampleCount, sourceSampleRate, targetSampleRate);
+        if (output.length < outputLength) {
+            throw new IllegalArgumentException("output is too small");
+        }
+        if (sampleCount == 0) {
+            return 0;
+        }
+        if (sourceSampleRate == targetSampleRate) {
+            System.arraycopy(samples, 0, output, 0, sampleCount);
+            return sampleCount;
+        }
         final double scale = (double) sourceSampleRate / targetSampleRate;
 
         for (int i = 0; i < outputLength; i++) {
             final double sourceIndex = i * scale;
-            final int left = Math.min((int) sourceIndex, samples.length - 1);
-            final int right = Math.min(left + 1, samples.length - 1);
+            final int left = Math.min((int) sourceIndex, sampleCount - 1);
+            final int right = Math.min(left + 1, sampleCount - 1);
             final double fraction = sourceIndex - left;
             output[i] = clampToShort((int) Math.round(
                     samples[left] + (samples[right] - samples[left]) * fraction));
         }
-        return output;
+        return outputLength;
+    }
+
+    /**
+     * リサンプリング後に必要な配列長を計算します。
+     * @param sampleCount 入力数。例: {@code 44100}
+     * @param sourceSampleRate 入力Hz。例: {@code 44100}
+     * @param targetSampleRate 出力Hz。例: {@code 16000}
+     * @return 必要長。例: {@code 16000}
+     * @throws IllegalArgumentException 引数が負、またはレートが0以下の場合
+     */
+    public static int resampledLength(
+            final int sampleCount,
+            final int sourceSampleRate,
+            final int targetSampleRate
+    ) {
+        if (sampleCount < 0 || sourceSampleRate <= 0 || targetSampleRate <= 0) {
+            throw new IllegalArgumentException("sample count and rates must be valid");
+        }
+        return sampleCount == 0 ? 0 : Math.max(
+                1,
+                (int) Math.round(sampleCount * (double) targetSampleRate / sourceSampleRate)
+        );
     }
 
     private static int appendPcm16(
@@ -177,6 +228,28 @@ public final class Pcm16AudioConverter {
         @NonNull
         public short[] toArray() {
             return Arrays.copyOf(buffer, size);
+        }
+
+        /** @return 現在の有効サンプル数。例: {@code 16000}。例外はありません。 */
+        public int size() {
+            return size;
+        }
+
+        /**
+         * builder内部配列から直接、呼び出し側の配列へリサンプリングします。
+         * @param sourceSampleRate 入力Hz。例: {@code 44100}
+         * @param targetSampleRate 出力Hz。例: {@code 16000}
+         * @param output 出力先。例: {@code new short[16000]}
+         * @return 書き込んだ数。例: {@code 16000}
+         * @throws IllegalArgumentException レートまたは出力容量が不正な場合
+         */
+        public int resampleTo(
+                final int sourceSampleRate,
+                final int targetSampleRate,
+                @NonNull final short[] output
+        ) {
+            return Pcm16AudioConverter.resampleTo(
+                    buffer, size, sourceSampleRate, targetSampleRate, output);
         }
 
         private void ensureCapacity(final int capacity) {
