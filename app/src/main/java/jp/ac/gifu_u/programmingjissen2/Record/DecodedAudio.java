@@ -5,7 +5,7 @@ import androidx.annotation.NonNull;
 import Utils.StringPool.StringBufferBuilderPool;
 
 /** Whisper 用に変換済みの音声データです。 */
-public record DecodedAudio(float[] samples, int sampleRate) {
+public record DecodedAudio(short[] samples, int sampleRate) {
     /**
      * 音声長をミリ秒で返します。
      *

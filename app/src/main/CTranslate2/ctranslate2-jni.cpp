@@ -13,6 +13,7 @@
 #include "whisper-feature-extractor.h"
 #include "whisper-prompt-tokenizer.h"
 #include "whisper-token-decoder.h"
+#include "../NativeAudio/pcm16-float-converter.h"
 
 namespace {
 
@@ -96,11 +97,13 @@ Java_CTranslate2_CTranslate2Bridge_destroy(JNIEnv*, jclass, jlong handle) {
 }
 
 extern "C" JNIEXPORT jstring JNICALL
+// pcm例: short[80000]相当。PCM16をfloatへ変換して文字起こし結果を返します。
+// 不正引数ではJavaのIllegalArgumentException、推論失敗ではIllegalStateExceptionを送出します。
 Java_CTranslate2_CTranslate2Bridge_transcribe(
     JNIEnv* env,
     jclass,
     jlong native_handle,
-    jfloatArray pcm,
+    jshortArray pcm,
     jstring language,
     jboolean translate_to_english,
     jstring initial_prompt,
@@ -115,9 +118,7 @@ Java_CTranslate2_CTranslate2Bridge_transcribe(
     if (pcm == nullptr)
       throw std::invalid_argument("samples must not be null");
 
-    const jsize sample_count = env->GetArrayLength(pcm);
-    std::vector<float> samples(static_cast<size_t>(sample_count));
-    env->GetFloatArrayRegion(pcm, 0, sample_count, samples.data());
+    std::vector<float> samples = app::native_audio::pcm16_to_float_vector(env, pcm);
     if (env->ExceptionCheck())
       return nullptr;
 

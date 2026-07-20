@@ -42,21 +42,21 @@ public final class WhisperCPPTranscriptionWorker implements AutoCloseable {
 
     /**
      * 音声配列全体を分割せず1回のfull呼び出しで推論します。
-     * @param samples 16kHzモノラルfloat PCM全体。例: {@code decodedAudio.samples()}
+     * @param samples 16kHzモノラルPCM16全体。例: {@code new short[16000]}
      * @param includeTimestamps セグメント時刻を本文へ付けるならtrue。例: {@code true}
      * @return 全セグメントを結合した結果。例: {@code new TranscriptionWorkerResult("[00:00.000] ...", false)}
      * @throws IOException native推論が失敗した場合
      */
     @NonNull
     public TranscriptionWorkerResult transcribe(
-            @NonNull final float[] samples,
+            @NonNull final short[] samples,
             final boolean includeTimestamps
     ) throws IOException {
         if (context == 0) {
             throw new IOException("Whisper.cpp model is already closed");
         }
         final WhisperBridge.FullParams params = createFullParams(includeTimestamps);
-        final int result = WhisperBridge.full(context, params, samples);
+        final int result = WhisperBridge.fullPcm16(context, params, samples);
         if (result != 0) {
             throw new IOException("Whisper.cpp inference failed: " + result);
         }

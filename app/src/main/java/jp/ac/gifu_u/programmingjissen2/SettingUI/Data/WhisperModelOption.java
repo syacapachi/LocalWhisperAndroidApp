@@ -2,8 +2,12 @@ package jp.ac.gifu_u.programmingjissen2.SettingUI.Data;
 
 import androidx.annotation.NonNull;
 
+import org.jetbrains.annotations.Contract;
+
 /** Whisper で利用できるモデルの選択肢です。 */
 public enum WhisperModelOption {
+    CT2_SMALL("ct2-openai-small", "ctranslate2/openai-whisper-small-int8", "ggml-small.bin",
+            WhisperInferenceEngine.CTRANSLATE2, "default", "CTranslate2 openai/whisper-small"),
     CT2_BASE_INT8("ct2-openai-base-int8", "ctranslate2/openai-whisper-base-int8", "ggml-base.bin",
             WhisperInferenceEngine.CTRANSLATE2, "int8", "CTranslate2 openai/whisper-base・int8"),
     CT2_SMALL_INT8("ct2-openai-small-int8", "ctranslate2/openai-whisper-small-int8", "ggml-small_q8_0.bin",
@@ -15,6 +19,7 @@ public enum WhisperModelOption {
 
     private final String key;
     private final String assetPath;
+    private final String displayName;
     private final String whisperCppAssetName;
     private final WhisperInferenceEngine engine;
     private final String computeType;
@@ -39,6 +44,7 @@ public enum WhisperModelOption {
     ) {
         this.key = key;
         this.assetPath = assetPath;
+        this.displayName = "assets/" + assetPath;
         this.whisperCppAssetName = whisperCppAssetName;
         this.engine = engine;
         this.computeType = computeType;
@@ -51,8 +57,9 @@ public enum WhisperModelOption {
     }
 
     /** @return UIへ表示するassetsパス。例: {@code "assets/ggml-base.bin"} */
+    @NonNull
     public String displayName() {
-        return "assets/" + assetPath;
+        return displayName;
     }
 
     /** @return assets相対パス。例: {@code "ggml-base.bin"} */
@@ -81,9 +88,6 @@ public enum WhisperModelOption {
 
     /** @return CTranslate2計算型。例: {@code "int8"} */
     public String computeType() { return computeType; }
-
-    /** @return CTranslate2モデルならtrue。例: {@code true} */
-    public boolean usesCTranslate2() { return engine == WhisperInferenceEngine.CTRANSLATE2; }
 
     /** @return モデル形式と量子化の説明。例: {@code "Whisper.cpp base・Q8_0量子化"} */
     public String description() {

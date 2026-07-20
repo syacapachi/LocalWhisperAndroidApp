@@ -224,6 +224,15 @@ public class WhisperBridge {
     public static native int full(long context, FullParams params, float[] pcmData);
 
     /**
+     * PCM16音声をnative側でfloatへ正規化してfull推論します。
+     * @param context native context。例: {@code 1L}
+     * @param params full推論設定。例: {@code defaultFullParams(SAMPLING_GREEDY)}
+     * @param pcmData 16kHzモノラルPCM16。例: {@code new short[16000]}
+     * @return whisper_fullの結果。例: {@code 0}
+     */
+    public static native int fullPcm16(long context, FullParams params, short[] pcmData);
+
+    /**
      * 指定した state を使って音声全体を文字起こしします。
      *
      * @param context native context ハンドル

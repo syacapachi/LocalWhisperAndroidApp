@@ -407,10 +407,10 @@ public class BackgroundWhisperService extends Service {
 
     /**
      * マイクPCMをWAVと推論workerへ振り分けます。
-     * @param samples float PCM。例: {@code new float[8000]}
+     * @param samples PCM16。例: {@code new short[8000]}
      * @param length 有効サンプル数。例: {@code 8000}
      */
-    private void onAudioChunk(final float[] samples, final int length) {
+    private void onAudioChunk(final short[] samples, final int length) {
         final RecordedAudioFileWriter writer = audioFileWriter;
         if (writer != null) {
             try {

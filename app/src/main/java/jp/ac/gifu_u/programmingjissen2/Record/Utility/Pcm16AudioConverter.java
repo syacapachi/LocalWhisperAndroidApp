@@ -9,28 +9,28 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.Arrays;
 
-/** 16bit PCM などのデコード済み音声を Whisper 用 float PCM へ変換する utility です。 */
+/** デコード済み音声をWhisper用モノラルPCM16へ変換するutilityです。 */
 public final class Pcm16AudioConverter {
     private Pcm16AudioConverter() {
     }
 
     /**
-     * MediaCodec の出力 PCM を mono float PCM に変換して末尾へ追加します。
+     * MediaCodecの出力PCMをモノラルPCM16に変換して末尾へ追加します。
      *
      * @param buffer MediaCodec の出力 ByteBuffer。例: {@code outputBuffer}
      * @param info 出力範囲を表す BufferInfo。例: {@code new MediaCodec.BufferInfo()}
      * @param channelCount 入力チャンネル数。例: {@code 2}
      * @param pcmEncoding PCM エンコード形式。例: {@code AudioFormat.ENCODING_PCM_16BIT}
-     * @param output 変換結果の追加先。例: {@code new FloatArrayBuilder()}
+     * @param output 変換結果の追加先。例: {@code new ShortArrayBuilder()}
      * @return 追加した mono サンプル数。例: {@code 16000}
      * @throws IllegalArgumentException 未対応の PCM 形式や不正なチャンネル数の場合
      */
-    public static int appendMonoFloat(
+    public static int appendMonoPcm16(
             @NonNull final ByteBuffer buffer,
             @NonNull final MediaCodec.BufferInfo info,
             final int channelCount,
             final int pcmEncoding,
-            @NonNull final FloatArrayBuilder output
+            @NonNull final ShortArrayBuilder output
     ) {
         if (channelCount <= 0) {
             throw new IllegalArgumentException("channelCount must be positive");
@@ -54,17 +54,17 @@ public final class Pcm16AudioConverter {
     }
 
     /**
-     * mono float PCM を指定サンプリングレートへリサンプリングします。
+     * モノラルPCM16を指定サンプリングレートへリサンプリングします。
      *
-     * @param samples mono float PCM。例: {@code new float[]{0.0f, 0.5f}}
+     * @param samples モノラルPCM16。例: {@code new short[]{0, 16384}}
      * @param sourceSampleRate 入力サンプリングレート。例: {@code 44100}
      * @param targetSampleRate 出力サンプリングレート。例: {@code 16000}
-     * @return リサンプリング済み mono float PCM。例: {@code new float[]{0.0f}}
+     * @return リサンプリング済みPCM16。例: {@code new short[]{0}}
      * @throws IllegalArgumentException サンプリングレートが 0 以下の場合
      */
     @NonNull
-    public static float[] resample(
-            @NonNull final float[] samples,
+    public static short[] resample(
+            @NonNull final short[] samples,
             final int sourceSampleRate,
             final int targetSampleRate
     ) {
@@ -79,15 +79,16 @@ public final class Pcm16AudioConverter {
                 1,
                 (int) Math.round(samples.length * (double) targetSampleRate / sourceSampleRate)
         );
-        final float[] output = new float[outputLength];
+        final short[] output = new short[outputLength];
         final double scale = (double) sourceSampleRate / targetSampleRate;
 
         for (int i = 0; i < outputLength; i++) {
             final double sourceIndex = i * scale;
             final int left = Math.min((int) sourceIndex, samples.length - 1);
             final int right = Math.min(left + 1, samples.length - 1);
-            final float fraction = (float) (sourceIndex - left);
-            output[i] = samples[left] + (samples[right] - samples[left]) * fraction;
+            final double fraction = sourceIndex - left;
+            output[i] = clampToShort((int) Math.round(
+                    samples[left] + (samples[right] - samples[left]) * fraction));
         }
         return output;
     }
@@ -95,7 +96,7 @@ public final class Pcm16AudioConverter {
     private static int appendPcm16(
             @NonNull final ByteBuffer buffer,
             final int channelCount,
-            @NonNull final FloatArrayBuilder output
+            @NonNull final ShortArrayBuilder output
     ) {
         final int frameCount = buffer.remaining() / (Short.BYTES * channelCount);
         for (int frame = 0; frame < frameCount; frame++) {
@@ -103,7 +104,7 @@ public final class Pcm16AudioConverter {
             for (int channel = 0; channel < channelCount; channel++) {
                 mixed += buffer.getShort();
             }
-            output.append(clamp(mixed / (channelCount * 32768.0f)));
+            output.append(clampToShort(Math.round(mixed / (float) channelCount)));
         }
         return frameCount;
     }
@@ -111,7 +112,7 @@ public final class Pcm16AudioConverter {
     private static int appendPcmFloat(
             @NonNull final ByteBuffer buffer,
             final int channelCount,
-            @NonNull final FloatArrayBuilder output
+            @NonNull final ShortArrayBuilder output
     ) {
         final int frameCount = buffer.remaining() / (Float.BYTES * channelCount);
         for (int frame = 0; frame < frameCount; frame++) {
@@ -119,7 +120,7 @@ public final class Pcm16AudioConverter {
             for (int channel = 0; channel < channelCount; channel++) {
                 mixed += buffer.getFloat();
             }
-            output.append(clamp(mixed / channelCount));
+            output.append(floatToPcm16(mixed / channelCount));
         }
         return frameCount;
     }
@@ -127,41 +128,42 @@ public final class Pcm16AudioConverter {
     private static int appendPcm8(
             @NonNull final ByteBuffer buffer,
             final int channelCount,
-            @NonNull final FloatArrayBuilder output
+            @NonNull final ShortArrayBuilder output
     ) {
         final int frameCount = buffer.remaining() / channelCount;
         for (int frame = 0; frame < frameCount; frame++) {
-            float mixed = 0.0f;
+            int mixed = 0;
             for (int channel = 0; channel < channelCount; channel++) {
-                mixed += ((buffer.get() & 0xff) - 128) / 128.0f;
+                mixed += (buffer.get() & 0xff) - 128;
             }
-            output.append(clamp(mixed / channelCount));
+            output.append(clampToShort(Math.round(mixed * 256.0f / channelCount)));
         }
         return frameCount;
     }
 
-    private static float clamp(final float value) {
-        if (value > 1.0f) {
-            return 1.0f;
-        }
-        if (value < -1.0f) {
-            return -1.0f;
-        }
-        return value;
+    /** @param value -1～1のPCM。例: {@code 0.5f} @return PCM16。例: {@code 16384} */
+    private static short floatToPcm16(final float value) {
+        final float clamped = Math.max(-1.0f, Math.min(1.0f, value));
+        return clampToShort(Math.round(clamped * (clamped < 0 ? 32768.0f : 32767.0f)));
     }
 
-    /** float 配列へサンプルを追加する簡易 builder です。 */
-    public static final class FloatArrayBuilder {
-        private float[] buffer = new float[16_000];
+    /** @param value 整数PCM。例: {@code 40000} @return short範囲。例: {@code 32767} */
+    private static short clampToShort(final int value) {
+        return (short) Math.max(Short.MIN_VALUE, Math.min(Short.MAX_VALUE, value));
+    }
+
+    /** short配列へPCMサンプルを追加する簡易builderです。 */
+    public static final class ShortArrayBuilder {
+        private short[] buffer = new short[16_000];
         private int size;
 
         /**
-         * float PCM サンプルを 1 つ追加します。
+         * PCM16サンプルを1つ追加します。
          *
-         * @param value 追加するサンプル。例: {@code 0.25f}
+         * @param value 追加するサンプル。例: {@code (short) 8192}
          * @return 追加後のサンプル数。例: {@code 16001}
          */
-        public int append(final float value) {
+        public int append(final short value) {
             ensureCapacity(size + 1);
             buffer[size++] = value;
             return size;
@@ -170,10 +172,10 @@ public final class Pcm16AudioConverter {
         /**
          * 現在の内容を配列として返します。
          *
-         * @return 追加済みサンプルだけを持つ配列。例: {@code new float[]{0.25f}}
+         * @return 追加済みサンプルだけを持つ配列。例: {@code new short[]{8192}}
          */
         @NonNull
-        public float[] toArray() {
+        public short[] toArray() {
             return Arrays.copyOf(buffer, size);
         }
 

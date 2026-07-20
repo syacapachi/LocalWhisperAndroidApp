@@ -5,6 +5,8 @@
 #include <string>
 #include <vector>
 
+#include "../NativeAudio/pcm16-float-converter.h"
+
 #include "whisper.h"
 // Java JNIに接続する文言を置き換える
 #define JNI_METHOD(return_type, name) \
@@ -576,6 +578,21 @@ JNI_METHOD(jint, full)(JNIEnv * env, jclass, jlong context, jobject params_objec
     return with_float_array(env, pcm_data, [&](const float * samples, int count) {
         return whisper_full(ctx, params.params, samples, count);
     });
+}
+
+// context例: 有効なwhisper_context、pcm_data例: short[16000]相当。
+// PCM16をfloatへ変換してwhisper_fullの結果（成功例0、null入力時-1）を返します。
+JNI_METHOD(jint, fullPcm16)(JNIEnv * env, jclass, jlong context, jobject params_object, jshortArray pcm_data) {
+    if (pcm_data == nullptr) {
+        return -1;
+    }
+    whisper_context * ctx = as_context(context);
+    FullParamsHolder params = make_full_params(env, params_object);
+    std::vector<float> samples = app::native_audio::pcm16_to_float_vector(env, pcm_data);
+    if (env->ExceptionCheck()) {
+        return -1;
+    }
+    return whisper_full(ctx, params.params, samples.data(), static_cast<int>(samples.size()));
 }
 
 JNI_METHOD(jint, fullWithState)(JNIEnv * env, jclass, jlong context, jlong state, jobject params_object, jfloatArray pcm_data) {

@@ -19,7 +19,7 @@ import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.WhisperSettings;
 /**
  * 録音スレッドから受け取った音声チャンクを、CTranslate2専用workerへ渡すクラスです。
  *
- * <p>モデルは worker スレッド開始時に一度だけ読み込み、録音中は {@link #submit(float[], int)}
+ * <p>モデルはworkerスレッド開始時に一度だけ読み込み、録音中は{@link #submit(short[], int)}
  * で渡された PCM を一定時間ごとにまとめて推論します。推論結果は
  * {@link WhisperTranscriptionEvent} として {@link SystemEventHub} へ publish します。</p>
  */
@@ -57,19 +57,19 @@ public class WhisperTranscriptionWorker implements Runnable {
     /** 停止時の最終推論に必要な最小サンプル数です。 */
     private final int minFinalSamples;
     /** 録音スレッドから渡された PCM チャンクを保存しておくバッファのプールです。 */
-    private final ObjectPool<FloatAudioBuffer> audioBufferPool = new ObjectPool<>(
-            FloatAudioBuffer::new,
+    private final ObjectPool<ShortAudioBuffer> audioBufferPool = new ObjectPool<>(
+            ShortAudioBuffer::new,
             null,
-            FloatAudioBuffer::clear,
+            ShortAudioBuffer::clear,
             (buffer)->{Log.d(TAG,"deleted");},
             QUEUE_CAPACITY,
             QUEUE_CAPACITY);
 
     /** 録音スレッドから渡された PCM チャンクを受け取るキューです。 */
-    private final ArrayBlockingQueue<FloatAudioBuffer> audioQueue = new ArrayBlockingQueue<>(QUEUE_CAPACITY);
+    private final ArrayBlockingQueue<ShortAudioBuffer> audioQueue = new ArrayBlockingQueue<>(QUEUE_CAPACITY);
 
     /** 推論窓に達するまで PCM をためるバッファです。 */
-    private final FloatAudioBuffer pendingAudio;
+    private final ShortAudioBuffer pendingAudio;
 
     /** worker スレッドの継続フラグです。 */
     private volatile boolean running;
@@ -178,7 +178,7 @@ public class WhisperTranscriptionWorker implements Runnable {
         this.windowSamples = Math.max(1, sampleRate * this.settings.windowMs() / 1000);
         this.overlapSamples = Math.max(0, sampleRate * this.settings.overlapMs() / 1000);
         this.minFinalSamples = Math.max(1, sampleRate * this.settings.minFinalMs() / 1000);
-        this.pendingAudio = new FloatAudioBuffer(windowSamples * 2);
+        this.pendingAudio = new ShortAudioBuffer(windowSamples * 2);
     }
 
     /** Whisper 推論スレッドを開始します。 */
@@ -209,22 +209,22 @@ public class WhisperTranscriptionWorker implements Runnable {
     /**
      * 録音された音声チャンクを worker に渡します。
      *
-     * @param samples 16kHz・モノラル・float PCM
+     * @param samples 16kHz・モノラル・PCM16。例: {@code new short[8000]}
      * @param length samples のうち有効な要素数
      * @return キューへ追加できた場合true。例: {@code true}
      */
-    public boolean submit(final float[] samples, final int length) {
+    public boolean submit(final short[] samples, final int length) {
         if (!running || !acceptingAudio || samples == null || samples.length == 0 || length <= 0) {
             return false;
         }
-        final FloatAudioBuffer copy;
+        final ShortAudioBuffer copy;
         synchronized (audioBufferPool) {
             copy = audioBufferPool.getOrCreate();
         }
         copy.append(samples, Math.min(length, samples.length));
         
         if (!audioQueue.offer(copy)) {
-            final FloatAudioBuffer old = audioQueue.poll();
+            final ShortAudioBuffer old = audioQueue.poll();
             if(old != null) {
                 releaseAudioBuffer(old);
                 Log.w(TAG, "Whisper queue is full. Dropped old audio chunk.");
@@ -288,7 +288,7 @@ public class WhisperTranscriptionWorker implements Runnable {
         try(CTranslate2TranscriptionWorker cTranslate2Worker = new CTranslate2TranscriptionWorker(modelPath, settings)) {
             while (running && !currentThread.isInterrupted()) {
                 //　キューに溜まったデータを取得
-                final FloatAudioBuffer chunk = audioQueue.poll(200, TimeUnit.MILLISECONDS);
+                final ShortAudioBuffer chunk = audioQueue.poll(200, TimeUnit.MILLISECONDS);
                 if (chunk != null) {
                     // 窓に追加
                     pendingAudio.append(chunk);
@@ -337,7 +337,7 @@ public class WhisperTranscriptionWorker implements Runnable {
      * 停止要求前にキューへ入っていた音声を pendingAudio に移します。
      */
     private void drainQueuedAudio() {
-        FloatAudioBuffer chunk;
+        ShortAudioBuffer chunk;
         while ((chunk = audioQueue.poll()) != null) {
             pendingAudio.append(chunk);
             releaseAudioBuffer(chunk);
@@ -348,7 +348,7 @@ public class WhisperTranscriptionWorker implements Runnable {
      * 複数スレッドから安全に音声バッファをプールへ返します。
      * @param buffer 返却対象。例: {@code chunk}
      */
-    private void releaseAudioBuffer(@NonNull final FloatAudioBuffer buffer) {
+    private void releaseAudioBuffer(@NonNull final ShortAudioBuffer buffer) {
         synchronized (audioBufferPool) {
             audioBufferPool.releaseOrDelete(buffer);
         }
@@ -377,7 +377,7 @@ public class WhisperTranscriptionWorker implements Runnable {
         final int sampleCount = finalResult
                 ? pendingAudio.size()
                 : windowSamples;
-        final float[] samples = pendingAudio.copyFirst(sampleCount);
+        final short[] samples = pendingAudio.copyFirst(sampleCount);
         final long startMs = samplesToMs(processedSamples);
         final long durationMs = samplesToMs(samples.length);
 
@@ -475,20 +475,20 @@ public class WhisperTranscriptionWorker implements Runnable {
     /**
      * 静的ネストクラス
      */
-    private static final class FloatAudioBuffer implements AutoCloseable {
+    private static final class ShortAudioBuffer implements AutoCloseable {
         private static final int DEFAULTCAPACITY = 1024;
         /** 実データを保持する内部配列です。 */
-        private float[] buffer;
+        private short[] buffer;
         /** 現在バッファに入っている有効サンプル数です。 */
         private int size;
 
-        FloatAudioBuffer(){this(DEFAULTCAPACITY);}
-        FloatAudioBuffer(int initialCapacity) {
-            buffer = new float[Math.max(1, initialCapacity)];
+        ShortAudioBuffer(){this(DEFAULTCAPACITY);}
+        ShortAudioBuffer(int initialCapacity) {
+            buffer = new short[Math.max(1, initialCapacity)];
         }
 
         /** バッファを返します。 */
-        float[] buffer() {
+        short[] buffer() {
             return buffer;
         }
         /** バッファ内の有効サンプル数を返します。 */
@@ -497,34 +497,34 @@ public class WhisperTranscriptionWorker implements Runnable {
         }
 
         /** PCM サンプルを指定の長さ分末尾へ追加します。 */
-        int append(@NonNull final float[] samples,final int length) {
+        int append(@NonNull final short[] samples,final int length) {
             ensureCapacity(size + length);
             System.arraycopy(samples, 0, buffer, size, length);
             size += length;
             return length;
         }
         /** PCM サンプルを末尾へ追加します。 */
-        int append(@NonNull final float[] samples) {
+        int append(@NonNull final short[] samples) {
             return append(samples,samples.length);
         }
 
         /**
-         * 自身に を指定の FloatAudioBuffer をコピーして追加します。
+         * 自身に指定のShortAudioBufferをコピーして追加します。
          * @param other コピー元のバッファ
          */
-        int append(@NonNull final FloatAudioBuffer other) {
+        int append(@NonNull final ShortAudioBuffer other) {
             return append(other.buffer,other.size);
         }
 
 
         /** 先頭から指定サンプル数をコピーします。 */
         @NonNull
-        float[] copyFirst(final int count) {
+        short[] copyFirst(final int count) {
             int copyLength = Math.min(count, size);
             return Arrays.copyOf(buffer, copyLength);
         }
         /** 先頭から指定サンプル数を,対象バッファの先頭からに書き込みます。 */
-        int writeFirst(final int count, @NonNull final float[] writeBuffer){
+        int writeFirst(final int count, @NonNull final short[] writeBuffer){
             final int minSize = Math.min(writeBuffer.length, size);
             final int copyLength = Math.min(count, minSize);
             System.arraycopy(buffer, 0, writeBuffer, 0, copyLength);

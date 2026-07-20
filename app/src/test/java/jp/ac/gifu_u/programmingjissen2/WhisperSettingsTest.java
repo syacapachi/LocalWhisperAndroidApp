@@ -18,7 +18,6 @@ public class WhisperSettingsTest {
         final WhisperSettings settings = WhisperSettings.defaultSettings();
         assertFalse(settings.audioRecordingEnabled());
         assertFalse(settings.autoRetranscribeEnabled());
-        assertTrue(settings.useCTranslate2());
         assertTrue(settings.vadEnabled());
         assertEquals(0.5f, settings.sileroVadThreshold(), 0.0f);
     }
@@ -46,7 +45,6 @@ public class WhisperSettingsTest {
     public void modelSelectsInferenceEngine() {
         final WhisperSettings settings = createSettings(false, false)
                 .withModel(WhisperModelOption.CT2_BASE_INT8);
-        assertTrue(settings.useCTranslate2());
         assertEquals(WhisperInferenceEngine.CTRANSLATE2, settings.model().engine());
         assertEquals("int8", settings.model().computeType());
     }
@@ -69,7 +67,7 @@ public class WhisperSettingsTest {
         final WhisperSettings settings = new WhisperSettings(
                 defaults.model(), defaults.language(), defaults.windowMs(), defaults.overlapMs(),
                 defaults.minFinalMs(), defaults.maxThreads(), defaults.noContext(),
-                defaults.printTimestamps(), defaults.useGpu(), defaults.useCTranslate2(),
+                defaults.printTimestamps(), defaults.useGpu(),
                 defaults.audioRecordingEnabled(), defaults.autoRetranscribeEnabled(),
                 defaults.vadEnabled(), defaults.vadThreshold(), defaults.translateToEnglish(),
                 defaults.prompt(), 1.4f
@@ -94,7 +92,6 @@ public class WhisperSettingsTest {
                 WhisperSettings.DEFAULT_NO_CONTEXT,
                 WhisperSettings.DEFAULT_PRINT_TIMESTAMPS,
                 WhisperSettings.DEFAULT_USE_GPU,
-                WhisperSettings.DEFAULT_USE_CTRANSLATE2,
                 recording,
                 retranscribe
         );

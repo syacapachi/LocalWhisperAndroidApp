@@ -24,7 +24,7 @@ public final class RawPcmAudioReader {
      *
      * @param extractor audio track が select 済みの extractor。例: {@code extractor}
      * @param format extractor から取得した MediaFormat。例: {@code extractor.getTrackFormat(0)}
-     * @return Whisper に渡せる PCM。例: {@code new DecodedAudio(new float[16000], 16000)}
+     * @return Whisperに渡せるPCM16。例: {@code new DecodedAudio(new short[16000], 16000)}
      * @throws IllegalArgumentException 未対応 PCM 形式や不正なチャンネル数の場合
      */
     @NonNull
@@ -46,8 +46,8 @@ public final class RawPcmAudioReader {
         // 空のバッファを作成。
         final ByteBuffer buffer = ByteBuffer.allocateDirect(bufferSize);
         final MediaCodec.BufferInfo info = new MediaCodec.BufferInfo();
-        final Pcm16AudioConverter.FloatArrayBuilder samples =
-                new Pcm16AudioConverter.FloatArrayBuilder();
+        final Pcm16AudioConverter.ShortArrayBuilder samples =
+                new Pcm16AudioConverter.ShortArrayBuilder();
 
         while (true) {
             buffer.clear();
@@ -57,12 +57,12 @@ public final class RawPcmAudioReader {
                 break;
             }
             info.set(0, sampleSize, extractor.getSampleTime(), MediaCodec.BUFFER_FLAG_KEY_FRAME);
-            Pcm16AudioConverter.appendMonoFloat(buffer, info, channelCount, pcmEncoding, samples);
+            Pcm16AudioConverter.appendMonoPcm16(buffer, info, channelCount, pcmEncoding, samples);
             //　次のサンプルへ内部インデックスを動かす。
             extractor.advance();
         }
 
-        final float[] whisperPcm = Pcm16AudioConverter.resample(samples.toArray(), sampleRate,
+        final short[] whisperPcm = Pcm16AudioConverter.resample(samples.toArray(), sampleRate,
                 WhisperTranscriptionWorker.DEFAULT_SAMPLE_RATE);
         return new DecodedAudio(whisperPcm, WhisperTranscriptionWorker.DEFAULT_SAMPLE_RATE);
     }

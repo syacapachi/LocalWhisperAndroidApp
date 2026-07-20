@@ -38,12 +38,12 @@ public final class CTranslate2TranscriptionWorker implements AutoCloseable {
 
     /**
      * 1つの音声窓を推論し、空でない結果の末尾100文字を次回文脈として保存します。
-     * @param samples 16kHzモノラルfloat PCM。例: {@code new float[80000]}
+     * @param samples 16kHzモノラルPCM16。例: {@code new short[80000]}
      * @return 本文と話者情報。例: {@code new TranscriptionWorkerResult("こんにちは", false)}
      * @throws IllegalStateException native推論に失敗した場合
      */
     @NonNull
-    public TranscriptionWorkerResult transcribe(@NonNull final float[] samples) {
+    public TranscriptionWorkerResult transcribe(@NonNull final short[] samples) {
         final String prompt = previousContext.isEmpty()
                 ? settings.prompt()
                 : StringBufferBuilderPool.Join("\n", settings.prompt(), previousContext);

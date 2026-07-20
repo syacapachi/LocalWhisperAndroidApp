@@ -56,10 +56,10 @@ public class AudioRecordWorker implements Runnable {
     private AudioRecord playbackRecord;
 
     /** AudioRecord.read() が書き込む PCM バッファです。 */
-    private final float[] audioBuffer;
+    private final short[] audioBuffer;
 
     /** マイクとアプリ音声を混ぜる際の再生音声バッファです。 */
-    private final float[] playbackBuffer;
+    private final short[] playbackBuffer;
 
     /**
      * AudioRecord から読み出した PCM チャンクを受け取る listener です。
@@ -68,10 +68,10 @@ public class AudioRecordWorker implements Runnable {
         /**
          * 録音スレッドから PCM チャンクが届いたときに呼ばれます。
          *
-         * @param samples 16kHz・モノラル・float PCM
+         * @param samples 16kHz・モノラル・PCM16。例: {@code new short[8000]}
          * @param length samples のうち有効な要素数
          */
-        void onAudioChunk(final float[] samples, final int length);
+        void onAudioChunk(final short[] samples, final int length);
     }
 
     /**
@@ -118,8 +118,8 @@ public class AudioRecordWorker implements Runnable {
         this.audioSource = audioSource;
         this.mediaProjection = mediaProjection;
         this.captureTargetUid = captureTargetUid;
-        this.audioBuffer = new float[Math.max(1, bufferSize / Float.BYTES)];
-        this.playbackBuffer = new float[this.audioBuffer.length];
+        this.audioBuffer = new short[Math.max(1, bufferSize / Short.BYTES)];
+        this.playbackBuffer = new short[this.audioBuffer.length];
     }
 
     /**
@@ -132,7 +132,7 @@ public class AudioRecordWorker implements Runnable {
         final int minBufferSize = AudioRecord.getMinBufferSize(
                 sampleRate,
                 AudioFormat.CHANNEL_IN_MONO,
-                AudioFormat.ENCODING_PCM_FLOAT
+                AudioFormat.ENCODING_PCM_16BIT
         );
 
         if (minBufferSize == AudioRecord.ERROR || minBufferSize == AudioRecord.ERROR_BAD_VALUE) {
@@ -144,7 +144,7 @@ public class AudioRecordWorker implements Runnable {
             return -1;
         }
 
-        final int halfSecondBytes = sampleRate * Float.BYTES / 2;
+        final int halfSecondBytes = sampleRate * Short.BYTES / 2;
         return Math.max(minBufferSize * 2, halfSecondBytes);
     }
 
@@ -252,7 +252,7 @@ public class AudioRecordWorker implements Runnable {
                 MediaRecorder.AudioSource.MIC,
                 sampleRate,
                 AudioFormat.CHANNEL_IN_MONO,
-                AudioFormat.ENCODING_PCM_FLOAT,
+                AudioFormat.ENCODING_PCM_16BIT,
                 bufferSize
         );
 
@@ -288,7 +288,7 @@ public class AudioRecordWorker implements Runnable {
                         .build();
         final AudioFormat format = new AudioFormat.Builder()
                 .setSampleRate(sampleRate)
-                .setEncoding(AudioFormat.ENCODING_PCM_FLOAT)
+                .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
                 .setChannelMask(AudioFormat.CHANNEL_IN_MONO)
                 .build();
         final AudioRecord record = new AudioRecord.Builder()
@@ -371,13 +371,13 @@ public class AudioRecordWorker implements Runnable {
     }
 
     /**
-     * マイクとアプリ音声を同じ音量比で加算し、float PCM範囲へ収めます。
+     * マイクとアプリ音声を同じ音量比で加算し、PCM16範囲へ収めます。
      * @param length 混合するサンプル数。例: {@code 8000}
      */
     private void mixBuffers(final int length) {
         for (int index = 0; index < length; index++) {
-            audioBuffer[index] = Math.max(-1.0f, Math.min(1.0f,
-                    (audioBuffer[index] + playbackBuffer[index]) * 0.5f));
+            final int mixed = (audioBuffer[index] + playbackBuffer[index]) / 2;
+            audioBuffer[index] = (short) Math.max(Short.MIN_VALUE, Math.min(Short.MAX_VALUE, mixed));
         }
     }
 

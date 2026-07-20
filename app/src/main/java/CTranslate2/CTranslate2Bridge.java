@@ -33,7 +33,7 @@ public final class CTranslate2Bridge implements AutoCloseable {
     /**
      * 16kHzモノラルPCMをWhisperで文字起こしします。
      *
-     * @param samples -1～1のfloat PCM。例: {@code new float[80000]}
+     * @param samples 16bit PCM。例: {@code new short[80000]}
      * @param language Whisper言語コード。例: {@code "ja"}
      * @param translateToEnglish 英語翻訳ならtrue。例: {@code false}
      * @param initialPrompt 初期プロンプトと直前文脈。例: {@code "専門用語: CTranslate2\n前の文"}
@@ -45,7 +45,7 @@ public final class CTranslate2Bridge implements AutoCloseable {
      */
     @NonNull
     public String transcribe(
-            @NonNull final float[] samples,
+            @NonNull final short[] samples,
             @NonNull final String language,
             final boolean translateToEnglish,
             @NonNull final String initialPrompt,
@@ -81,7 +81,7 @@ public final class CTranslate2Bridge implements AutoCloseable {
     private static native void destroy(long handle);
     private static native String transcribe(
             long handle,
-            float[] samples,
+            short[] samples,
             String language,
             boolean translateToEnglish,
             String initialPrompt,

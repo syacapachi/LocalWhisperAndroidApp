@@ -27,7 +27,7 @@ public final class AudioFilePcmDecoder {
      *
      * @param context ContentResolver を取得する Context。例: {@code activity}
      * @param uri ドキュメントピッカーなどで得た音声 URI。例: {@code content://media/...}
-     * @return Whisper に渡せる PCM。例: {@code new DecodedAudio(new float[16000], 16000)}
+     * @return Whisperに渡せるPCM16。例: {@code new DecodedAudio(new short[16000], 16000)}
      * @throws IOException 音声トラックがない、decoder を作れない、読み込みに失敗した場合
      * @throws IllegalArgumentException PCM 変換時に未対応形式が返された場合
      */
@@ -99,8 +99,8 @@ public final class AudioFilePcmDecoder {
         // メディアのデコーダを作成。
         final MediaCodec codec = MediaCodec.createDecoderByType(mime);
         // 出力音声バッファを作成。
-        final Pcm16AudioConverter.FloatArrayBuilder samples =
-                new Pcm16AudioConverter.FloatArrayBuilder();
+        final Pcm16AudioConverter.ShortArrayBuilder samples =
+                new Pcm16AudioConverter.ShortArrayBuilder();
         int sampleRate = inputFormat.getInteger(MediaFormat.KEY_SAMPLE_RATE);
         int channelCount = inputFormat.getInteger(MediaFormat.KEY_CHANNEL_COUNT);
         int pcmEncoding = AudioFormat.ENCODING_PCM_16BIT;
@@ -146,8 +146,8 @@ public final class AudioFilePcmDecoder {
             codec.release();
         }
 
-        final float[] decoded = samples.toArray();
-        final float[] whisperPcm = Pcm16AudioConverter.resample(decoded, sampleRate,
+        final short[] decoded = samples.toArray();
+        final short[] whisperPcm = Pcm16AudioConverter.resample(decoded, sampleRate,
                 WhisperTranscriptionWorker.DEFAULT_SAMPLE_RATE);
         return new DecodedAudio(whisperPcm, WhisperTranscriptionWorker.DEFAULT_SAMPLE_RATE);
     }
@@ -211,11 +211,11 @@ public final class AudioFilePcmDecoder {
             @NonNull final MediaCodec.BufferInfo info,
             final int channelCount,
             final int pcmEncoding,
-            @NonNull final Pcm16AudioConverter.FloatArrayBuilder samples
+            @NonNull final Pcm16AudioConverter.ShortArrayBuilder samples
     ) {
         final ByteBuffer outputBuffer = codec.getOutputBuffer(outputIndex);
         if (outputBuffer != null && info.size > 0) {
-            Pcm16AudioConverter.appendMonoFloat(
+            Pcm16AudioConverter.appendMonoPcm16(
                     outputBuffer,
                     info,
                     channelCount,

@@ -8,7 +8,7 @@ import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 
-/** マイクのfloat PCMを録音単位のWAVファイルへ保存します。 */
+/** マイクのPCM16を録音単位のWAVファイルへ保存します。 */
 public final class RecordedAudioFileWriter implements AutoCloseable {
     public static final String DIRECTORY_NAME = "recordings";
     private static final int HEADER_SIZE = 44;
@@ -60,23 +60,21 @@ public final class RecordedAudioFileWriter implements AutoCloseable {
     }
 
     /**
-     * float PCMの有効部分を16bit PCMへ変換して追記します。
+     * PCM16の有効部分をWAVへ追記します。
      *
-     * @param samples -1.0〜1.0のモノラルPCM。例: {@code new float[]{0.0f, 0.5f}}
+     * @param samples モノラルPCM16。例: {@code new short[]{0, 16384}}
      * @param length 有効サンプル数。例: {@code 2}
      * @return 実際に保存したサンプル数。例: {@code 2}
      * @throws IOException ファイルが閉じている、または書き込みに失敗した場合
      */
-    public synchronized int append(@NonNull final float[] samples, final int length)
+    public synchronized int append(@NonNull final short[] samples, final int length)
             throws IOException {
         if (closed) {
             throw new IOException("recording file is already closed");
         }
         final int count = Math.max(0, Math.min(length, samples.length));
         for (int i = 0; i < count; i++) {
-            final float value = Math.max(-1.0f, Math.min(1.0f, samples[i]));
-            final short pcm = (short) Math.round(value * (value < 0 ? 32768.0f : 32767.0f));
-            writeLittleEndianShort(pcm);
+            writeLittleEndianShort(samples[i]);
         }
         pcmBytes += (long) count * Short.BYTES;
         return count;
