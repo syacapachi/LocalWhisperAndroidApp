@@ -1,281 +1,241 @@
 package jp.ac.gifu_u.programmingjissen2;
-import android.hardware.Sensor;
+
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
-import android.util.Log;
-import android.widget.Button;
-import android.widget.Spinner;
-import android.widget.TextView;
-import android.widget.Toast;
+import android.text.Editable;
+import android.text.TextWatcher;
 
 import androidx.annotation.NonNull;
-import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.ActivityResult;
+import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.appcompat.app.AppCompatActivity;
 
 import java.util.function.Consumer;
 
-import jp.ac.gifu_u.programmingjissen2.FileImport.ExternalMediaIntentReader;
-import jp.ac.gifu_u.programmingjissen2.Record.RecordActivity;
-import jp.ac.gifu_u.programmingjissen2.ResultUI.TranscriptionListActivity;
-import jp.ac.gifu_u.programmingjissen2.ResultUI.TranscriptionTextListActivity;
-import jp.ac.gifu_u.programmingjissen2.SettingUI.WhisperRecordControls;
-
 import events.AwaitEvent.AwaiterHub;
 import events.Request.RequestPermissionResultEvent;
-import events.SampleEvent.SampleRecordEvent;
 import events.SystemEventHub;
+import events.Threading.ThreadStoppedEvent;
+import events.Whisper.WhisperProgressEvent;
+import events.Whisper.WhisperTranscriptionEvent;
+import jp.ac.gifu_u.programmingjissen2.FileImport.ExternalMediaIntentReader;
+import jp.ac.gifu_u.programmingjissen2.MainUI.MainScreenView;
+import jp.ac.gifu_u.programmingjissen2.MainUI.QuickStartTabView;
+import jp.ac.gifu_u.programmingjissen2.Record.RecordActivity;
+import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.WhisperSettings;
+import jp.ac.gifu_u.programmingjissen2.SettingUI.WhisperSettingsStore;
 import jp.ac.gifu_u.programmingjissen2.Transcription.BackgroundWhisperService;
 
-/// アプリの状態を監視するクラス
-
-public class MainActivity extends AppCompatActivity {
-    private final static String TAG = MainActivity.class.getSimpleName();
-    private SensorActivity sensorActivity;
+/** 録音実行、進捗、JSON結果、整形済み履歴を三つのタブで表示するメインActivityです。 */
+public final class MainActivity extends AppCompatActivity {
+    /** アプリの画面UIクラス */
+    private MainScreenView screen;
+    /** 録音クラス */
     private RecordActivity recordActivity;
+    /** 設定 */
+    private WhisperSettingsStore settingsStore;
+    /** ファイルを開くPicker URIが入る */
     private ActivityResultLauncher<String[]> audioFilePicker;
+    /** 画面キャプチャを行うLauncher,キャプチャするアプリのIntentを受け取る */
     private ActivityResultLauncher<Intent> mediaProjectionPermissionLauncher;
+    private boolean bindingQuickSettings;
 
-    Consumer<SampleRecordEvent> eventListener1 = this::EventListener;
-    Consumer<SampleRecordEvent> eventListener2 = this::EventListener2;
+    private final Consumer<WhisperProgressEvent> progressListener = this::onProgress;
+    private final Consumer<WhisperTranscriptionEvent> resultListener = this::onResult;
+    private final Consumer<ThreadStoppedEvent> stoppedListener = this::onThreadStopped;
 
-    //アプリ起動時に呼ばれる
+    /** @param savedInstanceState Android復元状態。初回例: {@code null} */
     @Override
-    protected void onCreate(Bundle savedInstanceState) {
+    protected void onCreate(final Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-//      EdgeToEdge.enable(this);
+        if (getSupportActionBar() != null) {
+            getSupportActionBar().hide();
+        }
         audioFilePicker = registerForActivityResult(
-                new ActivityResultContracts.OpenDocument(),
-                this::onAudioFileSelected
-        );
+                new ActivityResultContracts.OpenDocument(), this::onAudioFileSelected);
         mediaProjectionPermissionLauncher = registerForActivityResult(
                 new ActivityResultContracts.StartActivityForResult(),
-                this::onMediaProjectionPermissionResult
-        );
-        setContentView(R.layout.activity_main);
-        //ログの書き方,Tagはクラス名が多い
-        Log.d(TAG, "onCreate");
-//        //描画処理を上書き
-//          setContentView(new ViewActivity(this));
-//        ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main), (v, insets) -> {
-//            Insets systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars());
-//            v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom);
-//            return insets;
-//        });
-        //ボタンのイベントを受信するクラスをインスタンス化
-        ButtonActivity finishButton = new ButtonActivity(
-                this,
-                (view) -> {
-                    Toast t = Toast.makeText(
-                            this, "Finish", Toast.LENGTH_SHORT);
-                    t.show();
-                    SystemEventHub.publish(new SampleRecordEvent(1, "Invoked!"));
-                    Log.d(TAG, "Finish");
-                    //アプリを終了する
-                    this.finish();
-                });
-        //リソースから、buttonというIdのものを持って来てButtonクラスにキャスト
-        Button b = (Button) findViewById(R.id.button);
-        //リスナーを登録
-        b.setOnClickListener(finishButton);
+                this::onMediaProjectionPermissionResult);
 
-        //イベントリスナー購読
-        SystemEventHub.subscribe(SampleRecordEvent.class, eventListener1);
-        SystemEventHub.subscribe(SampleRecordEvent.class, eventListener2);
+        settingsStore = new WhisperSettingsStore(this);
+        // UI設定
+        screen = new MainScreenView(this);
+        super.setContentView(screen.view());
+        final QuickStartTabView quick = screen.quickStart();
+        quick.fileButton().setOnClickListener(view -> audioFilePicker.launch(
+                new String[]{"audio/*", "video/*", "application/octet-stream"}));
 
-        //センサーのリスナーのインスタンスを作成
-        sensorActivity = new SensorActivity(this);
-
-        //録音のインスタンスを作成。
-        Button recordButton = (Button) findViewById(R.id.recordButton);
-        Button inferenceButton = (Button) findViewById(R.id.inferenceButton);
-        Button whisperSettingsButton = (Button) findViewById(R.id.whisperSettingsButton);
-        Spinner recordingSourceSpinner = findViewById(R.id.recordingSourceSpinner);
-        Spinner captureTargetAppSpinner = findViewById(R.id.captureTargetAppSpinner);
-        Spinner whisperModelSpinner = findViewById(R.id.whisperModelSpinner);
-        TextView recordText = findViewById(R.id.recordText);
-        TextView whisperStatusText = findViewById(R.id.whisperStatusText);
-        TextView whisperBenchmarkText = findViewById(R.id.whisperBenchmarkText);
-        Button transcriptionHistoryButton = findViewById(R.id.transcriptionHistoryButton);
-        Button transcriptionTextHistoryButton = findViewById(R.id.transcriptionTextHistoryButton);
-        Button audioFileTranscriptionButton = findViewById(R.id.audioFileTranscriptionButton);
-        transcriptionHistoryButton.setOnClickListener((view) -> startActivity(
-                new Intent(this, TranscriptionListActivity.class)
-        ));
-        transcriptionTextHistoryButton.setOnClickListener((view) -> startActivity(
-                new Intent(this, TranscriptionTextListActivity.class)
-        ));
-        audioFileTranscriptionButton.setOnClickListener((view) -> audioFilePicker.launch(
-                new String[]{"audio/*", "video/*", "application/octet-stream"}
-        ));
-        recordActivity = new RecordActivity(this, new WhisperRecordControls(
-                recordButton,
-                inferenceButton,
-                whisperSettingsButton,
-                recordingSourceSpinner,
-                captureTargetAppSpinner,
-                whisperModelSpinner,
-                recordText,
-                whisperStatusText,
-                whisperBenchmarkText
-        ));
+        recordActivity = new RecordActivity(this, quick.controls(screen.settingsButton()));
         recordActivity.setProjectionPermissionLauncher(mediaProjectionPermissionLauncher);
-        handleExternalMediaIntent(getIntent());
-
-        //イベントが親クラスに行くかの確認。
-        //SampleTest.CheckTest();
+        bindQuickSettings(settingsStore.load());
+        setupQuickSettingsSaving();
+        SystemEventHub.subscribe(WhisperProgressEvent.class, progressListener);
+        SystemEventHub.subscribe(WhisperTranscriptionEvent.class, resultListener);
+        SystemEventHub.subscribe(ThreadStoppedEvent.class, stoppedListener);
+        handleExternalMediaIntent(super.getIntent());
     }
 
-    /**
-     * 起動済み画面へ届いた「アプリで開く」Intentを処理します。
-     *
-     * @param intent 外部アプリから届いたIntent。例: {@code new Intent(Intent.ACTION_VIEW, uri)}
-     */
+    /** 設定画面から戻った場合もクイック設定と履歴を最新状態へ更新します。 */
     @Override
-    protected void onNewIntent(@NonNull final Intent intent) {
-        super.onNewIntent(intent);
-        setIntent(intent);
-        handleExternalMediaIntent(intent);
-    }
-
-    //画面が見えるタイミングで呼ばれる
-    @Override
-    protected void onStart(){
-        super.onStart();
-        Log.d(TAG, "onStart");
-    }
-    //画面が描画開始タイミングで呼ばれる
-    @Override
-    protected void onResume(){
+    protected void onResume() {
         super.onResume();
-        Log.d(TAG, "onResume");
-        sensorActivity.AddSensorListener(Sensor.TYPE_LIGHT);
-        //sensorActivity.AddSensorListener(Sensor.TYPE_MAGNETIC_FIELD);
-        sensorActivity.requestLocationUpdate(1000,10);
         if (recordActivity != null) {
             recordActivity.RefreshSettings();
         }
+        if (settingsStore != null && screen != null) {
+            bindQuickSettings(settingsStore.load());
+            screen.refreshHistories();
+        }
     }
-    //ホーム画面の繊維など、アプリがメインではなくなったときに呼ばれる
-    //再開時はonResume()
+
+    /** イベント購読と録音画面controllerを解放します。 */
     @Override
-    protected void onPause(){
-        super.onPause();
-        Log.d(TAG, "onPause");
-        //電池を消耗しないようにセンサーだけ止める。録音は foreground service 側で継続する。
-        sensorActivity.RemoveListener();
-    }
-    //Pauseから時間がたつと呼ばれる。バックグラウンドで動いている。
-    //ここからの再開はReStart()
-    @Override
-    protected void onStop(){
-        super.onStop();
-        Log.d(TAG, "onStop");
-    }
-    //onStop()から再開した場合
-    //この後、onStart()が呼ばれる
-    @Override
-    protected void onRestart(){
-        super.onRestart();
-        Log.d(TAG, "onRestart");
-    }
-    //アプリ切り替え時、長時間放置などアプリがが廃棄されるタイミング。
-    @Override
-    protected void onDestroy(){
+    protected void onDestroy() {
+        SystemEventHub.unsubscribe(WhisperProgressEvent.class, progressListener);
+        SystemEventHub.unsubscribe(WhisperTranscriptionEvent.class, resultListener);
+        SystemEventHub.unsubscribe(ThreadStoppedEvent.class, stoppedListener);
         if (recordActivity != null) {
             recordActivity.Dispose();
         }
         if (!BackgroundWhisperService.isServiceActive()) {
-            // 待機しているイベント解除
             AwaiterHub.clear();
-            // 全てのイベント購読を解除
             SystemEventHub.clear();
         }
-
-        Log.d(TAG, "onDestroy");
         super.onDestroy();
-    }
-    private void EventListener(@NonNull SampleRecordEvent s){
-        Toast t = Toast.makeText(
-                this, s.message(), Toast.LENGTH_SHORT);
-        t.show();
-    }
-    private void EventListener2(@NonNull SampleRecordEvent s){
-        Log.d(TAG,s.message());
     }
 
     /**
-     * 音声ファイル選択結果を録音画面コントローラへ渡します。
-     *
-     * @param uri 選択されたファイル URI。例: {@code content://media/external/audio/media/1}
+     * 起動済みActivityへ届いた外部音声・動画Intentを処理します。
+     * @param intent ACTION_VIEW Intent。例: {@code new Intent(Intent.ACTION_VIEW, uri)}
      */
+    @Override
+    protected void onNewIntent(@NonNull final Intent intent) {
+        super.onNewIntent(intent);
+        super.setIntent(intent);
+        handleExternalMediaIntent(intent);
+    }
+
+    /** クイック設定の入力変更をSharedPreferencesへ即時保存するlistenerを設定します。 */
+    private void setupQuickSettingsSaving() {
+        final TextWatcher watcher = new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) { }
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
+                saveQuickSettings();
+            }
+            @Override public void afterTextChanged(Editable s) { }
+        };
+        screen.quickStart().windowEdit().addTextChangedListener(watcher);
+        screen.quickStart().vadThresholdEdit().addTextChangedListener(watcher);
+        screen.quickStart().recordAndRetranscribeSwitch().setOnCheckedChangeListener(
+                (button, checked) -> saveQuickSettings());
+    }
+
+    /**
+     * 保存済み値をクイックスタートへ表示します。
+     * @param settings 表示値。例: {@code WhisperSettings.defaultSettings()}
+     */
+    private void bindQuickSettings(@NonNull final WhisperSettings settings) {
+        bindingQuickSettings = true;
+        screen.quickStart().bindSettings(
+                settings.windowMs(), settings.vadThreshold(),
+                settings.audioRecordingEnabled() && settings.autoRetranscribeEnabled());
+        bindingQuickSettings = false;
+    }
+
+    /** 入力中のクイック設定を検証し、リアルタイム設定へ保存します。 */
+    private void saveQuickSettings() {
+        if (bindingQuickSettings || settingsStore == null || screen == null) {
+            return;
+        }
+        final WhisperSettings current = settingsStore.load();
+        final int windowMs = parseInt(
+                screen.quickStart().windowEdit().getText().toString(), current.windowMs());
+        final float vad = parseFloat(
+                screen.quickStart().vadThresholdEdit().getText().toString(),
+                current.vadThreshold());
+        final boolean retranscribe =
+                screen.quickStart().recordAndRetranscribeSwitch().isChecked();
+        settingsStore.save(current.withQuickSettings(windowMs, vad, retranscribe, retranscribe));
+    }
+
+    /** @param event 推論開始進捗。例: {@code WhisperProgressEvent} */
+    private void onProgress(@NonNull final WhisperProgressEvent event) {
+        runOnUiThread(() -> screen.quickStart().showProgress(event));
+    }
+
+    /** @param event 推論完了結果。例: {@code WhisperTranscriptionEvent} */
+    private void onResult(@NonNull final WhisperTranscriptionEvent event) {
+        runOnUiThread(() -> {
+            screen.quickStart().showCompleted(event);
+            if (event.finalResult()) {
+                screen.refreshHistories();
+            }
+        });
+    }
+
+    /** @param event Worker停止通知。JSON保存完了例: {@code owner="Json"} */
+    private void onThreadStopped(@NonNull final ThreadStoppedEvent event) {
+        if ("Json".equals(event.owner())) {
+            runOnUiThread(screen::refreshHistories);
+        }
+    }
+
+    /** @param uri 選択音声。例: {@code content://media/1} */
     private void onAudioFileSelected(final Uri uri) {
         if (uri == null || recordActivity == null) {
             return;
         }
-
         try {
             getContentResolver().takePersistableUriPermission(
-                    uri,
-                    Intent.FLAG_GRANT_READ_URI_PERMISSION
-            );
-        } catch (SecurityException ignored) {
-            // 一時許可だけで読める provider もあるため、永続化失敗は処理継続します。
-        }
+                    uri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        } catch (SecurityException ignored) { }
         recordActivity.TranscribeAudioFile(uri);
     }
 
     /**
-     * 外部の「アプリで開く」Intentから音声・動画URIを取り出して文字起こしを開始します。
-     *
-     * @param intent 解析対象。例: {@code new Intent(Intent.ACTION_VIEW, uri).setType("audio/mpeg")}
-     * @return 対応する外部メディアを受理した場合true。例: {@code true}
+     * 外部の「アプリで開く」Intentをファイル推論へ渡します。
+     * @param intent 解析対象。例: {@code new Intent(Intent.ACTION_VIEW, uri)}
+     * @return 対応URIを受理できた場合true。例: {@code true}
      */
     private boolean handleExternalMediaIntent(final Intent intent) {
         if (recordActivity == null) {
             return false;
         }
         final Uri uri = ExternalMediaIntentReader.readSupportedUri(intent);
-        if (uri == null) {
-            return false;
-        }
-        return recordActivity.TranscribeAudioFile(uri);
+        return uri != null && recordActivity.TranscribeAudioFile(uri);
     }
 
-    /**
-     * MediaProjectionのユーザー許可結果を録音画面controllerへ渡します。
-     * @param result 許可結果。例: {@code new ActivityResult(Activity.RESULT_OK, dataIntent)}
-     */
+    /** @param result MediaProjection結果。例: {@code ActivityResult} */
     private void onMediaProjectionPermissionResult(@NonNull final ActivityResult result) {
         if (recordActivity != null) {
             recordActivity.onMediaProjectionPermissionResult(
-                    result.getResultCode(),
-                    result.getData()
-            );
+                    result.getResultCode(), result.getData());
         }
     }
 
-    /**
-     * ユーザーの許可の結果を貰えた時に呼ばれる。
-     * @param requestCode The request code passed in {@link #requestPermissions}.
-     * @param permissions The requested permissions. Never null.
-     * @param grantResults The grant results for the corresponding permissions which is either
-     *                     {@link android.content.pm.PackageManager#PERMISSION_GRANTED} or
-     *                     {@link android.content.pm.PackageManager#PERMISSION_DENIED}. Never null.
-     *
-     */
+    /** @param value 例: {@code "5000"} @param fallback 例: {@code 5000} @return int値 */
+    private int parseInt(@NonNull final String value, final int fallback) {
+        try { return Integer.parseInt(value.trim()); }
+        catch (NumberFormatException ignored) { return fallback; }
+    }
+
+    /** @param value 例: {@code "0.6"} @param fallback 例: {@code 0.6f} @return float値 */
+    private float parseFloat(@NonNull final String value, final float fallback) {
+        try { return Float.parseFloat(value.trim()); }
+        catch (NumberFormatException ignored) { return fallback; }
+    }
+
+    /** @param requestCode 例: {@code 2000} @param permissions 権限名配列 @param grantResults 結果配列 */
     @Override
     public void onRequestPermissionsResult(
-            int requestCode,
-            @NonNull String[] permissions,
-            @NonNull int[] grantResults) {
-
+            final int requestCode,
+            @NonNull final String[] permissions,
+            @NonNull final int[] grantResults
+    ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-        //イベントとして投げる
-        SystemEventHub.publish(new RequestPermissionResultEvent(requestCode,permissions,grantResults));
-
+        SystemEventHub.publish(new RequestPermissionResultEvent(
+                requestCode, permissions, grantResults));
     }
 }
-

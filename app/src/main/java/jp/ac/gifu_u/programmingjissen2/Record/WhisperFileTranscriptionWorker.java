@@ -14,12 +14,14 @@ import Utils.StringPool.StringBufferBuilderPool;
 import events.SystemEventHub;
 import events.Whisper.WhisperTranscriptionEvent;
 import events.Whisper.WhisperTranscriptionTag;
+import events.Whisper.WhisperProgressEvent;
 import jp.ac.gifu_u.programmingjissen2.Record.Utility.AudioFilePcmDecoder;
 import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.WhisperSettings;
 import jp.ac.gifu_u.programmingjissen2.Transcription.TranscriptionWorkerResult;
 import jp.ac.gifu_u.programmingjissen2.Transcription.WhisperCPPTranscriptionWorker;
 import jp.ac.gifu_u.programmingjissen2.Transcription.WhisperVadConfig;
 import jp.ac.gifu_u.programmingjissen2.TranscriptionText.TranscriptionTextRepository;
+import jp.ac.gifu_u.programmingjissen2.TransscriptsJSON.TranscriptionJsonWriter;
 
 /** 音声ファイルを読み、Whisper.cpp専用workerへ全PCMを一度に渡す呼び出しworkerです。 */
 public final class WhisperFileTranscriptionWorker implements Runnable {
@@ -88,11 +90,19 @@ public final class WhisperFileTranscriptionWorker implements Runnable {
     public void run() {
         String errorMessage = "";
         try {
+            SystemEventHub.publish(new WhisperProgressEvent(
+                    sessionId, WhisperProgressEvent.Phase.FILE_READING, 0, 0));
+            final DecodedAudio audio = AudioFilePcmDecoder.decodeToWhisperPcm(context, audioUri);
+            SystemEventHub.publish(new WhisperProgressEvent(
+                    sessionId,
+                    WhisperProgressEvent.Phase.FILE_TRANSCRIBING,
+                    0,
+                    audio.durationMs()
+            ));
             final String modelPath = MyUtils.prepareModelPath(
-                    context, settings.model().whisperCppAssetName());
+                    context, settings.fileTranscription().model().assetName());
             final String vadModelPath = MyUtils.prepareModelPath(
                     context, WhisperVadConfig.MODEL_ASSET_NAME);
-            final DecodedAudio audio = AudioFilePcmDecoder.decodeToWhisperPcm(context, audioUri);
             transcribeWholeAudio(modelPath, vadModelPath, audio);
         } catch (Exception e) {
             Log.e(TAG, "File transcription failed", e);
@@ -126,12 +136,18 @@ public final class WhisperFileTranscriptionWorker implements Runnable {
         }
         final long processingTimeMs = TimeUnit.NANOSECONDS.toMillis(
                 System.nanoTime() - startedAt);
-        TranscriptionTextRepository.saveFilteredText(context, sessionId, result.text);
-        SystemEventHub.publish(new WhisperTranscriptionEvent(
+        final WhisperTranscriptionEvent event = new WhisperTranscriptionEvent(
                 sessionId, 0, result.text, result.speakerChanged, true, null,
-                0, audio.durationMs(), processingTimeMs, settings.model().key(),
+                0, audio.durationMs(), processingTimeMs,
+                settings.fileTranscription().model().key(),
                 WhisperTranscriptionTag.FileTranscribing
-        ));
+        );
+        final TranscriptionJsonWriter jsonWriter =
+                new TranscriptionJsonWriter(context, sessionId);
+        jsonWriter.append(event);
+        jsonWriter.finish();
+        TranscriptionTextRepository.saveFilteredText(context, sessionId, result.text);
+        SystemEventHub.publish(event);
     }
 
     /**
@@ -142,7 +158,8 @@ public final class WhisperFileTranscriptionWorker implements Runnable {
         SystemEventHub.publish(new WhisperTranscriptionEvent(
                 sessionId, 0, "", false, true,
                 StringBufferBuilderPool.Join("", "ファイル文字起こしに失敗しました: ", message),
-                0, 0, 0, settings.model().key(), WhisperTranscriptionTag.FileTranscribing
+                0, 0, 0, settings.fileTranscription().model().key(),
+                WhisperTranscriptionTag.FileTranscribing
         ));
     }
 }

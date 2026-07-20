@@ -10,11 +10,12 @@ import Whisper.WhisperBridge;
 import Utils.ScopableUtility;
 import Utils.StringPool.PooledStringBuilder;
 import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.WhisperSettings;
+import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.FileTranscriptionSettings;
 import jp.ac.gifu_u.programmingjissen2.TranscriptionText.TranscriptionTextFormatter;
 
 /** ファイルまたは録音全体をWhisper.cppのfull APIへ一度だけ渡すworkerです。 */
 public final class WhisperCPPTranscriptionWorker implements AutoCloseable {
-    private final WhisperSettings settings;
+    private final FileTranscriptionSettings fileSettings;
     private final String vadModelPath;
     private long context;
 
@@ -30,10 +31,10 @@ public final class WhisperCPPTranscriptionWorker implements AutoCloseable {
             @NonNull final String vadModelPath,
             @NonNull final WhisperSettings settings
     ) throws IOException {
-        this.settings = settings;
+        this.fileSettings = settings.fileTranscription();
         this.vadModelPath = vadModelPath;
         final WhisperBridge.ContextParams contextParams = WhisperBridge.defaultContextParams();
-        contextParams.useGpu = settings.useGpu();
+        contextParams.useGpu = fileSettings.useGpu();
         context = WhisperBridge.initFromFile(modelPath, contextParams);
         if (context == 0) {
             throw new IOException("Whisper.cpp model load failed: " + modelPath);
@@ -79,15 +80,15 @@ public final class WhisperCPPTranscriptionWorker implements AutoCloseable {
         params.noTimestamps = !includeTimestamps;
         params.noContext = false;
         params.nThreads = Math.min(
-                settings.maxThreads(),
+                fileSettings.maxThreads(),
                 Math.max(1, Runtime.getRuntime().availableProcessors())
         );
-        params.translate = settings.translateToEnglish();
-        params.language = settings.language();
-        params.initialPrompt = settings.prompt();
+        params.translate = fileSettings.translateToEnglish();
+        params.language = fileSettings.language();
+        params.initialPrompt = fileSettings.prompt();
         params.carryInitialPrompt = true;
-        if (settings.vadEnabled()) {
-            WhisperVadConfig.enable(params, vadModelPath, settings.sileroVadThreshold());
+        if (fileSettings.vadEnabled()) {
+            WhisperVadConfig.enable(params, vadModelPath, fileSettings.vadThreshold());
         }
         return params;
     }

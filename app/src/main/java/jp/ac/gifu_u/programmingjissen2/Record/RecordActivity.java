@@ -58,7 +58,6 @@ public class RecordActivity {
     private WhisperFileTranscriptionWorker fileTranscriptionWorker;
     private ActivityResultLauncher<Intent> projectionPermissionLauncher;
     private RecordingAudioSource pendingAudioSource;
-    private CaptureTargetApp pendingCaptureTarget;
 
     /** 従来の最小 UI で録音制御クラスを作成します。 */
     public RecordActivity(Activity activity, Button button, TextView resultTextView) {
@@ -148,16 +147,11 @@ public class RecordActivity {
         });
     }
 
-    /** Android 10以降が対象のアプリ候補と録音入力プルダウンを画面へ設定します。 */
+    /** 録音入力プルダウンだけを設定し、キャプチャ対象選択はMediaProjectionのOS画面へ任せます。 */
     private void setupAudioSourceSelectors() {
         screenBinder.bindAudioSourceSelectors(
-                PlaybackCaptureAppRepository.load(activity.getPackageManager()),
-                source -> {
-                    if (source.requiresAppCapture()
-                            && screenBinder.selectedCaptureTargetApp() == null) {
-                        outputMessage("キャプチャ対象にできるアプリがありません");
-                    }
-                }
+                java.util.Collections.emptyList(),
+                source -> { }
         );
     }
 
@@ -217,17 +211,11 @@ public class RecordActivity {
         currentSettings = settingsStore.load();
         final RecordingAudioSource source = screenBinder.selectedAudioSource();
         if (source.requiresAppCapture()) {
-            final CaptureTargetApp target = screenBinder.selectedCaptureTargetApp();
-            if (target == null) {
-                outputMessage("キャプチャ対象アプリを選択してください");
-                return false;
-            }
             if (projectionPermissionLauncher == null) {
                 outputMessage("キャプチャ許可画面を開始できません");
                 return false;
             }
             pendingAudioSource = source;
-            pendingCaptureTarget = target;
             final MediaProjectionManager manager =
                     (MediaProjectionManager) activity.getSystemService(
                             Activity.MEDIA_PROJECTION_SERVICE
@@ -246,14 +234,12 @@ public class RecordActivity {
      */
     public void onMediaProjectionPermissionResult(final int resultCode, final Intent data) {
         final RecordingAudioSource source = pendingAudioSource;
-        final CaptureTargetApp target = pendingCaptureTarget;
         pendingAudioSource = null;
-        pendingCaptureTarget = null;
-        if (resultCode != Activity.RESULT_OK || data == null || source == null || target == null) {
+        if (resultCode != Activity.RESULT_OK || data == null || source == null) {
             outputMessage("アプリ音声のキャプチャが許可されませんでした");
             return;
         }
-        startBackgroundRecording(source, target, resultCode, data);
+        startBackgroundRecording(source, null, resultCode, data);
     }
 
     /**
@@ -452,6 +438,20 @@ public class RecordActivity {
     private void refreshWhisperInfo() {
         final WhisperSettings settings = currentSettings;
         final String stateText = stateText();
+        if (state == RecordTranscriptionState.FileTranscribing) {
+            setStatusText(StringBufferBuilderPool.Join(
+                    "",
+                    "状態: ",
+                    stateText,
+                    " / モデル: ",
+                    settings.fileTranscription().model(),
+                    " / 言語: ",
+                    settings.fileTranscription().language(),
+                    " / 一括推論"
+            ));
+            screenBinder.setBenchmarkText(buildBenchmarkText());
+            return;
+        }
         setStatusText(StringBufferBuilderPool.Join(
                 "",
                 "状態: ",

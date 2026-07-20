@@ -14,6 +14,7 @@ import events.SystemEventHub;
 import events.Threading.ThreadStoppedEvent;
 import events.Whisper.WhisperTranscriptionEvent;
 import events.Whisper.WhisperTranscriptionTag;
+import events.Whisper.WhisperProgressEvent;
 import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.WhisperSettings;
 
 /**
@@ -383,6 +384,13 @@ public class WhisperTranscriptionWorker implements Runnable {
         pendingAudio.writeFirst(sampleCount, inferenceWindowBuffer);
         final long startMs = samplesToMs(processedSamples);
         final long durationMs = samplesToMs(sampleCount);
+
+        SystemEventHub.publish(new WhisperProgressEvent(
+                sessionId,
+                WhisperProgressEvent.Phase.REALTIME_INFERENCE,
+                startMs,
+                durationMs
+        ));
 
         final long startedAt = System.nanoTime();
         Log.d(TAG,"start transcription");

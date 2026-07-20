@@ -1,6 +1,7 @@
 package jp.ac.gifu_u.programmingjissen2.Record;
 
 import android.media.AudioFormat;
+import android.media.AudioAttributes;
 import android.media.AudioPlaybackCaptureConfiguration;
 import android.media.AudioRecord;
 import android.media.MediaRecorder;
@@ -266,11 +267,11 @@ public class AudioRecordWorker implements Runnable {
     }
 
     /**
-     * 対象UIDだけに絞った再生音声AudioRecordを作成します。
+     * MediaProjectionが許可した再生音声のAudioRecordを作成します。
      * @param sampleRate サンプリングレート。例: {@code 16000}
      * @param bufferSize byte数。例: {@code 32000}
      * @param projection MediaProjection許可。例: {@code projection}
-     * @param targetUid 対象アプリUID。例: {@code 10123}
+     * @param targetUid 対象アプリUID。負数ならOS選択対象全体。例: {@code -1}
      * @return 初期化済みAudioRecord。失敗時null。例: {@code audioRecord}
      * @throws SecurityException RECORD_AUDIOまたはMediaProjection許可が無効な場合
      */
@@ -282,10 +283,17 @@ public class AudioRecordWorker implements Runnable {
             @NonNull final MediaProjection projection,
             final int targetUid
     ) {
-        final AudioPlaybackCaptureConfiguration configuration =
-                new AudioPlaybackCaptureConfiguration.Builder(projection)
-                        .addMatchingUid(targetUid)
-                        .build();
+        final AudioPlaybackCaptureConfiguration.Builder configurationBuilder =
+                new AudioPlaybackCaptureConfiguration.Builder(projection);
+        if (targetUid >= 0) {
+            configurationBuilder.addMatchingUid(targetUid);
+        } else {
+            configurationBuilder
+                    .addMatchingUsage(AudioAttributes.USAGE_MEDIA)
+                    .addMatchingUsage(AudioAttributes.USAGE_GAME)
+                    .addMatchingUsage(AudioAttributes.USAGE_UNKNOWN);
+        }
+        final AudioPlaybackCaptureConfiguration configuration = configurationBuilder.build();
         final AudioFormat format = new AudioFormat.Builder()
                 .setSampleRate(sampleRate)
                 .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
@@ -349,8 +357,8 @@ public class AudioRecordWorker implements Runnable {
             }
         }
         if (audioSource.requiresAppCapture()) {
-            if (mediaProjection == null || captureTargetUid < 0) {
-                Log.e(TAG, "MediaProjection or capture target UID is missing");
+            if (mediaProjection == null) {
+                Log.e(TAG, "MediaProjection is missing");
                 return false;
             }
             playbackRecord = createPlaybackAudioRecord(

@@ -696,8 +696,7 @@ public class BackgroundWhisperService extends Service {
             return true;
         }
         if (projectionResultCode != Activity.RESULT_OK
-                || projectionResultData == null
-                || requestedCaptureTargetUid < 0) {
+                || projectionResultData == null) {
             return false;
         }
         try {

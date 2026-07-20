@@ -38,6 +38,7 @@ public final class WhisperSettings {
     private final float sileroVadThreshold;
     private final boolean translateToEnglish;
     private final String prompt;
+    private final FileTranscriptionSettings fileTranscription;
 
     /**
      * Whisper設定を作成します。数値は対応範囲へ補正され、自動再推論は音声記録OFF時にOFFになります。
@@ -153,6 +154,51 @@ public final class WhisperSettings {
             final String prompt,
             final float sileroVadThreshold
     ) {
+        this(model, language, windowMs, overlapMs, minFinalMs, maxThreads, noContext,
+                printTimestamps, useGpu, audioRecordingEnabled, autoRetranscribeEnabled,
+                vadEnabled, vadThreshold, translateToEnglish, prompt, sileroVadThreshold,
+                FileTranscriptionSettings.defaultSettings());
+    }
+
+    /**
+     * リアルタイム設定と独立したファイル一括設定を作成します。
+     * @param model CTranslate2モデル。例: {@code WhisperModelOption.CT2_SMALL_INT8}
+     * @param language リアルタイム認識言語。例: {@code "ja"}
+     * @param windowMs 推論窓。例: {@code 5000}
+     * @param overlapMs 重なり。例: {@code 1000}
+     * @param minFinalMs 最終推論の最小長。例: {@code 1000}
+     * @param maxThreads リアルタイム最大スレッド数。例: {@code 4}
+     * @param noContext 旧設定互換値。例: {@code false}
+     * @param printTimestamps 旧設定互換値。例: {@code false}
+     * @param useGpu 旧設定互換値。例: {@code false}
+     * @param audioRecordingEnabled WAV保存ならtrue。例: {@code true}
+     * @param autoRetranscribeEnabled 終了後に一括再推論するならtrue。例: {@code true}
+     * @param vadEnabled CTranslate2 VADを使うならtrue。例: {@code true}
+     * @param vadThreshold no-speech閾値。例: {@code 0.6f}
+     * @param translateToEnglish リアルタイム英語翻訳ならtrue。例: {@code false}
+     * @param prompt リアルタイムinitial prompt。例: {@code "専門用語"}
+     * @param sileroVadThreshold 旧保存値の互換引数。例: {@code 0.5f}
+     * @param fileTranscription Whisper.cpp一括設定。例: {@code FileTranscriptionSettings.defaultSettings()}
+     */
+    public WhisperSettings(
+            final WhisperModelOption model,
+            final String language,
+            final int windowMs,
+            final int overlapMs,
+            final int minFinalMs,
+            final int maxThreads,
+            final boolean noContext,
+            final boolean printTimestamps,
+            final boolean useGpu,
+            final boolean audioRecordingEnabled,
+            final boolean autoRetranscribeEnabled,
+            final boolean vadEnabled,
+            final float vadThreshold,
+            final boolean translateToEnglish,
+            final String prompt,
+            final float sileroVadThreshold,
+            final FileTranscriptionSettings fileTranscription
+    ) {
         this.model = model == null ? DEFAULT_MODEL : model;
         this.language = normalizeLanguage(language);
         this.windowMs = clamp(windowMs, 1000, 30000);
@@ -170,6 +216,9 @@ public final class WhisperSettings {
         this.translateToEnglish = translateToEnglish;
         final String promptValue = prompt == null ? DEFAULT_PROMPT : prompt.trim();
         this.prompt = promptValue.length() <= 300 ? promptValue : promptValue.substring(0, 300);
+        this.fileTranscription = fileTranscription == null
+                ? FileTranscriptionSettings.defaultSettings()
+                : fileTranscription;
     }
 
     @NonNull
@@ -191,7 +240,8 @@ public final class WhisperSettings {
                 DEFAULT_VAD_THRESHOLD,
                 DEFAULT_TRANSLATE_TO_ENGLISH,
                 DEFAULT_PROMPT,
-                DEFAULT_SILERO_VAD_THRESHOLD
+                DEFAULT_SILERO_VAD_THRESHOLD,
+                FileTranscriptionSettings.defaultSettings()
         );
     }
 
@@ -214,7 +264,47 @@ public final class WhisperSettings {
                 vadThreshold,
                 translateToEnglish,
                 prompt,
-                sileroVadThreshold
+                sileroVadThreshold,
+                fileTranscription
+        );
+    }
+
+    /**
+     * ファイル一括設定だけを差し替えた設定を返します。
+     * @param value 新しい一括設定。例: {@code FileTranscriptionSettings.defaultSettings()}
+     * @return リアルタイム設定を維持した新しい設定。例: {@code WhisperSettings}
+     */
+    @NonNull
+    public WhisperSettings withFileTranscription(
+            @NonNull final FileTranscriptionSettings value
+    ) {
+        return new WhisperSettings(
+                model, language, windowMs, overlapMs, minFinalMs, maxThreads, noContext,
+                printTimestamps, useGpu, audioRecordingEnabled, autoRetranscribeEnabled,
+                vadEnabled, vadThreshold, translateToEnglish, prompt, sileroVadThreshold, value
+        );
+    }
+
+    /**
+     * クイックスタートで変更できるリアルタイム設定を差し替えます。
+     * @param newWindowMs 推論窓ms。例: {@code 5000}
+     * @param newVadThreshold CTranslate2 no-speech閾値。例: {@code 0.6f}
+     * @param recordingEnabled WAVを保存するならtrue。例: {@code true}
+     * @param retranscribeEnabled 録音終了後にWhisper.cppで再推論するならtrue。例: {@code true}
+     * @return その他の設定を維持した新しい設定。例: {@code WhisperSettings}
+     */
+    @NonNull
+    public WhisperSettings withQuickSettings(
+            final int newWindowMs,
+            final float newVadThreshold,
+            final boolean recordingEnabled,
+            final boolean retranscribeEnabled
+    ) {
+        return new WhisperSettings(
+                model, language, newWindowMs, overlapMs, minFinalMs, maxThreads, noContext,
+                printTimestamps, useGpu, recordingEnabled, retranscribeEnabled,
+                vadEnabled, newVadThreshold, translateToEnglish, prompt,
+                sileroVadThreshold, fileTranscription
         );
     }
 
@@ -257,6 +347,7 @@ public final class WhisperSettings {
     public float sileroVadThreshold() { return sileroVadThreshold; }
     public boolean translateToEnglish() { return translateToEnglish; }
     public String prompt() { return prompt; }
+    public FileTranscriptionSettings fileTranscription() { return fileTranscription; }
 
     private static String normalizeLanguage(final String value) {
         return WhisperLanguageOption.fromValue(value).value();

@@ -10,6 +10,7 @@ import androidx.annotation.NonNull;
 import Utils.StringPool.StringBufferBuilderPool;
 import events.Whisper.WhisperTranscriptionEvent;
 import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.WhisperModelOption;
+import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.WhisperCppModelOption;
 import jp.ac.gifu_u.programmingjissen2.SettingUI.WhisperRecordControls;
 
 import java.util.List;
@@ -265,8 +266,27 @@ public final class RecordScreenBinder {
      */
     public void showMessage(final String message) {
         if (controls.resultTextView != null) {
-            controls.resultTextView.setText(message);
+            controls.resultTextView.setText(limitLatestText(message, 120));
         }
+    }
+
+    /**
+     * 最新結果欄へ収まるようUnicodeコードポイント単位で末尾を省略します。
+     * @param value 表示候補。例: {@code "長い文字起こし結果"}
+     * @param maxCodePoints 上限。例: {@code 120}
+     * @return 上限内の文字列。省略時は末尾に三点リーダー。例: {@code "結果…"}
+     */
+    @NonNull
+    private String limitLatestText(final String value, final int maxCodePoints) {
+        if (value == null || value.isEmpty()) {
+            return "";
+        }
+        final int count = value.codePointCount(0, value.length());
+        if (count <= maxCodePoints) {
+            return value;
+        }
+        final int start = value.offsetByCodePoints(0, count - maxCodePoints);
+        return "…" + value.substring(start);
     }
 
     /**
@@ -314,7 +334,6 @@ public final class RecordScreenBinder {
             @NonNull final String text,
             @NonNull final WhisperTranscriptionEvent event
     ) {
-        final WhisperModelOption model = WhisperModelOption.fromKey(event.modelKey());
         return StringBufferBuilderPool.Join(
                 "",
                 label,
@@ -324,12 +343,32 @@ public final class RecordScreenBinder {
                 event.startMs() + event.durationMs(),
                 "ms\n",
                 "モデル: ",
-                model.displayName(),
+                modelDisplayName(event.modelKey()),
                 " / 推論: ",
                 event.processingTimeMs(),
                 "ms\n",
                 text
         );
+    }
+
+    /**
+     * CTranslate2またはWhisper.cppの保存キーを表示名へ変換します。
+     * @param modelKey モデルキー。例: {@code "cpp-small-q8-0"}
+     * @return 対応表示名。不明値はキーそのもの。例: {@code "Whisper.cpp small・Q8_0"}
+     */
+    @NonNull
+    private String modelDisplayName(final String modelKey) {
+        for (WhisperModelOption option : WhisperModelOption.values()) {
+            if (option.key().equals(modelKey)) {
+                return option.displayName();
+            }
+        }
+        for (WhisperCppModelOption option : WhisperCppModelOption.values()) {
+            if (option.key().equals(modelKey)) {
+                return option.toString();
+            }
+        }
+        return modelKey == null || modelKey.isEmpty() ? "不明" : modelKey;
     }
 
 }

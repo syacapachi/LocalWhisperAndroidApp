@@ -7,6 +7,7 @@ import android.view.View;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.Spinner;
@@ -18,11 +19,15 @@ import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.widget.SwitchCompat;
 
+import com.google.android.material.tabs.TabLayout;
+
 import org.jetbrains.annotations.Contract;
 
 import Utils.StringPool.StringBufferBuilderPool;
 import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.WhisperInferenceStats;
+import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.FileTranscriptionSettings;
 import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.WhisperLanguageOption;
+import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.WhisperCppModelOption;
 import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.WhisperModelOption;
 import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.WhisperSettings;
 
@@ -43,12 +48,19 @@ public class WhisperSettingsActivity extends AppCompatActivity {
     private EditText maxThreadsEdit;
     private SwitchCompat vadSwitch;
     private EditText vadThresholdEdit;
-    private EditText sileroVadThresholdEdit;
     private SwitchCompat translateSwitch;
     private EditText promptEdit;
+    private Spinner fileModelSpinner;
+    private Spinner fileLanguageSpinner;
+    private EditText fileMaxThreadsEdit;
+    private SwitchCompat fileVadSwitch;
+    private EditText fileVadThresholdEdit;
+    private SwitchCompat fileTranslateSwitch;
+    private EditText filePromptEdit;
     private SwitchCompat audioRecordingSwitch;
     private SwitchCompat autoRetranscribeSwitch;
     private TextView statsText;
+    private TextView fileStatsText;
 
     @Override
     protected void onCreate(final @Nullable Bundle savedInstanceState) {
@@ -66,100 +78,42 @@ public class WhisperSettingsActivity extends AppCompatActivity {
      */
     @NonNull
     private View createContentView() {
-        // スクロールできる画面を生成。
-        final ScrollView scrollView = new ScrollView(this);
-        // 画面の中にレイアウトの元
         final LinearLayout root = new LinearLayout(this);
-        // 縦に伸びる
         root.setOrientation(LinearLayout.VERTICAL);
-        // Padding設定
-        final int padding = dp(20);
-        root.setPadding(padding, padding, padding, padding);
-        scrollView.addView(root, new ScrollView.LayoutParams(
-                ScrollView.LayoutParams.MATCH_PARENT,
-                ScrollView.LayoutParams.WRAP_CONTENT
-        ));
-        // タイトル
-        final TextView title = titleText("音声認識設定");
-        root.addView(title);
-        root.addView(descriptionText("録音中の文字起こしに使うモデルと推論パラメータを変更します。"));
+        final TabLayout tabs = new TabLayout(this);
+        tabs.addTab(tabs.newTab().setText("リアルタイム文字起こし設定"));
+        tabs.addTab(tabs.newTab().setText("ファイル一括文字起こし設定"));
+        tabs.setTabMode(TabLayout.MODE_SCROLLABLE);
+        root.addView(tabs, fullWidthParams());
 
-        // モデルassetsパス選択のドロップダウン
-        root.addView(sectionText("モデル"));
-        modelSpinner = new Spinner(this);
-        final ArrayAdapter<WhisperModelOption> modelAdapter = new ArrayAdapter<>(
-                this,
-                android.R.layout.simple_spinner_item,
-                WhisperModelOption.values()
-        );
-        modelAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
-        modelSpinner.setAdapter(modelAdapter);
-        root.addView(modelSpinner, fullWidthParams());
-        root.addView(descriptionText(
-                "モデル選択はリアルタイム推論で使うCTranslate2モデルへ適用されます。"
-        ));
-        root.addView(descriptionText(
-                "録音中は選択したCTranslate2モデル、音声ファイルと録音全体の再推論は対応するWhisper.cppモデルを使います。"
-        ));
+        final FrameLayout pages = new FrameLayout(this);
+        final ScrollView realtimePage = createRealtimeSettingsPage();
+        final ScrollView filePage = createFileSettingsPage();
+        filePage.setVisibility(View.GONE);
+        pages.addView(realtimePage, framePageParams());
+        pages.addView(filePage, framePageParams());
+        root.addView(pages, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
 
-        // 設定の入力フィールド
-        root.addView(sectionText("推論"));
-        languageSpinner = addLanguageSpinnerRow(root);
-        windowEdit = addEditRow(root, "推論窓 ms", "例: 5000", InputType.TYPE_CLASS_NUMBER);
-        overlapEdit = addEditRow(root, "重なり ms", "例: 1000", InputType.TYPE_CLASS_NUMBER);
-        minFinalEdit = addEditRow(root, "停止時の最小 ms", "例: 1000", InputType.TYPE_CLASS_NUMBER);
-        maxThreadsEdit = addEditRow(root, "最大スレッド数", "1-8", InputType.TYPE_CLASS_NUMBER);
-
-        vadSwitch = addSwitchRow(root, "VAD（無音除外）を使う",
-                "リアルタイム推論ではCTranslate2、ファイル・録音全体の推論ではSilero VADを使います。", true);
-        vadThresholdEdit = addEditRow(root, "CTranslate2 無音確率閾値", "0.0-1.0（例: 0.6）",
-                InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
-        sileroVadThresholdEdit = addEditRow(root, "Silero VAD 発話確率閾値", "0.0-1.0（例: 0.5）",
-                InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
-        root.addView(descriptionText(
-                "Sileroは確率が閾値以上の区間を発話として残します。後半が欠落する場合は値を下げてください。"
-        ));
-
-        root.addView(sectionText("翻訳とプロンプト"));
-        translateSwitch = addSwitchRow(root, "英語へ翻訳する",
-                "入力言語を自動検出し、Whisperが対応する英語へ翻訳します。", false);
-        root.addView(labelText("プロンプト"));
-        promptEdit = new EditText(this);
-        promptEdit.setHint("例: 専門用語: CTranslate2、岐阜大学");
-        promptEdit.setSingleLine(false);
-        promptEdit.setMinLines(3);
-        promptEdit.setGravity(android.view.Gravity.TOP);
-        promptEdit.setFilters(new InputFilter[]{new InputFilter.LengthFilter(300)});
-        root.addView(promptEdit, fullWidthParams());
-        root.addView(descriptionText(
-                "最大224トークン（日本語は目安150～300文字）。各推論では直前結果の末尾100文字も文脈として自動追加します。"
-        ));
-
-        root.addView(sectionText("音声記録"));
-        audioRecordingSwitch = addSwitchRow(root, "音声記録を有効にする",
-                "録音ごとに16kHz・モノラルのWAVファイルをアプリ内へ保存します。", false);
-        autoRetranscribeSwitch = addSwitchRow(root, "録音終了時に自動で再推論する",
-                "リアルタイム推論の終了後、保存音声全体を専用スレッドで再推論します。", false);
-        audioRecordingSwitch.setOnCheckedChangeListener((button, checked) -> {
-            autoRetranscribeSwitch.setEnabled(checked);
-            if (!checked) {
-                autoRetranscribeSwitch.setChecked(false);
+        tabs.addOnTabSelectedListener(new TabLayout.OnTabSelectedListener() {
+            @Override
+            public void onTabSelected(@NonNull final TabLayout.Tab tab) {
+                final boolean realtime = tab.getPosition() == 0;
+                realtimePage.setVisibility(realtime ? View.VISIBLE : View.GONE);
+                filePage.setVisibility(realtime ? View.GONE : View.VISIBLE);
             }
+
+            @Override public void onTabUnselected(@NonNull final TabLayout.Tab tab) { }
+            @Override public void onTabReselected(@NonNull final TabLayout.Tab tab) { }
         });
 
-        // モデルの推論統計を出す
-        root.addView(sectionText("処理時間"));
-        statsText = descriptionText("");
-        root.addView(statsText);
-
-        // ボタンを表示
         final LinearLayout buttonRow = new LinearLayout(this);
         buttonRow.setOrientation(LinearLayout.HORIZONTAL);
-        buttonRow.setPadding(0, dp(16), 0, 0);
-        root.addView(buttonRow);
+        buttonRow.setPadding(dp(20), dp(8), dp(20), 0);
+        root.addView(buttonRow, fullWidthParams());
 
         final Button saveButton = new Button(this);
-        saveButton.setText("保存");
+        saveButton.setText("両方を保存");
         saveButton.setOnClickListener((view) -> saveSettings());
         buttonRow.addView(saveButton, weightedButtonParams());
 
@@ -175,9 +129,161 @@ public class WhisperSettingsActivity extends AppCompatActivity {
         final Button closeButton = new Button(this);
         closeButton.setText("閉じる");
         closeButton.setOnClickListener((view) -> finish());
-        root.addView(closeButton, fullWidthParams());
+        final LinearLayout.LayoutParams closeParams = fullWidthParams();
+        closeParams.setMargins(dp(20), 0, dp(20), dp(8));
+        root.addView(closeButton, closeParams);
+        return root;
+    }
 
-        return scrollView;
+    /**
+     * CTranslate2用のリアルタイム設定ページを作成します。
+     * @return 設定入力欄を含むScrollView。例: {@code ScrollView}
+     */
+    @NonNull
+    private ScrollView createRealtimeSettingsPage() {
+        final LinearLayout page = settingsPage("リアルタイム文字起こし設定",
+                "録音中の短い音声窓をCTranslate2で推論する設定です。");
+        page.addView(sectionText("CTranslate2モデル"));
+        modelSpinner = new Spinner(this);
+        final ArrayAdapter<WhisperModelOption> modelAdapter = new ArrayAdapter<>(
+                this,
+                android.R.layout.simple_spinner_item,
+                WhisperModelOption.values()
+        );
+        modelAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        modelSpinner.setAdapter(modelAdapter);
+        page.addView(modelSpinner, fullWidthParams());
+
+        page.addView(sectionText("推論"));
+        languageSpinner = addLanguageSpinnerRow(page);
+        windowEdit = addEditRow(page, "推論窓 ms", "例: 5000", InputType.TYPE_CLASS_NUMBER);
+        overlapEdit = addEditRow(page, "重なり ms", "例: 1000", InputType.TYPE_CLASS_NUMBER);
+        minFinalEdit = addEditRow(page, "停止時の最小 ms", "例: 1000", InputType.TYPE_CLASS_NUMBER);
+        maxThreadsEdit = addEditRow(page, "最大スレッド数", "1-8", InputType.TYPE_CLASS_NUMBER);
+
+        vadSwitch = addSwitchRow(page, "CTranslate2 VAD（無音除外）を使う",
+                "no-speech確率で無音窓の結果を除外します。", true);
+        vadThresholdEdit = addEditRow(page, "無音確率閾値", "0.0-1.0（例: 0.6）",
+                InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
+
+        page.addView(sectionText("翻訳とプロンプト"));
+        translateSwitch = addSwitchRow(page, "英語へ翻訳する",
+                "入力言語を自動検出し、Whisperが対応する英語へ翻訳します。", false);
+        page.addView(labelText("リアルタイム用プロンプト"));
+        promptEdit = new EditText(this);
+        promptEdit.setHint("例: 専門用語: CTranslate2、岐阜大学");
+        promptEdit.setSingleLine(false);
+        promptEdit.setMinLines(3);
+        promptEdit.setGravity(android.view.Gravity.TOP);
+        promptEdit.setFilters(new InputFilter[]{new InputFilter.LengthFilter(300)});
+        page.addView(promptEdit, fullWidthParams());
+        page.addView(descriptionText(
+                "最大224トークン（日本語は目安150～300文字）。各推論では直前結果の末尾100文字も文脈として自動追加します。"
+        ));
+        page.addView(sectionText("録音と再推論"));
+        audioRecordingSwitch = addSwitchRow(page, "録音する",
+                "録音ごとに16kHz・モノラルのWAVファイルをアプリ内へ保存します。", false);
+        autoRetranscribeSwitch = addSwitchRow(page, "あとで再推論する",
+                "録音終了後、保存音声全体をWhisper.cppで一括再推論します。", false);
+        audioRecordingSwitch.setOnCheckedChangeListener((button, checked) -> {
+            autoRetranscribeSwitch.setEnabled(checked);
+            if (!checked) {
+                autoRetranscribeSwitch.setChecked(false);
+            }
+        });
+        page.addView(sectionText("処理時間"));
+        statsText = descriptionText("");
+        page.addView(statsText);
+        return wrapPage(page);
+    }
+
+    /**
+     * Whisper.cpp用のファイル一括設定ページを作成します。
+     * @return 設定入力欄を含むScrollView。例: {@code ScrollView}
+     */
+    @NonNull
+    private ScrollView createFileSettingsPage() {
+        final LinearLayout page = settingsPage("ファイル一括文字起こし設定",
+                "音声・動画ファイルと録音全体をWhisper.cppで一括推論する設定です。");
+        page.addView(sectionText("Whisper.cpp量子化モデル"));
+        fileModelSpinner = new Spinner(this);
+        final ArrayAdapter<WhisperCppModelOption> modelAdapter = new ArrayAdapter<>(
+                this, android.R.layout.simple_spinner_item, WhisperCppModelOption.values());
+        modelAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        fileModelSpinner.setAdapter(modelAdapter);
+        page.addView(fileModelSpinner, fullWidthParams());
+
+        page.addView(sectionText("推論"));
+        fileLanguageSpinner = addLanguageSpinnerRow(page);
+        fileMaxThreadsEdit = addEditRow(page, "最大スレッド数", "1-8",
+                InputType.TYPE_CLASS_NUMBER);
+        fileVadSwitch = addSwitchRow(page, "Silero VAD（無音除外）を使う",
+                "発話区間だけをWhisper.cppへ渡し、無音時のハルシネーションを抑えます。", true);
+        fileVadThresholdEdit = addEditRow(page, "Silero VAD 発話確率閾値",
+                "0.0-1.0（例: 0.5）",
+                InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        page.addView(descriptionText(
+                "音声が欠落する場合は値を下げ、無音の誤認識が多い場合は値を上げます。"));
+
+        page.addView(sectionText("翻訳とプロンプト"));
+        fileTranslateSwitch = addSwitchRow(page, "英語へ翻訳する",
+                "ファイルの入力言語を検出し、英語へ翻訳します。", false);
+        page.addView(labelText("ファイル一括用プロンプト"));
+        filePromptEdit = new EditText(this);
+        filePromptEdit.setHint("例: 会議名、参加者名、専門用語");
+        filePromptEdit.setSingleLine(false);
+        filePromptEdit.setMinLines(3);
+        filePromptEdit.setGravity(android.view.Gravity.TOP);
+        filePromptEdit.setFilters(new InputFilter[]{new InputFilter.LengthFilter(300)});
+        page.addView(filePromptEdit, fullWidthParams());
+        page.addView(descriptionText("最大224トークン（日本語は目安150～300文字）。"));
+
+        page.addView(sectionText("処理時間"));
+        fileStatsText = descriptionText("");
+        page.addView(fileStatsText);
+
+        return wrapPage(page);
+    }
+
+    /**
+     * タブ内の共通レイアウトを作成します。
+     * @param title ページ見出し。例: {@code "リアルタイム文字起こし設定"}
+     * @param description 説明。例: {@code "CTranslate2で推論します。"}
+     * @return paddingを設定した縦向きレイアウト。例: {@code LinearLayout}
+     */
+    @NonNull
+    private LinearLayout settingsPage(final String title, final String description) {
+        final LinearLayout page = new LinearLayout(this);
+        page.setOrientation(LinearLayout.VERTICAL);
+        page.setPadding(dp(20), dp(16), dp(20), dp(20));
+        page.addView(titleText(title));
+        page.addView(descriptionText(description));
+        return page;
+    }
+
+    /**
+     * 設定ページをスクロール可能にします。
+     * @param page 縦向きページ。例: {@code settingsPage("設定", "説明")}
+     * @return ページを含むScrollView。例: {@code ScrollView}
+     */
+    @NonNull
+    private ScrollView wrapPage(@NonNull final LinearLayout page) {
+        final ScrollView scroll = new ScrollView(this);
+        scroll.addView(page, new ScrollView.LayoutParams(
+                ScrollView.LayoutParams.MATCH_PARENT,
+                ScrollView.LayoutParams.WRAP_CONTENT));
+        return scroll;
+    }
+
+    /**
+     * タブページをFrameLayout全面へ配置するパラメータを返します。
+     * @return MATCH_PARENT指定。例: {@code FrameLayout.LayoutParams}
+     */
+    @NonNull
+    private FrameLayout.LayoutParams framePageParams() {
+        return new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT);
     }
 
     /**
@@ -258,12 +364,20 @@ public class WhisperSettingsActivity extends AppCompatActivity {
         maxThreadsEdit.setText(String.valueOf(settings.maxThreads()));
         vadSwitch.setChecked(settings.vadEnabled());
         vadThresholdEdit.setText(String.valueOf(settings.vadThreshold()));
-        sileroVadThresholdEdit.setText(String.valueOf(settings.sileroVadThreshold()));
         translateSwitch.setChecked(settings.translateToEnglish());
         promptEdit.setText(settings.prompt());
         audioRecordingSwitch.setChecked(settings.audioRecordingEnabled());
         autoRetranscribeSwitch.setEnabled(settings.audioRecordingEnabled());
         autoRetranscribeSwitch.setChecked(settings.autoRetranscribeEnabled());
+        final FileTranscriptionSettings file = settings.fileTranscription();
+        fileModelSpinner.setSelection(file.model().ordinal());
+        fileLanguageSpinner.setSelection(
+                WhisperLanguageOption.fromValue(file.language()).ordinal());
+        fileMaxThreadsEdit.setText(String.valueOf(file.maxThreads()));
+        fileVadSwitch.setChecked(file.vadEnabled());
+        fileVadThresholdEdit.setText(String.valueOf(file.vadThreshold()));
+        fileTranslateSwitch.setChecked(file.translateToEnglish());
+        filePromptEdit.setText(file.prompt());
     }
 
     /**
@@ -273,6 +387,20 @@ public class WhisperSettingsActivity extends AppCompatActivity {
     private void saveSettings() {
         final WhisperModelOption model = (WhisperModelOption) modelSpinner.getSelectedItem();
         final WhisperLanguageOption language = (WhisperLanguageOption) languageSpinner.getSelectedItem();
+        final WhisperCppModelOption fileModel =
+                (WhisperCppModelOption) fileModelSpinner.getSelectedItem();
+        final WhisperLanguageOption fileLanguage =
+                (WhisperLanguageOption) fileLanguageSpinner.getSelectedItem();
+        final FileTranscriptionSettings fileSettings = new FileTranscriptionSettings(
+                fileModel,
+                fileLanguage.value(),
+                parseInt(fileMaxThreadsEdit, WhisperSettings.DEFAULT_MAX_THREADS),
+                false,
+                fileVadSwitch.isChecked(),
+                parseFloat(fileVadThresholdEdit, FileTranscriptionSettings.DEFAULT_VAD_THRESHOLD),
+                fileTranslateSwitch.isChecked(),
+                filePromptEdit.getText().toString()
+        );
 
         WhisperSettings settings = new WhisperSettings(
                 model,
@@ -290,10 +418,8 @@ public class WhisperSettingsActivity extends AppCompatActivity {
                 parseFloat(vadThresholdEdit, WhisperSettings.DEFAULT_VAD_THRESHOLD),
                 translateSwitch.isChecked(),
                 promptEdit.getText().toString(),
-                parseFloat(
-                        sileroVadThresholdEdit,
-                        WhisperSettings.DEFAULT_SILERO_VAD_THRESHOLD
-                )
+                fileSettings.vadThreshold(),
+                fileSettings
         );
         store.save(settings);
         bindSettings(settings);
@@ -314,6 +440,15 @@ public class WhisperSettingsActivity extends AppCompatActivity {
         }
         builder.append("\n録音画面でも推論 1 回ごとの処理時間を確認できます。");
         statsText.setText(builder.toString());
+
+        final StringBuilder fileBuilder = new StringBuilder();
+        for (WhisperCppModelOption model : WhisperCppModelOption.values()) {
+            if (fileBuilder.length() > 0) {
+                fileBuilder.append('\n');
+            }
+            fileBuilder.append(formatStats(model.toString(), store.loadStats(model)));
+        }
+        fileStatsText.setText(fileBuilder.toString());
     }
 
     /**
@@ -324,13 +459,27 @@ public class WhisperSettingsActivity extends AppCompatActivity {
      */
     @NonNull
     private String formatStats(final WhisperModelOption model, @NonNull final WhisperInferenceStats stats) {
+        return formatStats(model.displayName(), stats);
+    }
+
+    /**
+     * モデル表示名と統計を一行へ整形します。
+     * @param displayName モデル名。例: {@code "Whisper.cpp small・Q8_0"}
+     * @param stats 推論統計。例: {@code store.loadStats(model)}
+     * @return 表示文。例: {@code "モデル: 最新 4000ms / 平均 4200ms ..."}
+     */
+    @NonNull
+    private String formatStats(
+            final String displayName,
+            @NonNull final WhisperInferenceStats stats
+    ) {
         if (!stats.hasSamples()) {
-            return StringBufferBuilderPool.Join("", model.displayName(), ": まだ計測なし");
+            return StringBufferBuilderPool.Join("", displayName, ": まだ計測なし");
         }
 
         return StringBufferBuilderPool.Join(
                 "",
-                model.displayName(),
+                displayName,
                 ": 最新 ",
                 stats.lastMs(),
                 "ms / 平均 ",
