@@ -35,15 +35,37 @@ public final class CTranslate2Bridge implements AutoCloseable {
      *
      * @param samples -1～1のfloat PCM。例: {@code new float[80000]}
      * @param language Whisper言語コード。例: {@code "ja"}
-     * @return UTF-8へ復号した文字起こし。例: {@code "こんにちは"}
+     * @param translateToEnglish 英語翻訳ならtrue。例: {@code false}
+     * @param initialPrompt 初期プロンプトと直前文脈。例: {@code "専門用語: CTranslate2\n前の文"}
+     * @param vadEnabled 無音判定を使う場合true。例: {@code true}
+     * @param vadThreshold 無音確率の閾値0～1。例: {@code 0.6f}
+     * @return UTF-8へ復号した本文。VADが無音と判定した場合は空文字。例: {@code "こんにちは"}
      * @throws IllegalStateException 解放後、またはnative推論に失敗した場合
+     * @throws IllegalArgumentException nativeへ渡す値が不正な場合
      */
     @NonNull
-    public String transcribe(@NonNull final float[] samples, @NonNull final String language) {
+    public String transcribe(
+            @NonNull final float[] samples,
+            @NonNull final String language,
+            final boolean translateToEnglish,
+            @NonNull final String initialPrompt,
+            final boolean vadEnabled,
+            final float vadThreshold
+    ) {
         if (handle == 0) {
             throw new IllegalStateException("CTranslate2 model is already closed");
         }
-        return transcribe(handle, samples, language, 1, 448);
+        return transcribe(
+                handle,
+                samples,
+                language,
+                translateToEnglish,
+                initialPrompt,
+                vadEnabled,
+                Math.max(0.0f, Math.min(1.0f, vadThreshold)),
+                1,
+                448
+        );
     }
 
     /** nativeモデルを解放します。複数回呼んでも安全です。 */
@@ -61,6 +83,10 @@ public final class CTranslate2Bridge implements AutoCloseable {
             long handle,
             float[] samples,
             String language,
+            boolean translateToEnglish,
+            String initialPrompt,
+            boolean vadEnabled,
+            float vadThreshold,
             int beamSize,
             int maxLength
     );

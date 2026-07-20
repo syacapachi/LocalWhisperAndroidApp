@@ -154,6 +154,7 @@ add_library(
         SHARED
         ../CTranslate2/ctranslate2-jni.cpp
         ../CTranslate2/whisper-feature-extractor.cpp
+        ../CTranslate2/whisper-prompt-tokenizer.cpp
         ../CTranslate2/whisper-token-decoder.cpp
 )
 

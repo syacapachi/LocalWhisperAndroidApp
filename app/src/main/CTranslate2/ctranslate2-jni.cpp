@@ -11,12 +11,14 @@
 #include <ctranslate2/types.h>
 
 #include "whisper-feature-extractor.h"
+#include "whisper-prompt-tokenizer.h"
 #include "whisper-token-decoder.h"
 
 namespace {
 
 struct WhisperHandle {
   std::unique_ptr<ctranslate2::models::Whisper> model;
+  std::unique_ptr<app::ctranslate2_jni::WhisperPromptTokenizer> tokenizer;
 };
 
 class JStringChars {
@@ -77,6 +79,8 @@ Java_CTranslate2_CTranslate2Bridge_create(
         std::vector<int>{0},
         false,
         config);
+    handle->tokenizer =
+        std::make_unique<app::ctranslate2_jni::WhisperPromptTokenizer>(model_path.str());
     return reinterpret_cast<jlong>(handle.release());
   } catch (const std::invalid_argument& error) {
     throw_java(env, "java/lang/IllegalArgumentException", error.what());
@@ -98,6 +102,10 @@ Java_CTranslate2_CTranslate2Bridge_transcribe(
     jlong native_handle,
     jfloatArray pcm,
     jstring language,
+    jboolean translate_to_english,
+    jstring initial_prompt,
+    jboolean vad_enabled,
+    jfloat vad_threshold,
     jint beam_size,
     jint max_length) {
   try {
@@ -120,8 +128,9 @@ Java_CTranslate2_CTranslate2Bridge_transcribe(
         values);
 
     const JStringChars language_code(env, language);
+    const JStringChars prompt_text(env, initial_prompt);
     std::string language_token;
-    if (language_code.str() == "auto") {
+    if (translate_to_english || language_code.str() == "auto") {
       auto language_futures = handle->model->detect_language(features);
       const auto probabilities = language_futures.at(0).get();
       if (probabilities.empty())
@@ -130,16 +139,31 @@ Java_CTranslate2_CTranslate2Bridge_transcribe(
     } else {
       language_token = "<|" + language_code.str() + "|>";
     }
-    std::vector<std::vector<std::string>> prompts{{
-        "<|startoftranscript|>", language_token, "<|transcribe|>", "<|notimestamps|>"}};
+    std::vector<std::string> prompt;
+    const auto initial_tokens = handle->tokenizer->encode(prompt_text.str(), 224);
+    if (!initial_tokens.empty()) {
+      prompt.emplace_back("<|startofprev|>");
+      prompt.insert(prompt.end(), initial_tokens.begin(), initial_tokens.end());
+    }
+    prompt.emplace_back("<|startoftranscript|>");
+    prompt.emplace_back(language_token);
+    prompt.emplace_back(translate_to_english ? "<|translate|>" : "<|transcribe|>");
+    prompt.emplace_back("<|notimestamps|>");
+    std::vector<std::vector<std::string>> prompts{std::move(prompt)};
     ctranslate2::models::WhisperOptions options;
     options.beam_size = static_cast<size_t>(std::max(1, beam_size));
     options.max_length = static_cast<size_t>(std::max(1, max_length));
     options.sampling_topk = 1;
+    options.return_scores = vad_enabled;
+    options.return_no_speech_prob = vad_enabled;
 
     auto futures = handle->model->generate(features, std::move(prompts), options);
     const auto result = futures.at(0).get();
     if (result.sequences.empty())
+      return env->NewStringUTF("");
+    const float threshold = std::max(0.0f, std::min(1.0f, vad_threshold));
+    const bool low_text_probability = result.scores.empty() || result.scores.front() < -1.0f;
+    if (vad_enabled && result.no_speech_prob >= threshold && low_text_probability)
       return env->NewStringUTF("");
     const std::string text = app::ctranslate2_jni::decode_whisper_tokens(result.sequences[0]);
     return env->NewStringUTF(text.c_str());

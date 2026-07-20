@@ -25,9 +25,13 @@ public final class WhisperSettingsStore {
     private static final String KEY_NO_CONTEXT = "no_context";
     private static final String KEY_PRINT_TIMESTAMPS = "print_timestamps";
     private static final String KEY_USE_GPU = "use_gpu";
-    private static final String KEY_USE_CTRANSLATE2 = "use_ctranslate2";
     private static final String KEY_AUDIO_RECORDING_ENABLED = "audio_recording_enabled";
     private static final String KEY_AUTO_RETRANSCRIBE_ENABLED = "auto_retranscribe_enabled";
+    private static final String KEY_VAD_ENABLED = "vad_enabled";
+    private static final String KEY_VAD_THRESHOLD = "vad_threshold";
+    private static final String KEY_SILERO_VAD_THRESHOLD = "silero_vad_threshold";
+    private static final String KEY_TRANSLATE_TO_ENGLISH = "translate_to_english";
+    private static final String KEY_PROMPT = "prompt";
     private static final String STATS_COUNT = "stats_count";
     private static final String STATS_TOTAL_MS = "stats_total_ms";
     private static final String STATS_LAST_MS = "stats_last_ms";
@@ -62,12 +66,19 @@ public final class WhisperSettingsStore {
                         WhisperSettings.DEFAULT_PRINT_TIMESTAMPS
                 ),
                 preferences.getBoolean(KEY_USE_GPU,WhisperSettings.DEFAULT_USE_GPU),
-                preferences.getBoolean(KEY_USE_CTRANSLATE2,
-                        WhisperSettings.DEFAULT_USE_CTRANSLATE2),
                 preferences.getBoolean(KEY_AUDIO_RECORDING_ENABLED,
                         WhisperSettings.DEFAULT_AUDIO_RECORDING_ENABLED),
                 preferences.getBoolean(KEY_AUTO_RETRANSCRIBE_ENABLED,
-                        WhisperSettings.DEFAULT_AUTO_RETRANSCRIBE_ENABLED)
+                        WhisperSettings.DEFAULT_AUTO_RETRANSCRIBE_ENABLED),
+                preferences.getBoolean(KEY_VAD_ENABLED, WhisperSettings.DEFAULT_VAD_ENABLED),
+                preferences.getFloat(KEY_VAD_THRESHOLD, WhisperSettings.DEFAULT_VAD_THRESHOLD),
+                preferences.getBoolean(KEY_TRANSLATE_TO_ENGLISH,
+                        WhisperSettings.DEFAULT_TRANSLATE_TO_ENGLISH),
+                preferences.getString(KEY_PROMPT, WhisperSettings.DEFAULT_PROMPT),
+                preferences.getFloat(
+                        KEY_SILERO_VAD_THRESHOLD,
+                        WhisperSettings.DEFAULT_SILERO_VAD_THRESHOLD
+                )
         );
     }
 
@@ -83,9 +94,13 @@ public final class WhisperSettingsStore {
                 .putBoolean(KEY_NO_CONTEXT, value.noContext())
                 .putBoolean(KEY_PRINT_TIMESTAMPS, value.printTimestamps())
                 .putBoolean(KEY_USE_GPU, value.useGpu())
-                .putBoolean(KEY_USE_CTRANSLATE2, value.useCTranslate2())
                 .putBoolean(KEY_AUDIO_RECORDING_ENABLED, value.audioRecordingEnabled())
                 .putBoolean(KEY_AUTO_RETRANSCRIBE_ENABLED, value.autoRetranscribeEnabled())
+                .putBoolean(KEY_VAD_ENABLED, value.vadEnabled())
+                .putFloat(KEY_VAD_THRESHOLD, value.vadThreshold())
+                .putFloat(KEY_SILERO_VAD_THRESHOLD, value.sileroVadThreshold())
+                .putBoolean(KEY_TRANSLATE_TO_ENGLISH, value.translateToEnglish())
+                .putString(KEY_PROMPT, value.prompt())
                 .apply();
     }
 

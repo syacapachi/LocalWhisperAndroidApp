@@ -1,6 +1,7 @@
 package jp.ac.gifu_u.programmingjissen2.SettingUI;
 
 import android.os.Bundle;
+import android.text.InputFilter;
 import android.text.InputType;
 import android.view.View;
 import android.widget.ArrayAdapter;
@@ -40,9 +41,11 @@ public class WhisperSettingsActivity extends AppCompatActivity {
     private EditText minFinalEdit;
     /** 推論に使う最大スレッド数の 入力フィールド */
     private EditText maxThreadsEdit;
-    private SwitchCompat noContextSwitch;
-    private SwitchCompat timestampSwitch;
-    private SwitchCompat useGpuSwitch;
+    private SwitchCompat vadSwitch;
+    private EditText vadThresholdEdit;
+    private EditText sileroVadThresholdEdit;
+    private SwitchCompat translateSwitch;
+    private EditText promptEdit;
     private SwitchCompat audioRecordingSwitch;
     private SwitchCompat autoRetranscribeSwitch;
     private TextView statsText;
@@ -51,7 +54,7 @@ public class WhisperSettingsActivity extends AppCompatActivity {
     protected void onCreate(final @Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         store = new WhisperSettingsStore(this);
-        setTitle("Whisper 設定");
+        setTitle("音声認識設定");
         setContentView(createContentView());
         bindSettings(store.load());
         refreshStats();
@@ -77,7 +80,7 @@ public class WhisperSettingsActivity extends AppCompatActivity {
                 ScrollView.LayoutParams.WRAP_CONTENT
         ));
         // タイトル
-        final TextView title = titleText("Whisper 設定");
+        final TextView title = titleText("音声認識設定");
         root.addView(title);
         root.addView(descriptionText("録音中の文字起こしに使うモデルと推論パラメータを変更します。"));
 
@@ -93,7 +96,10 @@ public class WhisperSettingsActivity extends AppCompatActivity {
         modelSpinner.setAdapter(modelAdapter);
         root.addView(modelSpinner, fullWidthParams());
         root.addView(descriptionText(
-                "モデルパスからWhisper.cppまたはCTranslate2を自動選択します。"
+                "モデル選択はリアルタイム推論で使うCTranslate2モデルへ適用されます。"
+        ));
+        root.addView(descriptionText(
+                "録音中は選択したCTranslate2モデル、音声ファイルと録音全体の再推論は対応するWhisper.cppモデルを使います。"
         ));
 
         // 設定の入力フィールド
@@ -104,9 +110,30 @@ public class WhisperSettingsActivity extends AppCompatActivity {
         minFinalEdit = addEditRow(root, "停止時の最小 ms", "例: 1000", InputType.TYPE_CLASS_NUMBER);
         maxThreadsEdit = addEditRow(root, "最大スレッド数", "1-8", InputType.TYPE_CLASS_NUMBER);
 
-        noContextSwitch = addSwitchRow(root, "前回文脈を使わない", "リアルタイム推論では安定しやすい設定です。", true);
-        timestampSwitch = addSwitchRow(root, "Whisper 内部タイムスタンプ出力", "通常はオフのままで十分です。", false);
-        useGpuSwitch = addSwitchRow(root,"推論にGPUを使う","機種によっては対応していません",false);
+        vadSwitch = addSwitchRow(root, "VAD（無音除外）を使う",
+                "リアルタイム推論ではCTranslate2、ファイル・録音全体の推論ではSilero VADを使います。", true);
+        vadThresholdEdit = addEditRow(root, "CTranslate2 無音確率閾値", "0.0-1.0（例: 0.6）",
+                InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        sileroVadThresholdEdit = addEditRow(root, "Silero VAD 発話確率閾値", "0.0-1.0（例: 0.5）",
+                InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        root.addView(descriptionText(
+                "Sileroは確率が閾値以上の区間を発話として残します。後半が欠落する場合は値を下げてください。"
+        ));
+
+        root.addView(sectionText("翻訳とプロンプト"));
+        translateSwitch = addSwitchRow(root, "英語へ翻訳する",
+                "入力言語を自動検出し、Whisperが対応する英語へ翻訳します。", false);
+        root.addView(labelText("プロンプト"));
+        promptEdit = new EditText(this);
+        promptEdit.setHint("例: 専門用語: CTranslate2、岐阜大学");
+        promptEdit.setSingleLine(false);
+        promptEdit.setMinLines(3);
+        promptEdit.setGravity(android.view.Gravity.TOP);
+        promptEdit.setFilters(new InputFilter[]{new InputFilter.LengthFilter(300)});
+        root.addView(promptEdit, fullWidthParams());
+        root.addView(descriptionText(
+                "最大224トークン（日本語は目安150～300文字）。各推論では直前結果の末尾100文字も文脈として自動追加します。"
+        ));
 
         root.addView(sectionText("音声記録"));
         audioRecordingSwitch = addSwitchRow(root, "音声記録を有効にする",
@@ -229,9 +256,11 @@ public class WhisperSettingsActivity extends AppCompatActivity {
         overlapEdit.setText(String.valueOf(settings.overlapMs()));
         minFinalEdit.setText(String.valueOf(settings.minFinalMs()));
         maxThreadsEdit.setText(String.valueOf(settings.maxThreads()));
-        noContextSwitch.setChecked(settings.noContext());
-        timestampSwitch.setChecked(settings.printTimestamps());
-        useGpuSwitch.setChecked(settings.useGpu());
+        vadSwitch.setChecked(settings.vadEnabled());
+        vadThresholdEdit.setText(String.valueOf(settings.vadThreshold()));
+        sileroVadThresholdEdit.setText(String.valueOf(settings.sileroVadThreshold()));
+        translateSwitch.setChecked(settings.translateToEnglish());
+        promptEdit.setText(settings.prompt());
         audioRecordingSwitch.setChecked(settings.audioRecordingEnabled());
         autoRetranscribeSwitch.setEnabled(settings.audioRecordingEnabled());
         autoRetranscribeSwitch.setChecked(settings.autoRetranscribeEnabled());
@@ -252,17 +281,24 @@ public class WhisperSettingsActivity extends AppCompatActivity {
                 parseInt(overlapEdit, WhisperSettings.DEFAULT_OVERLAP_MS),
                 parseInt(minFinalEdit, WhisperSettings.DEFAULT_MIN_FINAL_MS),
                 parseInt(maxThreadsEdit, WhisperSettings.DEFAULT_MAX_THREADS),
-                noContextSwitch.isChecked(),
-                timestampSwitch.isChecked(),
-                useGpuSwitch.isChecked(),
-                model.usesCTranslate2(),
+                false,
+                false,
+                false,
                 audioRecordingSwitch.isChecked(),
-                autoRetranscribeSwitch.isChecked()
+                autoRetranscribeSwitch.isChecked(),
+                vadSwitch.isChecked(),
+                parseFloat(vadThresholdEdit, WhisperSettings.DEFAULT_VAD_THRESHOLD),
+                translateSwitch.isChecked(),
+                promptEdit.getText().toString(),
+                parseFloat(
+                        sileroVadThresholdEdit,
+                        WhisperSettings.DEFAULT_SILERO_VAD_THRESHOLD
+                )
         );
         store.save(settings);
         bindSettings(settings);
         refreshStats();
-        Toast.makeText(this, "Whisper 設定を保存しました", Toast.LENGTH_SHORT).show();
+        Toast.makeText(this, "音声認識設定を保存しました", Toast.LENGTH_SHORT).show();
     }
 
     /**
@@ -318,6 +354,20 @@ public class WhisperSettingsActivity extends AppCompatActivity {
     private int parseInt(@NonNull final EditText editText, final int fallback) {
         try {
             return Integer.parseInt(editText.getText().toString().trim());
+        } catch (NumberFormatException e) {
+            return fallback;
+        }
+    }
+
+    /**
+     * 入力欄をfloatへ変換します。
+     * @param editText 入力欄。例: 内容が{@code "0.6"}の欄
+     * @param fallback 変換失敗時の値。例: {@code 0.6f}
+     * @return 変換値。例: {@code 0.6f}。例外は外へ送出しません
+     */
+    private float parseFloat(@NonNull final EditText editText, final float fallback) {
+        try {
+            return Float.parseFloat(editText.getText().toString().trim());
         } catch (NumberFormatException e) {
             return fallback;
         }

@@ -4,18 +4,12 @@ import android.util.Log;
 
 import androidx.annotation.NonNull;
 
-import org.jetbrains.annotations.Contract;
-
 import java.util.Arrays;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.TimeUnit;
 
 import Utils.Pool.ObjectPool;
-import Utils.ScopableUtility;
-import Utils.StringPool.PooledStringBuilder;
 import Utils.StringPool.StringBufferBuilderPool;
-import CTranslate2.CTranslate2Bridge;
-import Whisper.WhisperBridge;
 import events.SystemEventHub;
 import events.Threading.ThreadStoppedEvent;
 import events.Whisper.WhisperTranscriptionEvent;
@@ -23,7 +17,7 @@ import events.Whisper.WhisperTranscriptionTag;
 import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.WhisperSettings;
 
 /**
- * 録音スレッドから受け取った音声チャンクを、別スレッドで Whisper.cpp に渡すクラスです。
+ * 録音スレッドから受け取った音声チャンクを、CTranslate2専用workerへ渡すクラスです。
  *
  * <p>モデルは worker スレッド開始時に一度だけ読み込み、録音中は {@link #submit(float[], int)}
  * で渡された PCM を一定時間ごとにまとめて推論します。推論結果は
@@ -41,9 +35,6 @@ public class WhisperTranscriptionWorker implements Runnable {
 
     /** Whisper モデルファイルの実ファイルパスです。 */
     private final String modelPath;
-
-    /** whisper.cpp内蔵VADが読み込むモデルファイルの実ファイルパスです。 */
-    private final String vadModelPath;
 
     /** 録音開始ごとに作られる session ID です。 */
     private final String sessionId;
@@ -97,12 +88,6 @@ public class WhisperTranscriptionWorker implements Runnable {
 
     /** Whisper 推論を実行している Java スレッドです。 */
     private Thread workerThread;
-
-    /** native 側の Whisper context ハンドルです。 */
-    private long context;
-
-    /** CTranslate2有効時のモデルハンドルです。 */
-    private CTranslate2Bridge cTranslate2Bridge;
 
     /** 同じ録音 session 内で発行する推論結果番号です。 */
     private int sequence;
@@ -186,7 +171,6 @@ public class WhisperTranscriptionWorker implements Runnable {
             final WhisperSettings settings
     ) {
         this.modelPath = modelPath;
-        this.vadModelPath = vadModelPath;
         this.sessionId = sessionId;
         this.stopEventId = StringBufferBuilderPool.Join("", sessionId, ":whisper");
         this.settings = settings == null ? WhisperSettings.defaultSettings() : settings;
@@ -301,13 +285,7 @@ public class WhisperTranscriptionWorker implements Runnable {
     public void run() {
         final Thread currentThread = Thread.currentThread();
 
-        try {
-            context = openContext(settings);
-            if (context == 0) {
-                outputError(StringBufferBuilderPool.Join("", "model load failed: ", modelPath));
-                return;
-            }
-
+        try(CTranslate2TranscriptionWorker cTranslate2Worker = new CTranslate2TranscriptionWorker(modelPath, settings)) {
             while (running && !currentThread.isInterrupted()) {
                 //　キューに溜まったデータを取得
                 final FloatAudioBuffer chunk = audioQueue.poll(200, TimeUnit.MILLISECONDS);
@@ -317,28 +295,20 @@ public class WhisperTranscriptionWorker implements Runnable {
                     releaseAudioBuffer(chunk);
                     // 一定以上ある場合は推論
                     while (pendingAudio.size() >= windowSamples && !currentThread.isInterrupted()) {
-                        transcribeNextWindow(false);
+                        transcribeNextWindow(cTranslate2Worker,false);
                     }
                 }
                 if (beginTerminationIfDrained()) {
                     break;
                 }
             }
-            transcribeRemainingAudio(currentThread);
+            transcribeRemainingAudio(cTranslate2Worker,currentThread);
         } catch (InterruptedException e) {
             currentThread.interrupt();
         } catch (Exception e) {
             Log.e(TAG, "Whisper worker error", e);
             outputError(e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage());
         } finally {
-            if (cTranslate2Bridge != null) {
-                cTranslate2Bridge.close();
-                cTranslate2Bridge = null;
-                context = 0;
-            } else if (context != 0) {
-                WhisperBridge.freeContext(context);
-                context = 0;
-            }
             // バッファクリア
             pendingAudio.clear();
             running = false;
@@ -354,12 +324,12 @@ public class WhisperTranscriptionWorker implements Runnable {
      * 停止時にバッファへ残っている音声を最終結果として推論します。
      * @param currentThread worker 自身のスレッド
      */
-    private void transcribeRemainingAudio(@NonNull final Thread currentThread) {
+    private void transcribeRemainingAudio(@NonNull CTranslate2TranscriptionWorker cTranslate2Worker, @NonNull final Thread currentThread) {
         drainQueuedAudio();
         final boolean hasRequiredAudio = pendingAudio.size() >= minFinalSamples;
         final boolean hasForcedFinalAudio = finishAfterQueuedAudio && pendingAudio.size() > 0;
         if (!currentThread.isInterrupted() && (hasRequiredAudio || hasForcedFinalAudio)) {
-            transcribeNextWindow(true);
+            transcribeNextWindow(cTranslate2Worker,true);
         }
     }
 
@@ -399,32 +369,11 @@ public class WhisperTranscriptionWorker implements Runnable {
     }
 
     /**
-     * 選択された推論エンジンのnative contextを作成します。
-     * @param settings 推論設定。例: {@code WhisperSettings.defaultSettings()}
-     * @return 初期化成功時は0以外。例: {@code 1L}
-     * @throws IllegalStateException CTranslate2モデルを読み込めない場合
-     */
-    private long openContext(@NonNull final WhisperSettings settings) {
-        if (settings.useCTranslate2()) {
-            cTranslate2Bridge = new CTranslate2Bridge(
-                    modelPath,
-                    settings.model().computeType(),
-                    Math.min(settings.maxThreads(),
-                            Math.max(1, Runtime.getRuntime().availableProcessors()))
-            );
-            return 1L;
-        }
-        final WhisperBridge.ContextParams params = WhisperBridge.defaultContextParams();
-        params.useGpu = settings.useGpu();
-        return WhisperBridge.initFromFile(modelPath, params);
-    }
-
-    /**
      * バッファから 1 窓分の音声を取り出して Whisper 推論を行います。
      *
      * @param finalResult 停止時の最終推論なら true
      */
-    private void transcribeNextWindow(boolean finalResult) {
+    private void transcribeNextWindow(@NonNull CTranslate2TranscriptionWorker cTranslate2Worker, final boolean finalResult) {
         final int sampleCount = finalResult
                 ? pendingAudio.size()
                 : windowSamples;
@@ -434,7 +383,7 @@ public class WhisperTranscriptionWorker implements Runnable {
 
         final long startedAt = System.nanoTime();
         Log.d(TAG,"start transcription");
-        final TranscriptionResult result = transcribe(samples);
+        final TranscriptionWorkerResult result = cTranslate2Worker.transcribe(samples);
         final long processingTimeMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt);
 
         Log.d(TAG, result.text);
@@ -459,96 +408,6 @@ public class WhisperTranscriptionWorker implements Runnable {
         processedSamples += discardSamples;
     }
 
-    /**
-     * 指定された PCM を Whisper.cpp へ渡し、文字起こし本文と話者変化フラグを取得します。
-     *
-     * @param samples 16kHz・モノラル・float PCM
-     * @return 文字起こし結果
-     */
-    @NonNull
-    private TranscriptionResult transcribe(@NonNull final float[] samples) {
-        if (settings.useCTranslate2()) {
-            return new TranscriptionResult(
-                    cTranslate2Bridge.transcribe(samples, settings.language()),
-                    false
-            );
-        }
-        final WhisperBridge.FullParams params =
-                WhisperBridge.defaultFullParams(WhisperBridge.SAMPLING_GREEDY);
-        params.printProgress = false;
-        params.printSpecial = false;
-        params.printRealtime = false;
-        params.printTimestamps = settings.printTimestamps();
-        params.noContext = settings.noContext();
-        params.language = settings.language();
-        params.nThreads = Math.min(
-                settings.maxThreads(),
-                Math.max(1, Runtime.getRuntime().availableProcessors())
-        );
-        if (vadModelPath != null && !vadModelPath.trim().isEmpty()) {
-            WhisperVadConfig.enable(params, vadModelPath);
-        }
-
-        final int result = WhisperBridge.full(context, params, samples);
-        if (result != 0) {
-            return TranscriptionResult.defaultValue;
-        }
-
-        return collectTranscriptionResult();
-    }
-    /**
-     * 指定された PCM を Whisper.cpp へ渡し、文字起こし本文と話者変化フラグを取得します。
-     *
-     * @param samples 16kHz・モノラル・float PCM
-     * @return 文字起こし結果
-     */
-    @NonNull
-    private TranscriptionResult transcribeParallel(@NonNull final float[] samples) {
-        final WhisperBridge.FullParams params =
-                WhisperBridge.defaultFullParams(WhisperBridge.SAMPLING_GREEDY);
-        params.printProgress = false;
-        params.printSpecial = false;
-        params.printRealtime = false;
-        params.printTimestamps = settings.printTimestamps();
-        params.noContext = settings.noContext();
-        params.language = settings.language();
-        params.nThreads = Math.min(
-                settings.maxThreads(),
-                Math.max(1, Runtime.getRuntime().availableProcessors())
-        );
-        if (vadModelPath != null && !vadModelPath.trim().isEmpty()) {
-            WhisperVadConfig.enable(params, vadModelPath);
-        }
-
-        final int result = WhisperBridge.fullParallel(context, params, samples,params.nThreads);
-        if (result != 0) {
-            return TranscriptionResult.defaultValue;
-        }
-
-        return collectTranscriptionResult();
-    }
-
-    /**
-     * Whisper.cpp の segment API から本文と話者変化フラグを回収します。
-     *
-     * @return 文字起こし結果
-     */
-    @NonNull
-    @Contract(" -> new")
-    private TranscriptionResult collectTranscriptionResult() {
-        final int segmentCount = WhisperBridge.fullNSegments(context);
-        try(PooledStringBuilder sb = ScopableUtility.getBuilder()){
-            boolean speakerChanged = false;
-            for (int i = 0; i < segmentCount; i++) {
-                sb.append(WhisperBridge.fullSegmentText(context, i));
-                speakerChanged |= WhisperBridge.fullSegmentSpeakerTurnNext(context, i);
-            }
-            return new TranscriptionResult(
-                    sb.toString(),
-                    speakerChanged
-            );
-        }
-    }
 
     /**
      * Whisper の推論結果をイベントとして送信します。
@@ -713,20 +572,4 @@ public class WhisperTranscriptionWorker implements Runnable {
         }
     }
 
-    /** 1 回の Whisper 推論から取り出した結果です。 */
-    private static class TranscriptionResult {
-        /** 文字起こし本文です。 */
-        final String text;
-
-        /** この結果の直後に話者が変わった可能性がある場合 true です。 */
-        final boolean speakerChanged;
-        /**
-         * デフォルト値です。
-         */
-        public static TranscriptionResult defaultValue = new TranscriptionResult("",false);
-        TranscriptionResult(String text, boolean speakerChanged) {
-            this.text = text == null ? "" : text;
-            this.speakerChanged = speakerChanged;
-        }
-    }
 }

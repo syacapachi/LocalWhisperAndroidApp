@@ -18,7 +18,9 @@ public class WhisperSettingsTest {
         final WhisperSettings settings = WhisperSettings.defaultSettings();
         assertFalse(settings.audioRecordingEnabled());
         assertFalse(settings.autoRetranscribeEnabled());
-        assertFalse(settings.useCTranslate2());
+        assertTrue(settings.useCTranslate2());
+        assertTrue(settings.vadEnabled());
+        assertEquals(0.5f, settings.sileroVadThreshold(), 0.0f);
     }
 
     /** 音声保存OFFなら自動再推論指定が強制的にOFFになることを確認します。 */
@@ -35,7 +37,8 @@ public class WhisperSettingsTest {
         final WhisperSettings settings = createSettings(true, true);
         assertTrue(settings.audioRecordingEnabled());
         assertTrue(settings.autoRetranscribeEnabled());
-        assertTrue(settings.withModel(WhisperModelOption.SMALL).autoRetranscribeEnabled());
+        assertTrue(settings.withModel(WhisperModelOption.CT2_MEDIUM_INT8)
+                .autoRetranscribeEnabled());
     }
 
     /** モデル選択を引数例CT2_BASE_INT8へ変えると、戻り値の推論系がCTranslate2になることを確認します。 */
@@ -48,13 +51,30 @@ public class WhisperSettingsTest {
         assertEquals("int8", settings.model().computeType());
     }
 
-    /** 量子化モデルを引数相当として選び、戻り値のパスとWhisper.cpp系を確認します。例外はありません。 */
+    /** medium量子化モデルのassetsパスとCTranslate2推論系を確認します。例外はありません。 */
     @Test
-    public void quantizedGgmlModelsAreSelectable() {
-        assertEquals("ggml-base_q8_0.bin", WhisperModelOption.BASE_Q8_0.assetName());
-        assertEquals("ggml-small_q8_0.bin", WhisperModelOption.SMALL_Q8_0.assetName());
-        assertEquals(WhisperInferenceEngine.WHISPER_CPP,
-                WhisperModelOption.BASE_Q8_0.engine());
+    public void mediumInt8ModelIsSelectable() {
+        assertEquals("ctranslate2/openai-whisper-medium-int8",
+                WhisperModelOption.CT2_MEDIUM_INT8.assetName());
+        assertEquals(WhisperInferenceEngine.CTRANSLATE2,
+                WhisperModelOption.CT2_MEDIUM_INT8.engine());
+        assertEquals("ggml-small_q8_0.bin",
+                WhisperModelOption.CT2_MEDIUM_INT8.whisperCppAssetName());
+    }
+
+    /** Silero VAD閾値の引数例{@code 1.4f}が上限へ補正されることを確認します。 */
+    @Test
+    public void sileroVadThresholdIsClamped() {
+        final WhisperSettings defaults = WhisperSettings.defaultSettings();
+        final WhisperSettings settings = new WhisperSettings(
+                defaults.model(), defaults.language(), defaults.windowMs(), defaults.overlapMs(),
+                defaults.minFinalMs(), defaults.maxThreads(), defaults.noContext(),
+                defaults.printTimestamps(), defaults.useGpu(), defaults.useCTranslate2(),
+                defaults.audioRecordingEnabled(), defaults.autoRetranscribeEnabled(),
+                defaults.vadEnabled(), defaults.vadThreshold(), defaults.translateToEnglish(),
+                defaults.prompt(), 1.4f
+        );
+        assertEquals(1.0f, settings.sileroVadThreshold(), 0.0f);
     }
 
     /**

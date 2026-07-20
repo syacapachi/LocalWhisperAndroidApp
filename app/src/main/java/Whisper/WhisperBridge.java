@@ -1,5 +1,7 @@
 package Whisper;
 
+import androidx.annotation.NonNull;
+
 import Utils.ScopableUtility;
 import Utils.StringPool.PooledStringBuilder;
 
@@ -81,6 +83,7 @@ public class WhisperBridge {
      * @param pcmData 16kHz・モノラル・float PCM
      * @return 文字起こし結果。失敗時は空文字またはエラーメッセージ
      */
+    @NonNull
     public static String transcribe(final String modelPath, final float[] pcmData) {
         long context = initFromFile(modelPath, defaultContextParams());
         if (context == 0) {
@@ -712,6 +715,7 @@ public class WhisperBridge {
      * @param context native context ハンドル
      * @return セグメント配列
      */
+    @NonNull
     public static Segment[] getSegments(long context) {
         final int count = fullNSegments(context);
         final Segment[] segments = new Segment[count];
@@ -732,6 +736,7 @@ public class WhisperBridge {
      * @param state native state ハンドル
      * @return セグメント配列
      */
+    @NonNull
     public static Segment[] getSegmentsFromState(long state) {
         final int count = fullNSegmentsFromState(state);
         final Segment[] segments = new Segment[count];
@@ -749,6 +754,7 @@ public class WhisperBridge {
      * @param context native context ハンドル
      * @return 文字起こし結果全体
      */
+    @NonNull
     public static String getText(long context) {
         final int count = fullNSegments(context);
         try(PooledStringBuilder sb = ScopableUtility.getBuilder()) {
@@ -766,6 +772,7 @@ public class WhisperBridge {
      * @param context native context ハンドル
      * @return モデル情報
      */
+    @NonNull
     public static ModelInfo getModelInfo(long context) {
         final ModelInfo info = new ModelInfo();
         info.nLen = nLen(context);
@@ -792,6 +799,7 @@ public class WhisperBridge {
     /**
      * context の segment API から Java 用 {@link Segment} を組み立てます。
      */
+    @NonNull
     private static Segment collectSegment(long context, int segmentIndex) {
         final Segment segment = new Segment();
         segment.index = segmentIndex;
@@ -815,6 +823,7 @@ public class WhisperBridge {
     /**
      * state の segment API から Java 用 {@link Segment} を組み立てます。
      */
+    @NonNull
     private static Segment collectSegmentFromState(long state, int segmentIndex) {
         final Segment segment = new Segment();
         segment.index = segmentIndex;

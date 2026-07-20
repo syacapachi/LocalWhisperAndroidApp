@@ -33,7 +33,7 @@ public final class RecordScreenBinder {
         /**
          * モデルRadioGroupで選択されたモデルを通知します。
          *
-         * @param model 選択されたモデル。例: {@code WhisperModelOption.BASE}
+         * @param model 選択されたモデル。例: {@code WhisperModelOption.CT2_SMALL_INT8}
          */
         void onModelSelected(WhisperModelOption model);
     }
@@ -172,7 +172,7 @@ public final class RecordScreenBinder {
     /**
      * モデルassetsパスのドロップダウンと変更処理を設定します。
      *
-     * @param currentModel 現在のモデル。例: {@code WhisperModelOption.BASE}
+     * @param currentModel 現在のモデル。例: {@code WhisperModelOption.CT2_SMALL_INT8}
      * @param listener 選択変更通知先。例: {@code this::onModelSelected}
      */
     public void bindModelSelector(
@@ -211,7 +211,7 @@ public final class RecordScreenBinder {
     /**
      * モデルパスドロップダウンの選択状態を画面へ反映します。
      *
-     * @param model 選択状態にするモデル。例: {@code WhisperModelOption.SMALL}
+     * @param model 選択状態にするモデル。例: {@code WhisperModelOption.CT2_MEDIUM_INT8}
      */
     public void syncModelSelector(@NonNull final WhisperModelOption model) {
         if (controls.modelSpinner == null) {
