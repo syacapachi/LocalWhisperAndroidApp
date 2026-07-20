@@ -17,6 +17,7 @@ import androidx.appcompat.app.AppCompatActivity;
 
 import java.util.function.Consumer;
 
+import jp.ac.gifu_u.programmingjissen2.FileImport.ExternalMediaIntentReader;
 import jp.ac.gifu_u.programmingjissen2.Record.RecordActivity;
 import jp.ac.gifu_u.programmingjissen2.ResultUI.TranscriptionListActivity;
 import jp.ac.gifu_u.programmingjissen2.ResultUI.TranscriptionTextListActivity;
@@ -121,10 +122,24 @@ public class MainActivity extends AppCompatActivity {
                 whisperBenchmarkText
         ));
         recordActivity.setProjectionPermissionLauncher(mediaProjectionPermissionLauncher);
+        handleExternalMediaIntent(getIntent());
 
         //イベントが親クラスに行くかの確認。
         //SampleTest.CheckTest();
     }
+
+    /**
+     * 起動済み画面へ届いた「アプリで開く」Intentを処理します。
+     *
+     * @param intent 外部アプリから届いたIntent。例: {@code new Intent(Intent.ACTION_VIEW, uri)}
+     */
+    @Override
+    protected void onNewIntent(@NonNull final Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        handleExternalMediaIntent(intent);
+    }
+
     //画面が見えるタイミングで呼ばれる
     @Override
     protected void onStart(){
@@ -210,6 +225,23 @@ public class MainActivity extends AppCompatActivity {
             // 一時許可だけで読める provider もあるため、永続化失敗は処理継続します。
         }
         recordActivity.TranscribeAudioFile(uri);
+    }
+
+    /**
+     * 外部の「アプリで開く」Intentから音声・動画URIを取り出して文字起こしを開始します。
+     *
+     * @param intent 解析対象。例: {@code new Intent(Intent.ACTION_VIEW, uri).setType("audio/mpeg")}
+     * @return 対応する外部メディアを受理した場合true。例: {@code true}
+     */
+    private boolean handleExternalMediaIntent(final Intent intent) {
+        if (recordActivity == null) {
+            return false;
+        }
+        final Uri uri = ExternalMediaIntentReader.readSupportedUri(intent);
+        if (uri == null) {
+            return false;
+        }
+        return recordActivity.TranscribeAudioFile(uri);
     }
 
     /**

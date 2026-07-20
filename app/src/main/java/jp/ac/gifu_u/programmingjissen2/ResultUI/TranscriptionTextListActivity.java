@@ -19,6 +19,7 @@ import java.util.Date;
 import java.util.Locale;
 
 import Utils.StringPool.StringBufferBuilderPool;
+import jp.ac.gifu_u.programmingjissen2.Share.TranscriptionTextShareIntentFactory;
 import jp.ac.gifu_u.programmingjissen2.TranscriptionText.TranscriptionTextRepository;
 
 /** 保存済みの整形済み文字起こしテキストを表示する画面です。 */
@@ -29,6 +30,9 @@ public class TranscriptionTextListActivity extends AppCompatActivity {
     private LinearLayout listContainer;
     private TextView statusText;
     private TextView previewText;
+    private Button shareButton;
+    private File selectedFile;
+    private String selectedText;
 
     @Override
     protected void onCreate(@Nullable final Bundle savedInstanceState) {
@@ -77,6 +81,12 @@ public class TranscriptionTextListActivity extends AppCompatActivity {
         previewText.setTextIsSelectable(true);
         root.addView(previewText);
 
+        shareButton = new Button(this);
+        shareButton.setText("選択中の文字起こしを共有");
+        shareButton.setEnabled(false);
+        shareButton.setOnClickListener((view) -> shareSelectedText());
+        root.addView(shareButton);
+
         final Button closeButton = new Button(this);
         closeButton.setText("閉じる");
         closeButton.setOnClickListener((view) -> finish());
@@ -91,6 +101,9 @@ public class TranscriptionTextListActivity extends AppCompatActivity {
         final File[] files = TranscriptionTextRepository.listTextFiles(this);
         listContainer.removeAllViews();
         if (files.length == 0) {
+            selectedFile = null;
+            selectedText = null;
+            shareButton.setEnabled(false);
             statusText.setText("保存済みの文字起こしテキストはまだありません。");
             previewText.setText("録音停止または音声ファイル文字起こし完了後に保存されます。");
             return;
@@ -124,11 +137,30 @@ public class TranscriptionTextListActivity extends AppCompatActivity {
      */
     private void openFile(@NonNull final File file) {
         try {
-            previewText.setText(TranscriptionTextRepository.readText(file));
+            selectedText = TranscriptionTextRepository.readText(file);
+            selectedFile = file;
+            previewText.setText(selectedText);
+            shareButton.setEnabled(!selectedText.isEmpty());
         } catch (IOException e) {
+            selectedFile = null;
+            selectedText = null;
+            shareButton.setEnabled(false);
             Toast.makeText(this, "テキストを読み込めませんでした", Toast.LENGTH_SHORT).show();
             previewText.setText(e.getMessage());
         }
+    }
+
+    /** 選択中の文字起こし本文をAndroid共有シートへ渡します。 */
+    private void shareSelectedText() {
+        if (selectedFile == null || selectedText == null || selectedText.isEmpty()) {
+            Toast.makeText(this, "共有する文字起こしを選択してください", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        startActivity(TranscriptionTextShareIntentFactory.createChooser(
+                this,
+                selectedFile,
+                selectedText
+        ));
     }
 
     /**
