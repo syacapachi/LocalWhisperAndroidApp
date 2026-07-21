@@ -67,7 +67,10 @@ public class TranscriptionJsonWorker implements Runnable {
         }
 
         running = true;
-        workerThread = new Thread(this, "TranscriptionJsonWorker");
+        workerThread = StringBufferBuilderPool.NewThreadWithPoolCleanup(
+                this,
+                "TranscriptionJsonWorker"
+        );
         workerThread.start();
     }
 

@@ -1,9 +1,8 @@
 package Utils.StringPool;
 
-import android.util.Log;
-
 import androidx.annotation.NonNull;
 
+import java.util.Objects;
 import java.util.function.Consumer;
 
 import Utils.Pool.ObjectPool;
@@ -18,16 +17,8 @@ public final class StringBufferBuilderPool {
      */
     private static final int MAX_CAPACITY = 4096;
 
-    /** 再利用する {@link StringBuilder} を保持するプールです。 */
-    private static final ObjectPool<StringBuilder> builderPool
-            = new ObjectPool<>(
-            StringBuilder::new,
-            null,
-            StringBufferBuilderPool::ClearBuilder,
-            null,
-            10,
-            100
-    );
+    /** 現在のスレッドだけが利用する {@link StringBuilder} プールです。 */
+    private static final ThreadLocal<ObjectPool<StringBuilder>> builderPool = new ThreadLocal<>();
 
     private StringBufferBuilderPool() {
     }
@@ -42,13 +33,35 @@ public final class StringBufferBuilderPool {
     }
 
     /**
+     * 現在のスレッド用プールを取得し、未作成なら初期化します。
+     *
+     * @return 呼び出しスレッド専用のプール。例: {@code ObjectPool<StringBuilder>}
+     */
+    @NonNull
+    private static ObjectPool<StringBuilder> GetCurrentThreadPool() {
+        ObjectPool<StringBuilder> pool = builderPool.get();
+        if (pool == null) {
+            pool = new ObjectPool<>(
+                    StringBuilder::new,
+                    null,
+                    StringBufferBuilderPool::ClearBuilder,
+                    null,
+                    2,
+                    100
+            );
+            builderPool.set(pool);
+        }
+        return pool;
+    }
+
+    /**
      * プールから {@link StringBuilder} を取得します。
      *
      * @return 使用可能な builder
      */
     @NonNull
     public static StringBuilder GetBuilder() {
-        return builderPool.getOrCreate();
+        return GetCurrentThreadPool().getOrCreate();
     }
 
     /**
@@ -60,7 +73,58 @@ public final class StringBufferBuilderPool {
         if (builder.capacity() > MAX_CAPACITY) {
             return;
         }
-        builderPool.releaseOrDelete(builder);
+        GetCurrentThreadPool().releaseOrDelete(builder);
+    }
+
+    /**
+     * 現在のスレッドが保持する全builderを破棄し、ThreadLocalからプールを外します。
+     * スレッド終了用ラッパーのfinallyから呼び出すことで、例外終了時にも解放されます。
+     *
+     * @return なし。例: {@code StringBufferBuilderPool.ClearCurrentThreadPool();}
+     */
+    public static void ClearCurrentThreadPool() {
+        final ObjectPool<StringBuilder> pool = builderPool.get();
+        if (pool != null) {
+            pool.clearPool();
+            builderPool.remove();
+        }
+    }
+
+    /**
+     * Runnable終了時に現在スレッドのStringBuilderプールを必ず破棄する処理で包みます。
+     *
+     * @param action 実行対象。例: {@code worker::run}
+     * @return finallyでプールを破棄するRunnable。例: {@code Runnable cleanupAction}
+     * @throws NullPointerException actionがnullの場合
+     */
+    @NonNull
+    public static Runnable WrapWithThreadPoolCleanup(@NonNull final Runnable action) {
+        Objects.requireNonNull(action, "action");
+        return () -> {
+            try {
+                action.run();
+            } finally {
+                ClearCurrentThreadPool();
+            }
+        };
+    }
+
+    /**
+     * 終了時にStringBuilderプールを必ず破棄するワーカースレッドを作成します。
+     * 呼び出し側は戻り値へ {@link Thread#start()} を呼びます。
+     *
+     * @param action スレッドで実行する処理。例: {@code worker::run}
+     * @param name スレッド名。例: {@code "WhisperTranscriptionWorker"}
+     * @return 未開始のThread。例: {@code Thread[WhisperTranscriptionWorker]}
+     * @throws NullPointerException actionまたはnameがnullの場合
+     */
+    @NonNull
+    public static Thread NewThreadWithPoolCleanup(
+            @NonNull final Runnable action,
+            @NonNull final String name
+    ) {
+        Objects.requireNonNull(name, "name");
+        return new Thread(WrapWithThreadPoolCleanup(action), name);
     }
 
     /**

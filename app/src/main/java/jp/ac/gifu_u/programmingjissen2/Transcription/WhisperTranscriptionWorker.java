@@ -195,7 +195,10 @@ public class WhisperTranscriptionWorker implements Runnable {
         acceptingAudio = true;
         drainStopRequested = false;
         terminating = false;
-        workerThread = new Thread(this, "WhisperTranscriptionWorker");
+        workerThread = StringBufferBuilderPool.NewThreadWithPoolCleanup(
+                this,
+                "WhisperTranscriptionWorker"
+        );
         workerThread.start();
     }
 

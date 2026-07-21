@@ -172,7 +172,10 @@ public class AudioRecordWorker implements Runnable {
         }
 
         running = true;
-        workerThread = new Thread(this, "AudioRecordThread");
+        workerThread = StringBufferBuilderPool.NewThreadWithPoolCleanup(
+                this,
+                "AudioRecordThread"
+        );
         workerThread.start();
         return true;
     }

@@ -74,7 +74,10 @@ public final class WhisperFileTranscriptionWorker implements Runnable {
         if (isAlive()) {
             return false;
         }
-        workerThread = new Thread(this, "WhisperFileTranscriptionWorker");
+        workerThread = StringBufferBuilderPool.NewThreadWithPoolCleanup(
+                this,
+                "WhisperFileTranscriptionWorker"
+        );
         workerThread.start();
         return true;
     }

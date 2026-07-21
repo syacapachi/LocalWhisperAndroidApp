@@ -279,7 +279,10 @@ public class BackgroundWhisperService extends Service {
 
     /** 録音開始処理を専用スレッドへ渡します。 */
     private void startRecordingInternalAsync() {
-        new Thread(this::startRecordingInternal, "BackgroundWhisperStart").start();
+        StringBufferBuilderPool.NewThreadWithPoolCleanup(
+                this::startRecordingInternal,
+                "BackgroundWhisperStart"
+        ).start();
     }
 
     /** マイク、推論worker、必要ならWAV保存先を準備して録音を開始します。 */
