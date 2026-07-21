@@ -67,6 +67,7 @@ public class BackgroundWhisperService extends Service {
     private WhisperForegroundNotification notificationController;
     private WhisperSettings settings;
     private String modelPath;
+    private String vadModelPath;
     private String recordingSessionId;
     private String inferenceSessionId;
     private String retranscriptionSessionId;
@@ -449,6 +450,7 @@ public class BackgroundWhisperService extends Service {
         inferenceSessionId = newSessionId("live-" + inferenceSequence++);
         transcriptionWorker = new WhisperTranscriptionWorker(
                 modelPath,
+                vadModelPath,
                 inferenceSessionId,
                 settings
         );
@@ -748,12 +750,15 @@ public class BackgroundWhisperService extends Service {
         projection.stop();
     }
 
-    /** @throws IOException 選択したCTranslate2モデルをassetsから準備できない場合 */
+    /** @throws IOException 選択したCTranslate2モデルまたはSilero VADをassetsから準備できない場合 */
     private void prepareModels() throws IOException {
         modelPath = MyUtils.prepareModelDirectory(
                 this,
                 settings.model().cTranslate2AssetDirectory()
         );
+        vadModelPath = settings.vadEnabled()
+                ? MyUtils.prepareModelPath(this, WhisperVadConfig.MODEL_ASSET_NAME)
+                : null;
     }
 
     /** 録音開始失敗時、先に起動した推論workerを排出停止します。 */

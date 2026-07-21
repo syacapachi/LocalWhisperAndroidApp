@@ -14,6 +14,7 @@
 #include "whisper-feature-extractor.h"
 #include "whisper-prompt-tokenizer.h"
 #include "whisper-token-decoder.h"
+#include "whisper-vad-filter.h"
 #include "../NativeAudio/pcm16-float-converter.h"
 
 namespace {
@@ -23,8 +24,10 @@ struct WhisperHandle {
   std::unique_ptr<app::ctranslate2_jni::WhisperPromptTokenizer> tokenizer;
   std::mutex inference_mutex;
   std::vector<float> pcm_samples;
+  std::vector<float> vad_samples;
   std::vector<float> mel_features;
   app::ctranslate2_jni::WhisperFeatureWorkspace feature_workspace;
+  app::ctranslate2_jni::WhisperVadContextPtr vad_context;
 };
 
 class JStringChars {
@@ -66,10 +69,12 @@ Java_CTranslate2_CTranslate2Bridge_create(
     jclass,
     jstring model_directory,
     jstring compute_type,
+    jstring vad_model_path,
     jint threads) {
   try {
     const JStringChars model_path(env, model_directory);
     const JStringChars compute(env, compute_type);
+    const JStringChars vad_path(env, vad_model_path);
     if (model_path.str().empty())
       throw std::invalid_argument("modelDirectory must not be empty");
     if (threads <= 0)
@@ -87,8 +92,13 @@ Java_CTranslate2_CTranslate2Bridge_create(
         config);
     handle->tokenizer =
         std::make_unique<app::ctranslate2_jni::WhisperPromptTokenizer>(model_path.str());
+    if (!vad_path.str().empty()) {
+      handle->vad_context =
+          app::ctranslate2_jni::create_whisper_vad_context(vad_path.str());
+    }
     const size_t n_mels = handle->model->n_mels();
     handle->pcm_samples.reserve(30 * 16000);
+    handle->vad_samples.reserve(30 * 16000);
     handle->mel_features.resize(n_mels * 3000);
     app::ctranslate2_jni::prepare_whisper_feature_workspace(
         n_mels, handle->feature_workspace);
@@ -138,9 +148,23 @@ Java_CTranslate2_CTranslate2Bridge_transcribe(
     if (env->ExceptionCheck())
       return nullptr;
 
+    const std::vector<float>* inference_samples = &handle->pcm_samples;
+    if (vad_enabled) {
+      if (!handle->vad_context)
+        throw std::runtime_error("Silero VAD is enabled but its model is not loaded");
+      const bool has_speech = app::ctranslate2_jni::collect_whisper_vad_speech(
+          handle->vad_context.get(),
+          handle->pcm_samples,
+          vad_threshold,
+          handle->vad_samples);
+      if (!has_speech)
+        return env->NewStringUTF("");
+      inference_samples = &handle->vad_samples;
+    }
+
     const size_t n_mels = handle->model->n_mels();
     app::ctranslate2_jni::make_whisper_features(
-        handle->pcm_samples,
+        *inference_samples,
         n_mels,
         handle->mel_features,
         handle->feature_workspace);
@@ -175,16 +199,12 @@ Java_CTranslate2_CTranslate2Bridge_transcribe(
     options.beam_size = static_cast<size_t>(std::max(1, beam_size));
     options.max_length = static_cast<size_t>(std::max(1, max_length));
     options.sampling_topk = 1;
-    options.return_scores = vad_enabled;
-    options.return_no_speech_prob = vad_enabled;
+    options.return_scores = false;
+    options.return_no_speech_prob = false;
 
     auto futures = handle->model->generate(features, std::move(prompts), options);
     const auto result = futures.at(0).get();
     if (result.sequences.empty())
-      return env->NewStringUTF("");
-    const float threshold = std::max(0.0f, std::min(1.0f, vad_threshold));
-    const bool low_text_probability = result.scores.empty() || result.scores.front() < -1.0f;
-    if (vad_enabled && result.no_speech_prob >= threshold && low_text_probability)
       return env->NewStringUTF("");
     const std::string text = app::ctranslate2_jni::decode_whisper_tokens(result.sequences[0]);
     return env->NewStringUTF(text.c_str());

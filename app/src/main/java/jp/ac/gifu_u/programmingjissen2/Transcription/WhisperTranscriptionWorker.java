@@ -37,6 +37,9 @@ public class WhisperTranscriptionWorker implements Runnable {
     /** Whisper モデルファイルの実ファイルパスです。 */
     private final String modelPath;
 
+    /** Silero VADモデルの実ファイルパスです。VAD無効時はnullです。 */
+    private final String vadModelPath;
+
     /** 録音開始ごとに作られる session ID です。 */
     private final String sessionId;
 
@@ -174,6 +177,7 @@ public class WhisperTranscriptionWorker implements Runnable {
             final WhisperSettings settings
     ) {
         this.modelPath = modelPath;
+        this.vadModelPath = vadModelPath;
         this.sessionId = sessionId;
         this.stopEventId = StringBufferBuilderPool.Join("", sessionId, ":whisper");
         this.settings = settings == null ? WhisperSettings.defaultSettings() : settings;
@@ -292,7 +296,8 @@ public class WhisperTranscriptionWorker implements Runnable {
     public void run() {
         final Thread currentThread = Thread.currentThread();
 
-        try(CTranslate2TranscriptionWorker cTranslate2Worker = new CTranslate2TranscriptionWorker(modelPath, settings)) {
+        try(CTranslate2TranscriptionWorker cTranslate2Worker =
+                    new CTranslate2TranscriptionWorker(modelPath, vadModelPath, settings)) {
             while (running && !currentThread.isInterrupted()) {
                 //　キューに溜まったデータを取得
                 final ShortAudioBuffer chunk = audioQueue.poll(200, TimeUnit.MILLISECONDS);

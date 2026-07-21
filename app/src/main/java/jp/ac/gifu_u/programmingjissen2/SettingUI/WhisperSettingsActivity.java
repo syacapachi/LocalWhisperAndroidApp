@@ -161,9 +161,9 @@ public class WhisperSettingsActivity extends AppCompatActivity {
         minFinalEdit = addEditRow(page, "停止時の最小 ms", "例: 1000", InputType.TYPE_CLASS_NUMBER);
         maxThreadsEdit = addEditRow(page, "最大スレッド数", "1-8", InputType.TYPE_CLASS_NUMBER);
 
-        vadSwitch = addSwitchRow(page, "CTranslate2 VAD（無音除外）を使う",
-                "no-speech確率で無音窓の結果を除外します。", true);
-        vadThresholdEdit = addEditRow(page, "無音確率閾値", "0.0-1.0（例: 0.6）",
+        vadSwitch = addSwitchRow(page, "Silero VAD（発話抽出）を使う",
+                "推論前に発話区間だけを抽出し、CTranslate2へ渡します。", true);
+        vadThresholdEdit = addEditRow(page, "Silero VAD 発話確率閾値", "0.0-1.0（例: 0.6）",
                 InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
 
         page.addView(sectionText("翻訳とプロンプト"));

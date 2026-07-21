@@ -20,11 +20,13 @@ public final class CTranslate2TranscriptionWorker implements AutoCloseable {
     /**
      * CTranslate2モデルを開きます。
      * @param modelDirectory 変換済みモデル。例: {@code "/data/.../openai-whisper-small-int8"}
+     * @param vadModelPath Silero VADモデル。無効時はnull。例: {@code "/data/.../ggml-silero-v6.2.0.bin"}
      * @param settings 推論設定。例: {@code WhisperSettings.defaultSettings()}
-     * @throws IllegalStateException モデルを読み込めない場合
+     * @throws IllegalStateException CTranslate2モデルまたはSilero VADモデルを読み込めない場合
      */
     public CTranslate2TranscriptionWorker(
             @NonNull final String modelDirectory,
+            final String vadModelPath,
             @NonNull final WhisperSettings settings
     ) {
         this.settings = settings;
@@ -35,6 +37,7 @@ public final class CTranslate2TranscriptionWorker implements AutoCloseable {
         bridge = new CTranslate2Bridge(
                 modelDirectory,
                 settings.model().computeType(),
+                vadModelPath,
                 threads
         );
     }

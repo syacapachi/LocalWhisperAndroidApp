@@ -82,7 +82,7 @@ public final class QuickStartTabView {
         content.addView(label("推論窓の大きさ（ms）"));
         windowEdit = numberEdit("例: 5000", false);
         content.addView(windowEdit, matchWrap());
-        content.addView(label("VADの閾値"));
+        content.addView(label("Silero VAD 発話確率閾値"));
         vadThresholdEdit = numberEdit("0.0～1.0（例: 0.6）", true);
         content.addView(vadThresholdEdit, matchWrap());
         recordAndRetranscribeSwitch = new SwitchCompat(activity);

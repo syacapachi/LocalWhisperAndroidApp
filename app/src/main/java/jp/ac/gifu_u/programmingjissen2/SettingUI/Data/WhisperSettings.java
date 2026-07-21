@@ -89,7 +89,7 @@ public final class WhisperSettings {
      * @param audioRecordingEnabled WAV保存ならtrue。例: {@code true}
      * @param autoRetranscribeEnabled 停止後の再推論ならtrue。例: {@code false}
      * @param vadEnabled CT2無音判定を使うならtrue。例: {@code true}
-     * @param vadThreshold 無音確率の閾値。例: {@code 0.6f}
+     * @param vadThreshold Silero VADの発話確率閾値。例: {@code 0.6f}
      * @param translateToEnglish 英語翻訳モードならtrue。例: {@code false}
      * @param prompt ユーザープロンプト。例: {@code "専門用語: CTranslate2"}
      */
@@ -131,7 +131,7 @@ public final class WhisperSettings {
      * @param audioRecordingEnabled WAV保存ならtrue。例: {@code true}
      * @param autoRetranscribeEnabled 停止後の再推論ならtrue。例: {@code false}
      * @param vadEnabled VADを使うならtrue。例: {@code true}
-     * @param vadThreshold CTranslate2の無音確率閾値。例: {@code 0.6f}
+     * @param vadThreshold CTranslate2前処理で使うSilero VADの発話確率閾値。例: {@code 0.6f}
      * @param translateToEnglish 英語翻訳モードならtrue。例: {@code false}
      * @param prompt ユーザープロンプト。例: {@code "専門用語: CTranslate2"}
      * @param sileroVadThreshold Sileroの発話確率閾値。例: {@code 0.5f}
@@ -174,7 +174,7 @@ public final class WhisperSettings {
      * @param audioRecordingEnabled WAV保存ならtrue。例: {@code true}
      * @param autoRetranscribeEnabled 終了後に一括再推論するならtrue。例: {@code true}
      * @param vadEnabled CTranslate2 VADを使うならtrue。例: {@code true}
-     * @param vadThreshold no-speech閾値。例: {@code 0.6f}
+     * @param vadThreshold Silero VADの発話確率閾値。例: {@code 0.6f}
      * @param translateToEnglish リアルタイム英語翻訳ならtrue。例: {@code false}
      * @param prompt リアルタイムinitial prompt。例: {@code "専門用語"}
      * @param sileroVadThreshold 旧保存値の互換引数。例: {@code 0.5f}
@@ -288,7 +288,7 @@ public final class WhisperSettings {
     /**
      * クイックスタートで変更できるリアルタイム設定を差し替えます。
      * @param newWindowMs 推論窓ms。例: {@code 5000}
-     * @param newVadThreshold CTranslate2 no-speech閾値。例: {@code 0.6f}
+     * @param newVadThreshold CTranslate2前処理のSilero VAD発話確率閾値。例: {@code 0.6f}
      * @param recordingEnabled WAVを保存するならtrue。例: {@code true}
      * @param retranscribeEnabled 録音終了後にWhisper.cppで再推論するならtrue。例: {@code true}
      * @return その他の設定を維持した新しい設定。例: {@code WhisperSettings}
