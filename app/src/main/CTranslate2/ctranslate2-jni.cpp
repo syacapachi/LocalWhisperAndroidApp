@@ -101,7 +101,7 @@ Java_CTranslate2_CTranslate2Bridge_create(
     handle->vad_samples.reserve(30 * 16000);
     handle->mel_features.resize(n_mels * 3000);
     app::ctranslate2_jni::prepare_whisper_feature_workspace(
-        n_mels, handle->feature_workspace);
+        n_mels, handle->feature_workspace, static_cast<size_t>(threads));
     return reinterpret_cast<jlong>(handle.release());
   } catch (const std::invalid_argument& error) {
     throw_java(env, "java/lang/IllegalArgumentException", error.what());
@@ -141,8 +141,9 @@ Java_CTranslate2_CTranslate2Bridge_transcribe(
     const jsize array_length = env->GetArrayLength(pcm);
     if (sample_count < 0 || sample_count > array_length)
       throw std::invalid_argument("sampleCount is outside samples");
+    // 排他処理の開始
     std::lock_guard<std::mutex> inference_lock(handle->inference_mutex);
-
+    // short[]をfloat[](-1~1)へ変換
     app::native_audio::pcm16_to_float_vector(
         env, pcm, handle->pcm_samples, sample_count);
     if (env->ExceptionCheck())
@@ -152,6 +153,7 @@ Java_CTranslate2_CTranslate2Bridge_transcribe(
     if (vad_enabled) {
       if (!handle->vad_context)
         throw std::runtime_error("Silero VAD is enabled but its model is not loaded");
+      // VADに通して、発話区間だけ取り出す。
       const bool has_speech = app::ctranslate2_jni::collect_whisper_vad_speech(
           handle->vad_context.get(),
           handle->pcm_samples,
@@ -161,8 +163,9 @@ Java_CTranslate2_CTranslate2Bridge_transcribe(
         return env->NewStringUTF("");
       inference_samples = &handle->vad_samples;
     }
-
+    // 軸に対する周波数の解像度(経験的に80,128が多い)
     const size_t n_mels = handle->model->n_mels();
+    // float[](-1~1)を、log_mel spectrogram(周波数軸を人間の聴覚特性に合わせて、人の感覚に合わせつつ圧縮)に変換。
     app::ctranslate2_jni::make_whisper_features(
         *inference_samples,
         n_mels,
@@ -202,10 +205,13 @@ Java_CTranslate2_CTranslate2Bridge_transcribe(
     options.return_scores = false;
     options.return_no_speech_prob = false;
 
+    // 文字起こしを実行
     auto futures = handle->model->generate(features, std::move(prompts), options);
+      // 結果は、複数の候補でやってくるので、先頭(最も確率が高い)を使う。
     const auto result = futures.at(0).get();
     if (result.sequences.empty())
       return env->NewStringUTF("");
+      // 結果は、複数の候補でやってくるので、先頭(最も確率が高い)を使う。
     const std::string text = app::ctranslate2_jni::decode_whisper_tokens(result.sequences[0]);
     return env->NewStringUTF(text.c_str());
   } catch (const std::invalid_argument& error) {
