@@ -17,6 +17,7 @@ import events.Whisper.WhisperTranscriptionTag;
 import events.Whisper.WhisperProgressEvent;
 import jp.ac.gifu_u.programmingjissen2.Record.Utility.AudioFilePcmDecoder;
 import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.WhisperSettings;
+import jp.ac.gifu_u.programmingjissen2.SettingUI.ModelPathResolver;
 import jp.ac.gifu_u.programmingjissen2.Transcription.TranscriptionWorkerResult;
 import jp.ac.gifu_u.programmingjissen2.Transcription.WhisperCPPTranscriptionWorker;
 import jp.ac.gifu_u.programmingjissen2.Transcription.WhisperVadConfig;
@@ -102,8 +103,8 @@ public final class WhisperFileTranscriptionWorker implements Runnable {
                     0,
                     audio.durationMs()
             ));
-            final String modelPath = MyUtils.prepareModelPath(
-                    context, settings.fileTranscription().model().assetName());
+            final String modelPath = ModelPathResolver.resolve(
+                    context, settings.fileTranscription().model());
             final String vadModelPath = MyUtils.prepareModelPath(
                     context, WhisperVadConfig.MODEL_ASSET_NAME);
             transcribeWholeAudio(modelPath, vadModelPath, audio);

@@ -20,3 +20,9 @@ app/release/app-release.apk
 !/app/src/main/assets/
 /app/src/main/assets/*
 !/app/src/main/assets/ggml-silero-v6.2.0.bin
+models/ggml-small_q8_0.bin
+models/ggml-medium_q8_0.bin
+models/ggml-kotoba-whisper_q8_0.bin
+/models/ctranslate2/kotoba-whisper-v2.2-int8
+/models/ctranslate2/openai-whisper-medium-int8
+/models/ctranslate2/openai-whisper-small-int8

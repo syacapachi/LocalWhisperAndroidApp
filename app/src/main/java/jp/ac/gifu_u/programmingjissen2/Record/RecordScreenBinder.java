@@ -3,14 +3,14 @@ package jp.ac.gifu_u.programmingjissen2.Record;
 import android.view.View;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
-import android.widget.RadioGroup;
 
 import androidx.annotation.NonNull;
 
 import Utils.StringPool.StringBufferBuilderPool;
 import events.Whisper.WhisperTranscriptionEvent;
-import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.WhisperModelOption;
-import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.WhisperCppModelOption;
+import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.ITranscriptionModel;
+import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.WhisperInferenceEngine;
+import jp.ac.gifu_u.programmingjissen2.SettingUI.ExternalModelRepository;
 import jp.ac.gifu_u.programmingjissen2.SettingUI.WhisperRecordControls;
 
 import java.util.List;
@@ -19,6 +19,8 @@ import java.util.List;
 public final class RecordScreenBinder {
     private final WhisperRecordControls controls;
     private boolean updatingModelSelector;
+    private ITranscriptionModel[] realtimeModels = new ITranscriptionModel[0];
+    private ITranscriptionModel[] fileModels = new ITranscriptionModel[0];
 
     /** 録音入力の変更を通知するlistenerです。 */
     public interface AudioSourceSelectedListener {
@@ -36,7 +38,7 @@ public final class RecordScreenBinder {
          *
          * @param model 選択されたモデル。例: {@code WhisperModelOption.CT2_SMALL_INT8}
          */
-        void onModelSelected(WhisperModelOption model);
+        void onModelSelected(ITranscriptionModel model);
     }
 
     /**
@@ -177,16 +179,20 @@ public final class RecordScreenBinder {
      * @param listener 選択変更通知先。例: {@code this::onModelSelected}
      */
     public void bindModelSelector(
-            @NonNull final WhisperModelOption currentModel,
+            @NonNull final ITranscriptionModel currentModel,
             @NonNull final ModelSelectedListener listener
     ) {
         if (controls.modelSpinner == null) {
             return;
         }
-        final ArrayAdapter<WhisperModelOption> adapter = new ArrayAdapter<>(
+        final ExternalModelRepository repository =
+                new ExternalModelRepository(controls.modelSpinner.getContext());
+        realtimeModels = repository.list(WhisperInferenceEngine.CTRANSLATE2);
+        fileModels = repository.list(WhisperInferenceEngine.WHISPER_CPP);
+        final ArrayAdapter<ITranscriptionModel> adapter = new ArrayAdapter<>(
                 controls.modelSpinner.getContext(),
                 android.R.layout.simple_spinner_item,
-                WhisperModelOption.values()
+                realtimeModels
         );
         adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
         controls.modelSpinner.setAdapter(adapter);
@@ -200,7 +206,7 @@ public final class RecordScreenBinder {
                     final long id
             ) {
                 if (!updatingModelSelector) {
-                    listener.onModelSelected(WhisperModelOption.values()[position]);
+                    listener.onModelSelected(realtimeModels[position]);
                 }
             }
 
@@ -214,13 +220,20 @@ public final class RecordScreenBinder {
      *
      * @param model 選択状態にするモデル。例: {@code WhisperModelOption.CT2_MEDIUM_INT8}
      */
-    public void syncModelSelector(@NonNull final WhisperModelOption model) {
+    public void syncModelSelector(@NonNull final ITranscriptionModel model) {
         if (controls.modelSpinner == null) {
             return;
         }
 
         updatingModelSelector = true;
-        controls.modelSpinner.setSelection(model.ordinal(), false);
+        int selection = 0;
+        for (int index = 0; index < realtimeModels.length; index++) {
+            if (realtimeModels[index].key().equals(model.key())) {
+                selection = index;
+                break;
+            }
+        }
+        controls.modelSpinner.setSelection(selection, false);
         updatingModelSelector = false;
     }
 
@@ -358,12 +371,12 @@ public final class RecordScreenBinder {
      */
     @NonNull
     private String modelDisplayName(final String modelKey) {
-        for (WhisperModelOption option : WhisperModelOption.values()) {
+        for (ITranscriptionModel option : realtimeModels) {
             if (option.key().equals(modelKey)) {
                 return option.displayName();
             }
         }
-        for (WhisperCppModelOption option : WhisperCppModelOption.values()) {
+        for (ITranscriptionModel option : fileModels) {
             if (option.key().equals(modelKey)) {
                 return option.toString();
             }

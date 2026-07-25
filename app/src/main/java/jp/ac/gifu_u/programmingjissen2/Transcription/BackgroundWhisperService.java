@@ -37,6 +37,7 @@ import jp.ac.gifu_u.programmingjissen2.Record.RecordedAudioFileWriter;
 import jp.ac.gifu_u.programmingjissen2.Record.RecordingAudioSource;
 import jp.ac.gifu_u.programmingjissen2.Record.WhisperFileTranscriptionWorker;
 import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.WhisperSettings;
+import jp.ac.gifu_u.programmingjissen2.SettingUI.ModelPathResolver;
 import jp.ac.gifu_u.programmingjissen2.SettingUI.WhisperSettingsStore;
 import jp.ac.gifu_u.programmingjissen2.TransscriptsJSON.TranscriptionJsonWorker;
 
@@ -781,10 +782,7 @@ public class BackgroundWhisperService extends Service {
 
     /** @throws IOException 選択したCTranslate2モデルまたはSilero VADをassetsから準備できない場合 */
     private void prepareModels() throws IOException {
-        modelPath = MyUtils.prepareModelDirectory(
-                this,
-                settings.model().cTranslate2AssetDirectory()
-        );
+        modelPath = ModelPathResolver.resolve(this, settings.model());
         vadModelPath = settings.vadEnabled()
                 ? MyUtils.prepareModelPath(this, WhisperVadConfig.MODEL_ASSET_NAME)
                 : null;

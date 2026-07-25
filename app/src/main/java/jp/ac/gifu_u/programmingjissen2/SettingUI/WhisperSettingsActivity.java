@@ -1,6 +1,7 @@
 package jp.ac.gifu_u.programmingjissen2.SettingUI;
 
 import android.os.Bundle;
+import android.net.Uri;
 import android.text.InputFilter;
 import android.text.InputType;
 import android.view.View;
@@ -17,23 +18,45 @@ import android.widget.Toast;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.widget.SwitchCompat;
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
 
 import com.google.android.material.tabs.TabLayout;
 
 import org.jetbrains.annotations.Contract;
 
+import java.io.File;
+import java.io.IOException;
+import java.util.Locale;
+
 import Utils.StringPool.StringBufferBuilderPool;
 import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.WhisperInferenceStats;
 import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.FileTranscriptionSettings;
 import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.WhisperLanguageOption;
-import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.WhisperCppModelOption;
-import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.WhisperModelOption;
 import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.WhisperSettings;
+import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.ITranscriptionModel;
+import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.WhisperInferenceEngine;
+import jp.ac.gifu_u.programmingjissen2.Transcription.ModelLoadProbe;
 
 /** Whisper 関連のユーザー設定画面です。 */
 public class WhisperSettingsActivity extends AppCompatActivity {
     private WhisperSettingsStore store;
+    private ExternalModelRepository modelRepository;
+    private ITranscriptionModel[] realtimeModels;
+    private ITranscriptionModel[] fileModels;
+    private String pendingExternalModelName = "";
+    private String pendingComputeType = "int8";
+    private volatile File pendingImportedModel;
+    private final ActivityResultLauncher<String[]> externalModelFilePicker =
+            registerForActivityResult(
+                    new ActivityResultContracts.OpenDocument(),
+                    this::onExternalModelFileSelected);
+    private final ActivityResultLauncher<Uri> cTranslate2DirectoryPicker =
+            registerForActivityResult(
+                    new ActivityResultContracts.OpenDocumentTree(),
+                    this::onCTranslate2DirectorySelected);
 
     private Spinner modelSpinner;
     /**  言語選択のドロップダウン */
@@ -66,6 +89,9 @@ public class WhisperSettingsActivity extends AppCompatActivity {
     protected void onCreate(final @Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         store = new WhisperSettingsStore(this);
+        modelRepository = new ExternalModelRepository(this);
+        realtimeModels = modelRepository.list(WhisperInferenceEngine.CTRANSLATE2);
+        fileModels = modelRepository.list(WhisperInferenceEngine.WHISPER_CPP);
         setTitle("音声認識設定");
         setContentView(createContentView());
         bindSettings(store.load());
@@ -145,14 +171,15 @@ public class WhisperSettingsActivity extends AppCompatActivity {
                 "録音中の短い音声窓をCTranslate2で推論する設定です。");
         page.addView(sectionText("CTranslate2モデル"));
         modelSpinner = new Spinner(this);
-        final ArrayAdapter<WhisperModelOption> modelAdapter = new ArrayAdapter<>(
+        final ArrayAdapter<ITranscriptionModel> modelAdapter = new ArrayAdapter<>(
                 this,
                 android.R.layout.simple_spinner_item,
-                WhisperModelOption.values()
+                realtimeModels
         );
         modelAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
         modelSpinner.setAdapter(modelAdapter);
         page.addView(modelSpinner, fullWidthParams());
+        page.addView(externalModelControls());
 
         page.addView(sectionText("推論"));
         languageSpinner = addLanguageSpinnerRow(page);
@@ -207,11 +234,12 @@ public class WhisperSettingsActivity extends AppCompatActivity {
                 "音声・動画ファイルと録音全体をWhisper.cppで一括推論する設定です。");
         page.addView(sectionText("Whisper.cpp量子化モデル"));
         fileModelSpinner = new Spinner(this);
-        final ArrayAdapter<WhisperCppModelOption> modelAdapter = new ArrayAdapter<>(
-                this, android.R.layout.simple_spinner_item, WhisperCppModelOption.values());
+        final ArrayAdapter<ITranscriptionModel> modelAdapter = new ArrayAdapter<>(
+                this, android.R.layout.simple_spinner_item, fileModels);
         modelAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
         fileModelSpinner.setAdapter(modelAdapter);
         page.addView(fileModelSpinner, fullWidthParams());
+        page.addView(externalModelControls());
 
         page.addView(sectionText("推論"));
         fileLanguageSpinner = addLanguageSpinnerRow(page);
@@ -356,7 +384,7 @@ public class WhisperSettingsActivity extends AppCompatActivity {
      * @param settings 表示する設定
      */
     private void bindSettings(@NonNull final WhisperSettings settings) {
-        modelSpinner.setSelection(settings.model().ordinal());
+        modelSpinner.setSelection(indexOf(realtimeModels, settings.model().key()));
         languageSpinner.setSelection(WhisperLanguageOption.fromValue(settings.language()).ordinal());
         windowEdit.setText(String.valueOf(settings.windowMs()));
         overlapEdit.setText(String.valueOf(settings.overlapMs()));
@@ -370,7 +398,7 @@ public class WhisperSettingsActivity extends AppCompatActivity {
         autoRetranscribeSwitch.setEnabled(settings.audioRecordingEnabled());
         autoRetranscribeSwitch.setChecked(settings.autoRetranscribeEnabled());
         final FileTranscriptionSettings file = settings.fileTranscription();
-        fileModelSpinner.setSelection(file.model().ordinal());
+        fileModelSpinner.setSelection(indexOf(fileModels, file.model().key()));
         fileLanguageSpinner.setSelection(
                 WhisperLanguageOption.fromValue(file.language()).ordinal());
         fileMaxThreadsEdit.setText(String.valueOf(file.maxThreads()));
@@ -385,10 +413,10 @@ public class WhisperSettingsActivity extends AppCompatActivity {
      * 内部でUIの更新も行います。
      */
     private void saveSettings() {
-        final WhisperModelOption model = (WhisperModelOption) modelSpinner.getSelectedItem();
+        final ITranscriptionModel model = (ITranscriptionModel) modelSpinner.getSelectedItem();
         final WhisperLanguageOption language = (WhisperLanguageOption) languageSpinner.getSelectedItem();
-        final WhisperCppModelOption fileModel =
-                (WhisperCppModelOption) fileModelSpinner.getSelectedItem();
+        final ITranscriptionModel fileModel =
+                (ITranscriptionModel) fileModelSpinner.getSelectedItem();
         final WhisperLanguageOption fileLanguage =
                 (WhisperLanguageOption) fileLanguageSpinner.getSelectedItem();
         final FileTranscriptionSettings fileSettings = new FileTranscriptionSettings(
@@ -432,7 +460,7 @@ public class WhisperSettingsActivity extends AppCompatActivity {
      */
     private void refreshStats() {
         final StringBuilder builder = new StringBuilder();
-        for (WhisperModelOption model : WhisperModelOption.values()) {
+        for (ITranscriptionModel model : realtimeModels) {
             if (builder.length() > 0) {
                 builder.append('\n');
             }
@@ -442,7 +470,7 @@ public class WhisperSettingsActivity extends AppCompatActivity {
         statsText.setText(builder.toString());
 
         final StringBuilder fileBuilder = new StringBuilder();
-        for (WhisperCppModelOption model : WhisperCppModelOption.values()) {
+        for (ITranscriptionModel model : fileModels) {
             if (fileBuilder.length() > 0) {
                 fileBuilder.append('\n');
             }
@@ -458,7 +486,10 @@ public class WhisperSettingsActivity extends AppCompatActivity {
      * @return フォーマットした文字列
      */
     @NonNull
-    private String formatStats(final WhisperModelOption model, @NonNull final WhisperInferenceStats stats) {
+    private String formatStats(
+            final ITranscriptionModel model,
+            @NonNull final WhisperInferenceStats stats
+    ) {
         return formatStats(model.displayName(), stats);
     }
 
@@ -492,6 +523,315 @@ public class WhisperSettingsActivity extends AppCompatActivity {
                 stats.count(),
                 "回"
         );
+    }
+
+    /**
+     * 外部モデル追加Dialogを開くボタンを作成します。
+     * @return クリック時に名前・計算型と.binを選択するButton。例: {@code addButton}
+     */
+    @NonNull
+    private Button externalModelButton() {
+        final Button button = new Button(this);
+        button.setText("外部モデルを追加");
+        button.setOnClickListener(view -> showExternalModelDialog());
+        return button;
+    }
+
+    /**
+     * 外部モデル追加ボタンと開閉式の注意点を縦にまとめます。
+     * @return 設定ページへ追加するコンテナ。例: {@code externalModelControls}
+     */
+    @NonNull
+    private View externalModelControls() {
+        final LinearLayout container = new LinearLayout(this);
+        container.setOrientation(LinearLayout.VERTICAL);
+        container.addView(externalModelButton(), fullWidthParams());
+
+        final Button toggle = new Button(this);
+        toggle.setText("インポートの際の注意点 ▼");
+        toggle.setContentDescription("インポートの際の注意点を開く");
+        container.addView(toggle, fullWidthParams());
+
+        final TextView notes = descriptionText(
+                "・モデル追加時はアプリ内部へコピーします。空き容量が不足していると失敗します。\n"
+                        + "・CTranslate2では、同じディレクトリ直下にmodel.bin、"
+                        + "vocabulary.json、tokenizer.json、*config.jsonが必要です。\n"
+                        + "・Whisper.cppでは.bin形式のモデルファイルを選択してください。\n"
+                        + "・検証中はモデルを実際に読み込むため、完了まで時間とメモリを使用します。\n"
+                        + "・検証に失敗したコピーは削除されます。選択元のファイルは削除されません。\n"
+                        + "・登録成功後のモデルはアプリ領域を使用し、アプリを削除すると一緒に削除されます。"
+        );
+        notes.setVisibility(View.GONE);
+        container.addView(notes, fullWidthParams());
+
+        toggle.setOnClickListener(view -> {
+            final boolean opening = notes.getVisibility() != View.VISIBLE;
+            notes.setVisibility(opening ? View.VISIBLE : View.GONE);
+            toggle.setText(opening
+                    ? "インポートの際の注意点 ▲"
+                    : "インポートの際の注意点 ▼");
+            toggle.setContentDescription(opening
+                    ? "インポートの際の注意点を閉じる"
+                    : "インポートの際の注意点を開く");
+        });
+        return container;
+    }
+
+    /** 名前とCTranslate2計算型を入力し、Activity Result APIで.bin選択を開始します。 */
+    private void showExternalModelDialog() {
+        final LinearLayout fields = new LinearLayout(this);
+        fields.setOrientation(LinearLayout.VERTICAL);
+        fields.setPadding(dp(20), dp(8), dp(20), 0);
+        final EditText name = addEditRow(
+                fields, "名前", "例: 会議用small", InputType.TYPE_CLASS_TEXT);
+        final EditText computeType = addEditRow(
+                fields, "CTranslate2計算型", "例: int8", InputType.TYPE_CLASS_TEXT);
+        computeType.setText("int8");
+        new AlertDialog.Builder(this)
+                .setTitle("外部モデルを追加")
+                .setMessage(".binを選択します。CTranslate2のmodel.binの場合は、続けて同じディレクトリを選択してください。")
+                .setView(fields)
+                .setNegativeButton("キャンセル", null)
+                .setPositiveButton("ファイルを選択", (dialog, which) ->
+                        launchExternalModelPicker(
+                                name.getText().toString(),
+                                computeType.getText().toString()))
+                .show();
+    }
+
+    /**
+     * 入力値を保持して.bin用OpenDocumentを起動します。
+     * @param name UI名。例: {@code "会議用small"}
+     * @param computeType CTranslate2計算型。例: {@code "int8"}
+     */
+    private void launchExternalModelPicker(
+            final String name,
+            final String computeType
+    ) {
+        if (name.trim().isEmpty()) {
+            Toast.makeText(this, "名前を入力してください", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        pendingExternalModelName = name.trim();
+        pendingComputeType = computeType.trim().isEmpty() ? "int8" : computeType.trim();
+        externalModelFilePicker.launch(new String[]{
+                "application/octet-stream", "application/x-binary", "application/x-ggml", "*/*"
+        });
+    }
+
+    /**
+     * OpenDocumentで選択した.binを取り込み、Whisper.cppとして読み込みを試します。
+     * @param uri 選択URI。キャンセル時はnull。例: {@code content://.../ggml-small.bin}
+     */
+    private void onExternalModelFileSelected(@Nullable final Uri uri) {
+        if (uri == null) {
+            clearPendingExternalModel();
+            return;
+        }
+        Toast.makeText(this, "モデルを読み込んで検証しています", Toast.LENGTH_LONG).show();
+        StringBufferBuilderPool.NewThreadWithPoolCleanup(() -> {
+            try {
+                final String selectedName =
+                        ExternalModelImporter.displayName(getContentResolver(), uri);
+                if (!selectedName.toLowerCase(Locale.ROOT).endsWith(".bin")) {
+                    throw new IOException(".binファイルを選択してください");
+                }
+                final File imported = ExternalModelImporter.importWhisperBin(this, uri);
+                replacePendingImportedModel(imported);
+                final ModelLoadProbe.Result probe =
+                        ModelLoadProbe.probe(imported.getAbsolutePath(), pendingComputeType);
+                if (probe.whisperLoaded()) {
+                    saveImportedModel(imported, probe);
+                    return;
+                }
+                if ("model.bin".equalsIgnoreCase(selectedName)) {
+                    runOnUiThread(() -> {
+                    Toast.makeText(
+                            this,
+                                "CTranslate2の必須ファイルを確認するため、model.binと同じディレクトリを選択してください",
+                            Toast.LENGTH_LONG
+                        ).show();
+                        cTranslate2DirectoryPicker.launch(null);
+                    });
+                    return;
+                }
+                showProbeError(probe);
+            } catch (Exception error) {
+                showImportError(error);
+            }
+        }, "ExternalModelProbe").start();
+    }
+
+    /**
+     * 選択ディレクトリのCTranslate2必須ファイルを検査・コピーして読み込みます。
+     * @param uri OpenDocumentTreeのURI。キャンセル時はnull。例: {@code content://.../tree/model}
+     */
+    private void onCTranslate2DirectorySelected(@Nullable final Uri uri) {
+        if (uri == null) {
+            discardPendingExternalModel();
+            return;
+        }
+        StringBufferBuilderPool.NewThreadWithPoolCleanup(() -> {
+            try {
+                final File directory =
+                        ExternalModelImporter.importCTranslate2Directory(this, uri);
+                replacePendingImportedModel(directory);
+                final ModelLoadProbe.Result probe = ModelLoadProbe.probe(
+                        directory.getAbsolutePath(), pendingComputeType);
+                if (!probe.cTranslate2Loaded()) {
+                    showProbeError(probe);
+                    return;
+                }
+                saveImportedModel(directory, probe);
+            } catch (Exception error) {
+                showImportError(error);
+            }
+        }, "CTranslate2ModelImport").start();
+    }
+
+    /**
+     * 検証済みの内部モデルパスをJSONへ保存し、Spinnerへ反映します。
+     * @param imported コピー済みファイルまたはディレクトリ。例: {@code model.bin}
+     * @param probe native読み込み結果。例: {@code ModelLoadProbe.probe(path, "int8")}
+     */
+    private void saveImportedModel(
+            @NonNull final File imported,
+            @NonNull final ModelLoadProbe.Result probe
+    ) {
+        try {
+            final ITranscriptionModel saved = modelRepository.saveVerified(
+                    pendingExternalModelName,
+                    imported.getAbsolutePath(),
+                    pendingComputeType,
+                    probe);
+            runOnUiThread(() -> {
+                refreshModelChoices(saved);
+                Toast.makeText(
+                        this,
+                        saved.label() + " を " + saved.engine().jsonValue() + " として追加しました",
+                        Toast.LENGTH_LONG
+                ).show();
+                clearPendingExternalModel();
+            });
+        } catch (Exception error) {
+            showImportError(error);
+        }
+    }
+
+    /**
+     * 両nativeエンジンの失敗内容をDialogへ表示します。
+     * @param probe 失敗結果。例: {@code ModelLoadProbe.probe(path, "int8")}
+     */
+    private void showProbeError(@NonNull final ModelLoadProbe.Result probe) {
+        final String error = "Whisper.cpp: " + probe.whisperError()
+                + "\nCTranslate2: " + probe.cTranslate2Error();
+        runOnUiThread(() -> {
+            new AlertDialog.Builder(this)
+                    .setTitle("モデルを読み込めませんでした")
+                    .setMessage(error)
+                    .setPositiveButton("閉じる", null)
+                    .show();
+            discardPendingExternalModel();
+        });
+    }
+
+    /**
+     * インポート例外をToastへ表示します。
+     * @param error 原因。例: {@code new IOException("model.binがありません")}
+     */
+    private void showImportError(@NonNull final Exception error) {
+        runOnUiThread(() -> {
+            Toast.makeText(
+                    this,
+                    "外部モデルを追加できませんでした: " + error.getMessage(),
+                    Toast.LENGTH_LONG
+            ).show();
+            discardPendingExternalModel();
+        });
+    }
+
+    /**
+     * 新しいインポートを追跡し、以前の一時コピーがあれば削除します。
+     * @param imported 新しいコピー。例: {@code importedModel}
+     */
+    private void replacePendingImportedModel(@NonNull final File imported) throws IOException {
+        final File previous = pendingImportedModel;
+        pendingImportedModel = imported;
+        if (previous != null
+                && !previous.getCanonicalPath().equals(imported.getCanonicalPath())) {
+            if (!ImportedModelCleanup.delete(this, previous)) {
+                throw new IOException("以前の検証用モデルを削除できませんでした");
+            }
+        }
+    }
+
+    /** 検証失敗した一時コピーを削除し、保留情報を初期化します。 */
+    private void discardPendingExternalModel() {
+        final File imported = pendingImportedModel;
+        pendingImportedModel = null;
+        if (imported != null) {
+            try {
+                if (!ImportedModelCleanup.delete(this, imported)) {
+                    Toast.makeText(this, "検証失敗モデルを削除できませんでした", Toast.LENGTH_LONG).show();
+                }
+            } catch (IOException error) {
+                Toast.makeText(
+                        this,
+                        "検証失敗モデルを削除できませんでした: " + error.getMessage(),
+                        Toast.LENGTH_LONG
+                ).show();
+            }
+        }
+        clearPendingExternalModel();
+    }
+
+    /** 保存成功後の保留中モデル名・計算型・一時コピー参照を初期値へ戻します。 */
+    private void clearPendingExternalModel() {
+        pendingExternalModelName = "";
+        pendingComputeType = "int8";
+        pendingImportedModel = null;
+    }
+
+    /**
+     * JSON更新後に両モデルSpinnerを再構築します。
+     * @param selected 新しく選択するモデル。例: {@code externalModel}
+     */
+    private void refreshModelChoices(@NonNull final ITranscriptionModel selected) {
+        final String realtimeKey = selected.engine() == WhisperInferenceEngine.CTRANSLATE2
+                ? selected.key() : ((ITranscriptionModel) modelSpinner.getSelectedItem()).key();
+        final String fileKey = selected.engine() == WhisperInferenceEngine.WHISPER_CPP
+                ? selected.key() : ((ITranscriptionModel) fileModelSpinner.getSelectedItem()).key();
+        realtimeModels = modelRepository.list(WhisperInferenceEngine.CTRANSLATE2);
+        fileModels = modelRepository.list(WhisperInferenceEngine.WHISPER_CPP);
+        final ArrayAdapter<ITranscriptionModel> realtimeAdapter = new ArrayAdapter<>(
+                this, android.R.layout.simple_spinner_item, realtimeModels);
+        realtimeAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        modelSpinner.setAdapter(realtimeAdapter);
+        modelSpinner.setSelection(indexOf(realtimeModels, realtimeKey));
+        final ArrayAdapter<ITranscriptionModel> fileAdapter = new ArrayAdapter<>(
+                this, android.R.layout.simple_spinner_item, fileModels);
+        fileAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        fileModelSpinner.setAdapter(fileAdapter);
+        fileModelSpinner.setSelection(indexOf(fileModels, fileKey));
+        refreshStats();
+    }
+
+    /**
+     * モデル配列から保存キーの位置を探します。
+     * @param models 検索対象。例: {@code realtimeModels}
+     * @param key 保存キー。例: {@code "external-a12b"}
+     * @return 一致位置。不明時は0。例: {@code 4}
+     */
+    private static int indexOf(
+            @NonNull final ITranscriptionModel[] models,
+            final String key
+    ) {
+        for (int index = 0; index < models.length; index++) {
+            if (models[index].key().equals(key)) {
+                return index;
+            }
+        }
+        return 0;
     }
 
     /**

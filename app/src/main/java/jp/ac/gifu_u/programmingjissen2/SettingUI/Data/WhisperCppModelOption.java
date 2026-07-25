@@ -3,12 +3,9 @@ package jp.ac.gifu_u.programmingjissen2.SettingUI.Data;
 import androidx.annotation.NonNull;
 
 /** ファイル一括文字起こしで使用するWhisper.cpp量子化モデルです。 */
-public enum WhisperCppModelOption {
+public enum WhisperCppModelOption implements ITranscriptionModel {
     BASE_Q8_0("cpp-base-q8-0", "ggml-base_q8_0.bin", "Whisper.cpp base・Q8_0"),
-    SMALL_Q8_0("cpp-small-q8-0", "ggml-small_q8_0.bin", "Whisper.cpp small・Q8_0"),
-    MEDIUM_Q8_0("cpp-medium-q8-0", "ggml-medium_q8_0.bin", "Whisper.cpp medium・Q8_0"),
-    KOTOBA_Q8_0("cpp-kotoba-q8-0", "ggml-kotoba-whisper_q8_0.bin",
-            "Whisper.cpp kotoba-whisper・Q8_0");
+    SMALL_Q8_0("cpp-small-q8-0", "ggml-small_q8_0.bin", "Whisper.cpp small・Q8_0");
 
     private final String key;
     private final String assetName;
@@ -33,8 +30,27 @@ public enum WhisperCppModelOption {
     /** @return 保存キー。例: {@code "cpp-small-q8-0"} */
     public String key() { return key; }
 
+    /** @return UI名。例: {@code "Whisper.cpp small・Q8_0"} */
+    @Override @NonNull public String label() { return displayName; }
+
     /** @return assets内のモデル名。例: {@code "ggml-small_q8_0.bin"} */
     public String assetName() { return assetName; }
+
+    /** @return assets相対モデルパス。例: {@code "ggml-small_q8_0.bin"} */
+    @Override @NonNull public String modelPath() { return assetName; }
+
+    /** @return Whisper.cpp */
+    @Override @NonNull
+    public WhisperInferenceEngine engine() { return WhisperInferenceEngine.WHISPER_CPP; }
+
+    /** @return Whisper.cppでは未使用のため空文字 */
+    @Override @NonNull public String computeType() { return ""; }
+
+    /** @return assets同梱モデルなので常にtrue */
+    @Override public boolean bundled() { return true; }
+
+    /** @return UI表示名。例: {@code "Whisper.cpp small・Q8_0"} */
+    @Override @NonNull public String displayName() { return displayName; }
 
     /**
      * 保存キーからモデルを復元します。
@@ -59,16 +75,14 @@ public enum WhisperCppModelOption {
      * @return 対応モデル。例: {@code BASE_Q8_0}
      */
     @NonNull
-    public static WhisperCppModelOption fromRealtimeModel(final WhisperModelOption model) {
+    public static WhisperCppModelOption fromRealtimeModel(final ITranscriptionModel model) {
         if (model == null) {
             return SMALL_Q8_0;
         }
-        return switch (model) {
-            case CT2_BASE_INT8 -> BASE_Q8_0;
-            case CT2_MEDIUM_INT8 -> MEDIUM_Q8_0;
-            case CT2_KOTOBA_V2_2_INT8 -> KOTOBA_Q8_0;
-            default -> SMALL_Q8_0;
-        };
+        if (WhisperModelOption.CT2_BASE_INT8.key().equals(model.key())) {
+            return BASE_Q8_0;
+        }
+        return SMALL_Q8_0;
     }
 
     /** @return UI表示名。例: {@code "Whisper.cpp small・Q8_0"} */

@@ -9,7 +9,7 @@ public final class FileTranscriptionSettings {
     public static final float DEFAULT_VAD_THRESHOLD = 0.5f;
     public static final String DEFAULT_PROMPT = "";
 
-    private final WhisperCppModelOption model;
+    private final ITranscriptionModel model;
     private final String language;
     private final int maxThreads;
     private final boolean useGpu;
@@ -30,7 +30,7 @@ public final class FileTranscriptionSettings {
      * @param prompt initial prompt。例: {@code "岐阜大学 CTranslate2"}
      */
     public FileTranscriptionSettings(
-            final WhisperCppModelOption model,
+            final ITranscriptionModel model,
             final String language,
             final int maxThreads,
             final boolean useGpu,
@@ -68,7 +68,7 @@ public final class FileTranscriptionSettings {
         );
     }
 
-    public WhisperCppModelOption model() { return model; }
+    public ITranscriptionModel model() { return model; }
     public String language() { return language; }
     public int maxThreads() { return maxThreads; }
     public boolean useGpu() { return useGpu; }

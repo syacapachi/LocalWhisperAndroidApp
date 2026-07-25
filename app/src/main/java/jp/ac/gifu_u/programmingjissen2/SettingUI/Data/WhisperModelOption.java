@@ -2,18 +2,12 @@ package jp.ac.gifu_u.programmingjissen2.SettingUI.Data;
 
 import androidx.annotation.NonNull;
 
-import org.jetbrains.annotations.Contract;
-
 /** Whisper で利用できるモデルの選択肢です。 */
-public enum WhisperModelOption {
+public enum WhisperModelOption implements ITranscriptionModel {
     CT2_BASE_INT8("ct2-openai-base-int8", "ctranslate2/openai-whisper-base-int8",
             WhisperInferenceEngine.CTRANSLATE2, "int8", "CTranslate2 openai/whisper-base・int8"),
     CT2_SMALL_INT8("ct2-openai-small-int8", "ctranslate2/openai-whisper-small-int8",
-            WhisperInferenceEngine.CTRANSLATE2, "int8", "CTranslate2 openai/whisper-small・int8"),
-    CT2_MEDIUM_INT8("ct2-openai-medium-int8", "ctranslate2/openai-whisper-medium-int8",
-            WhisperInferenceEngine.CTRANSLATE2, "int8", "CTranslate2 openai/whisper-medium・int8"),
-    CT2_KOTOBA_V2_2_INT8("ct2-kotoba-v2-2-int8", "ctranslate2/kotoba-whisper-v2.2-int8",
-            WhisperInferenceEngine.CTRANSLATE2, "int8", "CTranslate2 kotoba-whisper-v2.2・int8");
+            WhisperInferenceEngine.CTRANSLATE2, "int8", "CTranslate2 openai/whisper-small・int8");
 
     private final String key;
     private final String assetPath;
@@ -50,6 +44,11 @@ public enum WhisperModelOption {
         return key;
     }
 
+    /** @return モデルの説明名。例: {@code "CTranslate2 openai/whisper-small・int8"} */
+    @Override
+    @NonNull
+    public String label() { return description; }
+
     /** @return UIへ表示するassetsパス。例: {@code "assets/ggml-base.bin"} */
     @NonNull
     public String displayName() {
@@ -61,6 +60,11 @@ public enum WhisperModelOption {
         return assetPath;
     }
 
+    /** @return assets相対モデルパス。例: {@code "ctranslate2/openai-whisper-small-int8"} */
+    @Override
+    @NonNull
+    public String modelPath() { return assetPath; }
+
     /**
      * assets内の変換済みCTranslate2モデルディレクトリを返します。
      * @return ディレクトリ。例: {@code "ctranslate2/base"}
@@ -70,10 +74,13 @@ public enum WhisperModelOption {
     }
 
     /** @return 推論ランタイム。例: {@code WhisperInferenceEngine.CTRANSLATE2} */
-    public WhisperInferenceEngine engine() { return engine; }
+    @Override public WhisperInferenceEngine engine() { return engine; }
 
     /** @return CTranslate2計算型。例: {@code "int8"} */
-    public String computeType() { return computeType; }
+    @Override public String computeType() { return computeType; }
+
+    /** @return assets同梱モデルなので常にtrue */
+    @Override public boolean bundled() { return true; }
 
     /** @return モデル形式と量子化の説明。例: {@code "Whisper.cpp base・Q8_0量子化"} */
     public String description() {

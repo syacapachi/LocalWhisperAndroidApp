@@ -19,8 +19,9 @@ import java.util.Comparator;
 import java.util.Locale;
 
 import jp.ac.gifu_u.programmingjissen2.Record.RecordedAudioFileWriter;
-import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.WhisperCppModelOption;
-import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.WhisperModelOption;
+import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.ITranscriptionModel;
+import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.WhisperInferenceEngine;
+import jp.ac.gifu_u.programmingjissen2.SettingUI.ExternalModelRepository;
 import jp.ac.gifu_u.programmingjissen2.TranscriptionText.TranscriptionTextRepository;
 import jp.ac.gifu_u.programmingjissen2.TransscriptsJSON.TranscriptionJsonWriter;
 
@@ -146,7 +147,7 @@ public final class TranscriptionResultRepository {
             if (json != null && json.exists()) {
                 final JSONObject root = new JSONObject(read(json));
                 recordedAt = root.optLong("createdAtUnixMs", recordedAt);
-                model = displayModel(root.optString("modelKey", model));
+                model = displayModel(context, root.optString("modelKey", model));
                 tag = root.optString("tag", tag);
                 // Version 1 の互換
                 final JSONArray items = root.optJSONArray("items");
@@ -154,7 +155,7 @@ public final class TranscriptionResultRepository {
                         && items != null && items.length() > 0) {
                     final JSONObject first = items.optJSONObject(0);
                     if (first != null) {
-                        model = displayModel(first.optString("modelKey", model));
+                        model = displayModel(context, first.optString("modelKey", model));
                         tag = first.optString("tag", tag);
                     }
                 }
@@ -274,17 +275,20 @@ public final class TranscriptionResultRepository {
         return dot > 0 ? name.substring(0, dot) : name;
     }
 
-    /** @param key 例: {@code "cpp-small-q8-0"} @return UI表示名。例: {@code "Whisper.cpp small・Q8_0"} */
+    /**
+     * 保存キーを同梱・外部モデルのUI名へ変換します。
+     * @param context 外部モデルJSONを読むContext。例: {@code activity}
+     * @param key 保存キー。例: {@code "cpp-small-q8-0"}
+     * @return UI表示名。例: {@code "Whisper.cpp small・Q8_0"}
+     */
     @NonNull
-    private static String displayModel(final String key) {
-        for (WhisperModelOption option : WhisperModelOption.values()) {
-            if (option.key().equals(key)) {
-                return option.description();
-            }
-        }
-        for (WhisperCppModelOption option : WhisperCppModelOption.values()) {
-            if (option.key().equals(key)) {
-                return option.toString();
+    private static String displayModel(@NonNull final Context context, final String key) {
+        final ExternalModelRepository repository = new ExternalModelRepository(context);
+        for (WhisperInferenceEngine engine : WhisperInferenceEngine.values()) {
+            for (ITranscriptionModel option : repository.list(engine)) {
+                if (option.key().equals(key)) {
+                    return option.label();
+                }
             }
         }
         return key == null || key.isEmpty() ? "不明" : key;

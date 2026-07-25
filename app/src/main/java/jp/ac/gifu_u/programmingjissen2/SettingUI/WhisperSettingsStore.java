@@ -12,6 +12,8 @@ import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.WhisperInferenceStats;
 import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.WhisperModelOption;
 import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.WhisperCppModelOption;
 import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.FileTranscriptionSettings;
+import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.ITranscriptionModel;
+import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.WhisperInferenceEngine;
 import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.WhisperSettings;
 
 /** Whisper 設定とモデル別推論時間統計の保存を担当します。 */
@@ -49,6 +51,7 @@ public final class WhisperSettingsStore {
     private static final String STATS_MAX_MS = "stats_max_ms";
 
     private final SharedPreferences preferences;
+    private final ExternalModelRepository modelRepository;
 
     /**
      * Contentに記されたSharedPreferencesから設定値を読み込みます。
@@ -59,15 +62,17 @@ public final class WhisperSettingsStore {
                 PREF_NAME,
                 Context.MODE_PRIVATE
         );
+        modelRepository = new ExternalModelRepository(context);
     }
 
     @NonNull
     @Contract(" -> new")
     public WhisperSettings load() {
-        final WhisperModelOption realtimeModel = WhisperModelOption.fromKey(preferences.getString(
-                KEY_MODEL,
-                WhisperSettings.DEFAULT_MODEL.key()
-        ));
+        final ITranscriptionModel savedRealtime = modelRepository.find(
+                preferences.getString(KEY_MODEL, WhisperSettings.DEFAULT_MODEL.key()),
+                WhisperInferenceEngine.CTRANSLATE2);
+        final ITranscriptionModel realtimeModel = savedRealtime == null
+                ? WhisperSettings.DEFAULT_MODEL : savedRealtime;
         final FileTranscriptionSettings fileSettings = loadFileSettings(realtimeModel);
         return new WhisperSettings(
                 realtimeModel,
@@ -106,15 +111,15 @@ public final class WhisperSettingsStore {
      */
     @NonNull
     private FileTranscriptionSettings loadFileSettings(
-            @NonNull final WhisperModelOption realtimeModel
+            @NonNull final ITranscriptionModel realtimeModel
     ) {
-        final WhisperCppModelOption defaultModel =
+        final ITranscriptionModel defaultModel =
                 WhisperCppModelOption.fromRealtimeModel(realtimeModel);
+        final ITranscriptionModel savedModel = modelRepository.find(
+                preferences.getString(KEY_FILE_MODEL, defaultModel.key()),
+                WhisperInferenceEngine.WHISPER_CPP);
         return new FileTranscriptionSettings(
-                WhisperCppModelOption.fromKey(preferences.getString(
-                        KEY_FILE_MODEL,
-                        defaultModel.key()
-                )),
+                savedModel == null ? defaultModel : savedModel,
                 preferences.getString(
                         KEY_FILE_LANGUAGE,
                         preferences.getString(KEY_LANGUAGE, WhisperSettings.DEFAULT_LANGUAGE)
@@ -183,24 +188,13 @@ public final class WhisperSettingsStore {
                 .apply();
     }
 
-    public void saveModel(final WhisperModelOption model) {
+    public void saveModel(final ITranscriptionModel model) {
         save(load().withModel(model));
     }
 
     @NonNull
-    public WhisperInferenceStats loadStats(final WhisperModelOption model) {
+    public WhisperInferenceStats loadStats(final ITranscriptionModel model) {
         final String key = model == null ? WhisperSettings.DEFAULT_MODEL.key() : model.key();
-        return loadStats(key);
-    }
-
-    /**
-     * Whisper.cppモデルの一括推論統計を読み込みます。
-     * @param model 対象モデル。例: {@code WhisperCppModelOption.SMALL_Q8_0}
-     * @return 保存済み統計。未計測ならcountが0。例: {@code WhisperInferenceStats}
-     */
-    @NonNull
-    public WhisperInferenceStats loadStats(final WhisperCppModelOption model) {
-        final String key = model == null ? FileTranscriptionSettings.DEFAULT_MODEL.key() : model.key();
         return loadStats(key);
     }
 
@@ -254,34 +248,29 @@ public final class WhisperSettingsStore {
      * @return 一致したキー。不明値はnull。例: {@code "cpp-small-q8-0"}
      */
     private String knownModelKey(final String candidate) {
-        for (WhisperModelOption option : WhisperModelOption.values()) {
-            if (option.key().equals(candidate)) {
+        for (WhisperModelOption model : WhisperModelOption.values()) {
+            if (model.key().equals(candidate)) {
                 return candidate;
             }
         }
-        for (WhisperCppModelOption option : WhisperCppModelOption.values()) {
-            if (option.key().equals(candidate)) {
+        for (WhisperCppModelOption model : WhisperCppModelOption.values()) {
+            if (model.key().equals(candidate)) {
                 return candidate;
             }
         }
-        return null;
+        return candidate.startsWith("external-") ? candidate : null;
     }
 
     public void resetStats() {
         final SharedPreferences.Editor editor = preferences.edit();
-        for (WhisperModelOption model : WhisperModelOption.values()) {
-            editor.remove(statsKey(model.key(), STATS_COUNT));
-            editor.remove(statsKey(model.key(), STATS_TOTAL_MS));
-            editor.remove(statsKey(model.key(), STATS_LAST_MS));
-            editor.remove(statsKey(model.key(), STATS_MIN_MS));
-            editor.remove(statsKey(model.key(), STATS_MAX_MS));
-        }
-        for (WhisperCppModelOption model : WhisperCppModelOption.values()) {
-            editor.remove(statsKey(model.key(), STATS_COUNT));
-            editor.remove(statsKey(model.key(), STATS_TOTAL_MS));
-            editor.remove(statsKey(model.key(), STATS_LAST_MS));
-            editor.remove(statsKey(model.key(), STATS_MIN_MS));
-            editor.remove(statsKey(model.key(), STATS_MAX_MS));
+        for (WhisperInferenceEngine engine : WhisperInferenceEngine.values()) {
+            for (ITranscriptionModel model : modelRepository.list(engine)) {
+                editor.remove(statsKey(model.key(), STATS_COUNT));
+                editor.remove(statsKey(model.key(), STATS_TOTAL_MS));
+                editor.remove(statsKey(model.key(), STATS_LAST_MS));
+                editor.remove(statsKey(model.key(), STATS_MIN_MS));
+                editor.remove(statsKey(model.key(), STATS_MAX_MS));
+            }
         }
         editor.apply();
     }

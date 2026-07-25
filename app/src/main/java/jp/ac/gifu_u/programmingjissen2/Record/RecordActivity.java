@@ -27,7 +27,9 @@ import events.Whisper.WhisperTranscriptionEvent;
 import events.Whisper.WhisperTranscriptionTag;
 import jp.ac.gifu_u.programmingjissen2.Transcription.BackgroundWhisperService;
 import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.WhisperInferenceStats;
-import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.WhisperModelOption;
+import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.ITranscriptionModel;
+import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.WhisperInferenceEngine;
+import jp.ac.gifu_u.programmingjissen2.SettingUI.ExternalModelRepository;
 import jp.ac.gifu_u.programmingjissen2.SettingUI.WhisperRecordControls;
 import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.WhisperSettings;
 import jp.ac.gifu_u.programmingjissen2.SettingUI.WhisperSettingsActivity;
@@ -132,7 +134,7 @@ public class RecordActivity {
 
     private void setupModelSelector() {
         screenBinder.bindModelSelector(currentSettings.model(), (selected) -> {
-            if (selected == currentSettings.model()) {
+            if (selected.key().equals(currentSettings.model().key())) {
                 return;
             }
 
@@ -160,7 +162,7 @@ public class RecordActivity {
     public void RefreshSettings() {
         if (!isTranscribing) {
             currentSettings = settingsStore.load();
-            screenBinder.syncModelSelector(currentSettings.model());
+            setupModelSelector();
         }
         syncStateFromBackgroundService();
         screenBinder.setRecordButtonState(state);
@@ -475,7 +477,9 @@ public class RecordActivity {
     @NonNull
     private String buildBenchmarkText() {
         try(StringBufferBuilderPool builder = ScopableUtility.getBuilder()){
-            for (WhisperModelOption model : WhisperModelOption.values()) {
+            final ITranscriptionModel[] models = new ExternalModelRepository(
+                    activity).list(WhisperInferenceEngine.CTRANSLATE2);
+            for (ITranscriptionModel model : models) {
                 if (builder.length() > 0) {
                     builder.append('\n');
                 }
@@ -486,7 +490,7 @@ public class RecordActivity {
     }
 
     @NonNull
-    private String formatStats(final WhisperModelOption model) {
+    private String formatStats(final ITranscriptionModel model) {
         final WhisperInferenceStats stats = settingsStore.loadStats(model);
         if (!stats.hasSamples()) {
             return StringBufferBuilderPool.Join(

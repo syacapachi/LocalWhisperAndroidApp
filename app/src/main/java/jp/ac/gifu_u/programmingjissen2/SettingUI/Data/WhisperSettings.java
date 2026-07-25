@@ -22,7 +22,7 @@ public final class WhisperSettings {
     public static final float DEFAULT_SILERO_VAD_THRESHOLD = 0.5f;
     public static final boolean DEFAULT_TRANSLATE_TO_ENGLISH = false;
     public static final String DEFAULT_PROMPT = "";
-    private final WhisperModelOption model;
+    private final ITranscriptionModel model;
     private final String language;
     private final int windowMs;
     private final int overlapMs;
@@ -56,7 +56,7 @@ public final class WhisperSettings {
      * @param autoRetranscribeEnabled 停止後に再推論する場合true。例: {@code true}
      */
     public WhisperSettings(
-            final WhisperModelOption model,
+            final ITranscriptionModel model,
             final String language,
             final int windowMs,
             final int overlapMs,
@@ -94,7 +94,7 @@ public final class WhisperSettings {
      * @param prompt ユーザープロンプト。例: {@code "専門用語: CTranslate2"}
      */
     public WhisperSettings(
-            final WhisperModelOption model,
+            final ITranscriptionModel model,
             final String language,
             final int windowMs,
             final int overlapMs,
@@ -137,7 +137,7 @@ public final class WhisperSettings {
      * @param sileroVadThreshold Sileroの発話確率閾値。例: {@code 0.5f}
      */
     public WhisperSettings(
-            final WhisperModelOption model,
+            final ITranscriptionModel model,
             final String language,
             final int windowMs,
             final int overlapMs,
@@ -181,7 +181,7 @@ public final class WhisperSettings {
      * @param fileTranscription Whisper.cpp一括設定。例: {@code FileTranscriptionSettings.defaultSettings()}
      */
     public WhisperSettings(
-            final WhisperModelOption model,
+            final ITranscriptionModel model,
             final String language,
             final int windowMs,
             final int overlapMs,
@@ -247,7 +247,7 @@ public final class WhisperSettings {
 
     @NonNull
     @Contract("_ -> new")
-    public WhisperSettings withModel(final WhisperModelOption model) {
+    public WhisperSettings withModel(final ITranscriptionModel model) {
         return new WhisperSettings(
                 model,
                 language,
@@ -308,7 +308,7 @@ public final class WhisperSettings {
         );
     }
 
-    public WhisperModelOption model() {
+    public ITranscriptionModel model() {
         return model;
     }
 
