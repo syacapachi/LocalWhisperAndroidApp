@@ -5,7 +5,7 @@ import androidx.annotation.NonNull;
 import java.util.List;
 
 import Utils.ScopableUtility;
-import Utils.StringPool.PooledStringBuilder;
+import Utils.StringPool.StringBufferBuilderPool;
 
 /** 時間と本文を読みやすいプレーンテキストへ整形する class です。 */
 public final class TranscriptionTextFormatter {
@@ -20,7 +20,7 @@ public final class TranscriptionTextFormatter {
      */
     @NonNull
     public static String format(@NonNull final List<TranscriptionTextItem> items) {
-        try(PooledStringBuilder builder = ScopableUtility.getBuilder()) {
+        try(StringBufferBuilderPool builder = ScopableUtility.getBuilder()) {
             for (TranscriptionTextItem item : items) {
                 builder.append(formatLine(item.timeMs(), item.text()));
             }
@@ -48,7 +48,7 @@ public final class TranscriptionTextFormatter {
      */
     @NonNull
     public static String formatLine(final long timeMs, final String text) {
-        try(PooledStringBuilder builder = ScopableUtility.getBuilder()) {
+        try(StringBufferBuilderPool builder = ScopableUtility.getBuilder()) {
             builder.append("[")
                     .append(formatTime(timeMs))
                     .append("] ")

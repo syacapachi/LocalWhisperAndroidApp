@@ -6,9 +6,9 @@ import androidx.annotation.NonNull;
 
 import java.io.IOException;
 
+import Utils.StringPool.StringBufferBuilderPool;
 import Whisper.WhisperBridge;
 import Utils.ScopableUtility;
-import Utils.StringPool.PooledStringBuilder;
 import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.WhisperSettings;
 import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.FileTranscriptionSettings;
 import jp.ac.gifu_u.programmingjissen2.TranscriptionText.TranscriptionTextFormatter;
@@ -102,7 +102,7 @@ public final class WhisperCPPTranscriptionWorker implements AutoCloseable {
     private TranscriptionWorkerResult collectResult(final boolean includeTimestamps) {
         final int segmentCount = WhisperBridge.fullNSegments(context);
         Log.d("CPP",String.valueOf(segmentCount));
-        try (PooledStringBuilder builder = ScopableUtility.getBuilder()) {
+        try (StringBufferBuilderPool builder = ScopableUtility.getBuilder()) {
             boolean speakerChanged = false;
             for (int index = 0; index < segmentCount; index++) {
                 final String text = WhisperBridge.fullSegmentText(context, index);

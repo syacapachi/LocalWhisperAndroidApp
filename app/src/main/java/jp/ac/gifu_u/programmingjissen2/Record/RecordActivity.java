@@ -17,6 +17,7 @@ import androidx.core.content.ContextCompat;
 
 import java.util.function.Consumer;
 
+import Utils.ScopableUtility;
 import Utils.StringPool.StringBufferBuilderPool;
 import events.AwaitEvent.AwaiterHub;
 import events.Request.PermissionAwaiter;
@@ -216,10 +217,12 @@ public class RecordActivity {
                 return false;
             }
             pendingAudioSource = source;
+            //　キャプチャアプリのマネージャークラス
             final MediaProjectionManager manager =
                     (MediaProjectionManager) activity.getSystemService(
                             Activity.MEDIA_PROJECTION_SERVICE
                     );
+            // キャプチャの許可画面を表示
             projectionPermissionLauncher.launch(manager.createScreenCaptureIntent());
             outputMessage("対象アプリ音声のキャプチャを許可してください");
             return false;
@@ -471,14 +474,15 @@ public class RecordActivity {
 
     @NonNull
     private String buildBenchmarkText() {
-        final StringBuilder builder = new StringBuilder();
-        for (WhisperModelOption model : WhisperModelOption.values()) {
-            if (builder.length() > 0) {
-                builder.append('\n');
+        try(StringBufferBuilderPool builder = ScopableUtility.getBuilder()){
+            for (WhisperModelOption model : WhisperModelOption.values()) {
+                if (builder.length() > 0) {
+                    builder.append('\n');
+                }
+                builder.append(formatStats(model));
             }
-            builder.append(formatStats(model));
+            return builder.toString();
         }
-        return builder.toString();
     }
 
     @NonNull

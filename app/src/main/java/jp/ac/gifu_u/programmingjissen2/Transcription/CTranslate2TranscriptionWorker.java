@@ -84,7 +84,7 @@ public final class CTranslate2TranscriptionWorker implements AutoCloseable {
                 settings.vadEnabled(),
                 settings.vadThreshold()
         );
-        if (text != null && !text.trim().isEmpty()) {
+        if (!text.trim().isEmpty()) {
             previousWordContext = PreviousContextWordExtractor.extractRecentWords(
                     text,
                     settings.language(),

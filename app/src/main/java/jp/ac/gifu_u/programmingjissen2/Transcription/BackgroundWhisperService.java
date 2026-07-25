@@ -484,7 +484,7 @@ public class BackgroundWhisperService extends Service {
      * worker停止イベントを対応する状態へ反映します。
      * @param event 停止情報。例: {@code new ThreadStoppedEvent(...)}
      */
-    private synchronized void onThreadStopped(final ThreadStoppedEvent event) {
+    private synchronized void onThreadStopped(@NonNull final ThreadStoppedEvent event) {
         if ("Record".equals(event.owner()) && recordingSessionId != null
                 && event.threadId().startsWith(recordingSessionId)) {
             finishRecordThread();

@@ -3,7 +3,7 @@ package Whisper;
 import androidx.annotation.NonNull;
 
 import Utils.ScopableUtility;
-import Utils.StringPool.PooledStringBuilder;
+import Utils.StringPool.StringBufferBuilderPool;
 
 /**
  * Whisper.cpp を Java/Kotlin 側から呼び出すための JNI ブリッジです。
@@ -766,7 +766,7 @@ public class WhisperBridge {
     @NonNull
     public static String getText(long context) {
         final int count = fullNSegments(context);
-        try(PooledStringBuilder sb = ScopableUtility.getBuilder()) {
+        try(StringBufferBuilderPool sb = ScopableUtility.getBuilder()) {
 
             for (int i = 0; i < count; i++) {
                 sb.append(fullSegmentText(context, i));

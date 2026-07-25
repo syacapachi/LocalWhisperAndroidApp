@@ -30,7 +30,8 @@ public final class CTranslate2Bridge implements AutoCloseable {
             final String vadModelPath,
             final int threads
     ) {
-        Log.d("CTranslate2Bridge", StringBufferBuilderPool.Join(",",modelDirectory,computeType,threads));
+        Log.d("CTranslate2Bridge",
+                StringBufferBuilderPool.Join(",",modelDirectory,computeType,threads));
         handle = create(modelDirectory, computeType, vadModelPath, Math.max(1, threads));
         if (handle == 0) {
             throw new IllegalStateException("CTranslate2 model load failed: " + modelDirectory);
