@@ -16,13 +16,14 @@ import com.google.android.material.tabs.TabLayout;
 import jp.ac.gifu_u.programmingjissen2.ResultUI.ResultHistoryTabView;
 import jp.ac.gifu_u.programmingjissen2.ResultUI.TranscriptionResultRepository;
 
-/** アプリ名・設定ボタンと三つのコンテンツタブを持つメイン画面です。 */
+/** アプリ名・設定ボタンと四つのコンテンツタブを持つメイン画面です。 */
 public final class MainScreenView {
     private final LinearLayout root;
     private final Button settingsButton;
     private final QuickStartTabView quickStart;
     private final ResultHistoryTabView jsonHistory;
     private final ResultHistoryTabView textHistory;
+    private final ResultHistoryTabView audioHistory;
 
     /** @param activity MainActivity。例: {@code this} */
     public MainScreenView(@NonNull final Activity activity) {
@@ -50,6 +51,7 @@ public final class MainScreenView {
         tabs.addTab(tabs.newTab().setText("クイックスタート"));
         tabs.addTab(tabs.newTab().setText("文字起こしJSON結果（デバッグ）"));
         tabs.addTab(tabs.newTab().setText("文字起こし履歴"));
+        tabs.addTab(tabs.newTab().setText("録音"));
         root.addView(tabs, new LinearLayout.LayoutParams(-1, -2));
 
         quickStart = new QuickStartTabView(activity);
@@ -57,7 +59,11 @@ public final class MainScreenView {
                 activity, TranscriptionResultRepository.Type.JSON);
         textHistory = new ResultHistoryTabView(
                 activity, TranscriptionResultRepository.Type.TEXT);
-        final View[] pages = {quickStart.view(), jsonHistory.view(), textHistory.view()};
+        audioHistory = new ResultHistoryTabView(
+                activity, TranscriptionResultRepository.Type.AUDIO);
+        final View[] pages = {
+                quickStart.view(), jsonHistory.view(), textHistory.view(), audioHistory.view()
+        };
         final FrameLayout pageHost = new FrameLayout(activity);
         for (int index = 0; index < pages.length; index++) {
             pages[index].setVisibility(index == 0 ? View.VISIBLE : View.GONE);
@@ -76,6 +82,8 @@ public final class MainScreenView {
                     jsonHistory.refresh();
                 } else if (tab.getPosition() == 2) {
                     textHistory.refresh();
+                } else if (tab.getPosition() == 3) {
+                    audioHistory.refresh();
                 }
             }
             @Override public void onTabUnselected(@NonNull final TabLayout.Tab tab) { }
@@ -92,10 +100,11 @@ public final class MainScreenView {
     /** @return クイックスタートUI。例: {@code QuickStartTabView} */
     @NonNull public QuickStartTabView quickStart() { return quickStart; }
 
-    /** JSONと整形テキストの両一覧を再読み込みします。 */
+    /** JSON、整形テキスト、録音の各一覧を再読み込みします。 */
     public void refreshHistories() {
         jsonHistory.refresh();
         textHistory.refresh();
+        audioHistory.refresh();
     }
 
     /** @param activity 例: {@code mainActivity} @param value dp。例: {@code 16} @return px */

@@ -7,8 +7,6 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import events.Whisper.WhisperTranscriptionEvent;
-import events.Whisper.WhisperTranscriptionTag;
-
 /**
  * JSON に保存する 1 件分の文字起こし結果です。
  *
@@ -28,20 +26,11 @@ public class TranscriptionJsonItem {
     /** Whisper 推論 1 回にかかった処理時間です。ミリ秒。 */
     public final long processingTimeMs;
 
-    /** 推論に使った Whisper モデルの識別子です。 */
-    public final String modelKey;
-
     /** Whisper が出力した文字起こし本文です。 */
     public final String text;
 
     /** この結果の直後に話者が変わった可能性がある場合 true です。 */
     public final boolean speakerChanged;
-
-    /** 録音停止時など、最後の推論結果なら true です。 */
-    public final boolean finalResult;
-
-    /** 録音、ファイル文字起こしなどの発行元タグです。 */
-    public final WhisperTranscriptionTag tag;
 
     /**
      * JSON 保存用の文字起こし結果を作成します。
@@ -50,39 +39,31 @@ public class TranscriptionJsonItem {
      * @param recordingTimeMs 録音開始からの開始時刻ms。例: {@code 1000}
      * @param durationMs 対象音声の長さms。例: {@code 5000}
      * @param processingTimeMs 推論時間ms。例: {@code 1200}
-     * @param modelKey モデル識別子。例: {@code "base"}
      * @param text 文字起こし本文。例: {@code "こんにちは"}
      * @param speakerChanged 話者変化の可能性。例: {@code false}
-     * @param finalResult 最終結果かどうか。例: {@code true}
-     * @param tag 発行元タグ。例: {@code WhisperTranscriptionTag.Recording}
      */
     public TranscriptionJsonItem(
             int sequence,
             long recordingTimeMs,
             long durationMs,
             long processingTimeMs,
-            String modelKey,
             String text,
-            boolean speakerChanged,
-            boolean finalResult,
-            WhisperTranscriptionTag tag
+            boolean speakerChanged
     ) {
         this.sequence = sequence;
         this.recordingTimeMs = recordingTimeMs;
         this.durationMs = durationMs;
         this.processingTimeMs = Math.max(0, processingTimeMs);
-        this.modelKey = modelKey == null ? "" : modelKey;
         this.text = text == null ? "" : text;
         this.speakerChanged = speakerChanged;
-        this.finalResult = finalResult;
-        this.tag = tag == null ? WhisperTranscriptionTag.Recording : tag;
     }
 
     /**
      * Whisper 推論イベントから JSON 保存用データを作成します。
      *
-     * @param event Whisper 推論結果イベント
-     * @return JSON 保存用の 1 件分データ
+     * @param event Whisper 推論結果イベント。例: {@code transcriptionEvent}
+     * @return JSON 保存用の 1 件分データ。例: {@code item}
+     * @throws NullPointerException eventがnullの場合
      */
     @NonNull
     @Contract("_ -> new")
@@ -92,18 +73,15 @@ public class TranscriptionJsonItem {
                 event.startMs(),
                 event.durationMs(),
                 event.processingTimeMs(),
-                event.modelKey(),
                 event.text(),
-                event.speakerChanged(),
-                event.finalResult(),
-                event.tag()
+                event.speakerChanged()
         );
     }
 
     /**
      * この文字起こし結果を {@link JSONObject} に変換します。
      *
-     * @return JSON 出力用オブジェクト
+     * @return JSON 出力用オブジェクト。例: {@code {"sequence":0,"text":"こんにちは"}}
      * @throws JSONException JSON への変換に失敗した場合
      */
     public JSONObject toJsonObject() throws JSONException {
@@ -112,11 +90,8 @@ public class TranscriptionJsonItem {
         object.put("recordingTimeMs", recordingTimeMs);
         object.put("durationMs", durationMs);
         object.put("processingTimeMs", processingTimeMs);
-        object.put("modelKey", modelKey);
         object.put("text", text);
         object.put("speakerChanged", speakerChanged);
-        object.put("finalResult", finalResult);
-        object.put("tag", tag.name());
         return object;
     }
 }

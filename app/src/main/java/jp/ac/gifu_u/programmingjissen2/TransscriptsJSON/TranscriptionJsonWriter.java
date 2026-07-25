@@ -16,6 +16,7 @@ import java.nio.charset.StandardCharsets;
 
 import Utils.StringPool.StringBufferBuilderPool;
 import events.Whisper.WhisperTranscriptionEvent;
+import events.Whisper.WhisperTranscriptionTag;
 import jp.ac.gifu_u.programmingjissen2.TransscriptsJSON.Data.TranscriptionJsonItem;
 
 /**
@@ -29,7 +30,7 @@ public class TranscriptionJsonWriter {
     public static final String DIRECTORY_NAME = "transcriptions";
 
     /** JSON の形式を将来変更するときに使う schema version です。 */
-    private static final int SCHEMA_VERSION = 1;
+    private static final int SCHEMA_VERSION = 2;
 
     /** 録音開始ごとに作られる session ID です。 */
     private final String sessionId;
@@ -43,6 +44,12 @@ public class TranscriptionJsonWriter {
     /** JSON に保存する文字起こし結果一覧です。 */
     private final JSONArray items = new JSONArray();
 
+    /** sessionで共通のWhisperモデル識別子です。 */
+    private String modelKey = "";
+
+    /** sessionで共通の発行元タグです。 */
+    private WhisperTranscriptionTag tag = WhisperTranscriptionTag.Recording;
+
     /** 録音終了時刻です。未終了の場合は 0 です。 */
     private long finishedAtUnixMs;
 
@@ -51,8 +58,9 @@ public class TranscriptionJsonWriter {
      *
      * <p>保存先は app-specific internal storage なので、追加のストレージ権限は不要です。</p>
      *
-     * @param context ファイル保存先を取得するための Context
-     * @param sessionId 録音 session ID
+     * @param context ファイル保存先を取得するためのContext。例: {@code activity}
+     * @param sessionId 録音session ID。例: {@code "live-0-19f99e5b391-317248c70b73"}
+     * @throws NullPointerException contextがnullの場合
      */
     public TranscriptionJsonWriter(@NonNull Context context, String sessionId) {
         this.sessionId = sessionId;
@@ -77,7 +85,7 @@ public class TranscriptionJsonWriter {
     /**
      * Whisper の推論結果を JSON に追記します。
      *
-     * @param event Whisper 推論結果イベント
+     * @param event Whisper推論結果イベント。例: {@code transcriptionEvent}
      */
     public synchronized void append(final WhisperTranscriptionEvent event) {
         if (event == null || event.hasError()) {
@@ -85,6 +93,11 @@ public class TranscriptionJsonWriter {
         }
 
         try {
+            if (items.length() == 0) {
+                modelKey = event.modelKey() == null ? "" : event.modelKey();
+                tag = event.tag() == null
+                        ? WhisperTranscriptionTag.Recording : event.tag();
+            }
             items.put(TranscriptionJsonItem.fromEvent(event).toJsonObject());
             save();
         } catch (JSONException | IOException e) {
@@ -103,7 +116,7 @@ public class TranscriptionJsonWriter {
     /**
      * JSON ファイルの保存先を返します。
      *
-     * @return 保存先ファイル
+     * @return 保存先ファイル。例: {@code files/transcriptions/live-0-....json}
      */
     public File getOutputFile() {
         return outputFile;
@@ -112,7 +125,7 @@ public class TranscriptionJsonWriter {
     /**
      * 現在の内容を JSON オブジェクトとして組み立てます。
      *
-     * @return ファイルに保存するルート JSON オブジェクト
+     * @return ファイルに保存するルートJSON。例: {@code {"schemaVersion":2,"items":[]}}
      * @throws JSONException JSON への変換に失敗した場合
      */
     @NonNull
@@ -122,6 +135,8 @@ public class TranscriptionJsonWriter {
         root.put("sessionId", sessionId);
         root.put("createdAtUnixMs", createdAtUnixMs);
         root.put("finishedAtUnixMs", finishedAtUnixMs);
+        root.put("modelKey", modelKey);
+        root.put("tag", tag.name());
         root.put("items", items);
         return root;
     }
@@ -153,8 +168,8 @@ public class TranscriptionJsonWriter {
     /**
      * session ID をファイル名として使える文字だけにします。
      *
-     * @param value 元の session ID
-     * @return ファイル名として安全な文字列
+     * @param value 元のsession ID。例: {@code "live:0"}
+     * @return ファイル名として安全な文字列。例: {@code "live_0"}
      */
     @NonNull
     private String sanitizeFileName(String value) {

@@ -35,7 +35,7 @@ public final class ResultHistoryTabView {
     private TranscriptionResultRepository.Entry selected;
 
     /**
-     * JSONまたは整形テキストの履歴タブを作成します。
+     * JSON、整形テキスト、録音の履歴タブを作成します。
      * @param activity 親Activity。例: {@code mainActivity}
      * @param type 表示種類。例: {@code Type.JSON}
      */
@@ -49,8 +49,7 @@ public final class ResultHistoryTabView {
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(dp(12), dp(8), dp(12), dp(8));
 
-        status = text(type == TranscriptionResultRepository.Type.JSON
-                ? "JSON結果を読み込み中" : "文字起こし履歴を読み込み中", 14);
+        status = text(loadingMessage(type), 14);
         root.addView(status, matchWrap());
 
         final ScrollView listScroll = new ScrollView(activity);
@@ -59,7 +58,10 @@ public final class ResultHistoryTabView {
         listScroll.addView(list);
         root.addView(listScroll, weighted(0.48f));
 
-        final TextView detailLabel = text("選択した文字起こし結果", 16);
+        final TextView detailLabel = text(
+                type == TranscriptionResultRepository.Type.AUDIO
+                        ? "関連する文字起こし" : "選択した文字起こし結果",
+                16);
         detailLabel.setTypeface(Typeface.DEFAULT_BOLD);
         root.addView(detailLabel, matchWrap());
 
@@ -128,12 +130,21 @@ public final class ResultHistoryTabView {
         final HorizontalScrollView actionScroll = new HorizontalScrollView(activity);
         final LinearLayout actionRow = new LinearLayout(activity);
         actionRow.setOrientation(LinearLayout.HORIZONTAL);
-        actionRow.addView(actionButton("共有", view -> actions.share(entry)));
-        actionRow.addView(actionButton("削除", view -> actions.delete(entry)));
-        actionRow.addView(actionButton("編集", view -> actions.edit(entry)));
-        actionRow.addView(actionButton("アプリで開く", view -> actions.openWithApp(entry)));
-        if (entry.audioFile() != null) {
-            actionRow.addView(actionButton("録音を再生", view -> actions.playAudio(entry)));
+        if (type == TranscriptionResultRepository.Type.AUDIO) {
+            actionRow.addView(actionButton("アプリで開く", view -> actions.openWithApp(entry)));
+            actionRow.addView(actionButton("共有", view -> actions.share(entry)));
+            actionRow.addView(actionButton("削除", view -> actions.delete(entry)));
+            actionRow.addView(actionButton("テキストを閲覧", view -> actions.browseText(entry)));
+        } else {
+            actionRow.addView(actionButton("アプリで開く", view -> actions.openWithApp(entry)));
+            actionRow.addView(actionButton("共有", view -> actions.share(entry)));
+            actionRow.addView(actionButton("削除", view -> actions.delete(entry)));
+            actionRow.addView(actionButton("編集", view -> actions.edit(entry)));
+
+            if (type == TranscriptionResultRepository.Type.TEXT && entry.audioFile() != null) {
+                actionRow.addView(actionButton(
+                        "音声を閲覧", view -> actions.browseAudio(entry)));
+            }
         }
         actionScroll.addView(actionRow);
         field.addView(actionScroll, matchWrap());
@@ -152,8 +163,14 @@ public final class ResultHistoryTabView {
         if (selected == null) {
             return;
         }
+        final File target = type == TranscriptionResultRepository.Type.AUDIO
+                ? selected.textFile() : selected.file();
+        if (target == null) {
+            detail.setText("同じ時刻データを持つ文字起こしテキストはありません。");
+            return;
+        }
         try {
-            String value = TranscriptionResultRepository.read(selected.file());
+            String value = TranscriptionResultRepository.read(target);
             if (type == TranscriptionResultRepository.Type.JSON) {
                 final String trimmed = value.trim();
                 value = trimmed.startsWith("[")
@@ -165,6 +182,20 @@ public final class ResultHistoryTabView {
             detail.setText(e.getMessage());
             Toast.makeText(activity, "結果を読み込めませんでした", Toast.LENGTH_SHORT).show();
         }
+    }
+
+    /**
+     * 種類に応じた読込中メッセージを返します。
+     * @param value タブ種類。例: {@code Type.AUDIO}
+     * @return 表示文。例: {@code "録音を読み込み中"}
+     */
+    @NonNull
+    private static String loadingMessage(@NonNull final TranscriptionResultRepository.Type value) {
+        if (value == TranscriptionResultRepository.Type.JSON) {
+            return "JSON結果を読み込み中";
+        }
+        return value == TranscriptionResultRepository.Type.AUDIO
+                ? "録音を読み込み中" : "文字起こし履歴を読み込み中";
     }
 
     /** @param label 例: {@code "共有"} @param listener 例: {@code view -> share()} @return Button */

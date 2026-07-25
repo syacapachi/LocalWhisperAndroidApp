@@ -19,7 +19,7 @@ import org.json.JSONObject;
 import java.io.File;
 import java.io.IOException;
 
-/** 結果カードの共有・削除・編集・外部表示・録音再生を実行します。 */
+/** 結果カードの共有・削除・編集・関連ファイルの外部表示を実行します。 */
 public final class ResultFileActionController {
     private final Activity activity;
     private final TranscriptionResultRepository.Type type;
@@ -29,7 +29,7 @@ public final class ResultFileActionController {
     /**
      * ファイル操作controllerを作成します。
      * @param activity IntentとDialogを表示するActivity。例: {@code mainActivity}
-     * @param type JSONまたはTEXT。例: {@code Type.TEXT}
+     * @param type JSON、TEXT、AUDIOのいずれか。例: {@code Type.AUDIO}
      * @param onChanged 削除後の一覧更新。例: {@code this::refresh}
      * @param onEdited 編集後のプレビュー更新。例: {@code this::reloadSelection}
      */
@@ -63,7 +63,11 @@ public final class ResultFileActionController {
                 send.putExtra(Intent.EXTRA_TEXT,
                         TranscriptionResultRepository.read(entry.file()));
             }
-            activity.startActivity(Intent.createChooser(send, "文字起こし結果を共有"));
+            activity.startActivity(Intent.createChooser(
+                    send,
+                    type == TranscriptionResultRepository.Type.AUDIO
+                            ? "録音を共有" : "文字起こし結果を共有"
+            ));
         } catch (Exception e) {
             showError("共有できませんでした", e);
         }
@@ -82,12 +86,28 @@ public final class ResultFileActionController {
      * 録音WAVを端末のメディアプレイヤーで開きます。
      * @param entry 音声を持つ結果。例: {@code selectedEntry}
      */
-    public void playAudio(@NonNull final TranscriptionResultRepository.Entry entry) {
+    public void browseAudio(@NonNull final TranscriptionResultRepository.Entry entry) {
         if (entry.audioFile() == null) {
             Toast.makeText(activity, "この結果に録音音声はありません", Toast.LENGTH_SHORT).show();
             return;
         }
-        openUri(uriFor(entry.audioFile()), "audio/wav", "音声を再生できるアプリがありません");
+        openUri(uriFor(entry.audioFile()), "audio/wav", "音声を閲覧できるアプリがありません");
+    }
+
+    /**
+     * 録音と同じ時刻データを持つテキストを対応アプリで開きます。
+     * @param entry 録音Entry。例: {@code selectedEntry}
+     */
+    public void browseText(@NonNull final TranscriptionResultRepository.Entry entry) {
+        if (entry.textFile() == null) {
+            Toast.makeText(
+                    activity,
+                    "この録音に対応するテキストはありません",
+                    Toast.LENGTH_SHORT
+            ).show();
+            return;
+        }
+        openUri(uriFor(entry.textFile()), "text/plain", "テキストを閲覧できるアプリがありません");
     }
 
     /**
@@ -125,9 +145,11 @@ public final class ResultFileActionController {
      * @param entry 削除対象。例: {@code selectedEntry}
      */
     public void delete(@NonNull final TranscriptionResultRepository.Entry entry) {
+        final boolean audio = type == TranscriptionResultRepository.Type.AUDIO;
         new AlertDialog.Builder(activity)
-                .setTitle("結果を削除")
-                .setMessage(entry.file().getName() + " を削除しますか？\n関連音声は残ります。")
+                .setTitle(audio ? "録音を削除" : "結果を削除")
+                .setMessage(entry.file().getName() + " を削除しますか？\n"
+                        + (audio ? "関連する文字起こしは残ります。" : "関連音声は残ります。"))
                 .setNegativeButton("キャンセル", null)
                 .setPositiveButton("削除", (dialog, which) -> {
                     if (TranscriptionResultRepository.delete(entry.file())) {

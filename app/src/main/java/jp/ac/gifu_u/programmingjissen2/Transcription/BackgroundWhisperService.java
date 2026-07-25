@@ -69,6 +69,8 @@ public class BackgroundWhisperService extends Service {
     private String modelPath;
     private String vadModelPath;
     private String recordingSessionId;
+    private String recordingTimeData;
+    private String pendingRecordingTimeData;
     private String inferenceSessionId;
     private String retranscriptionSessionId;
     private int inferenceSequence;
@@ -186,6 +188,10 @@ public class BackgroundWhisperService extends Service {
             requestResumeInference();
         } else {
             readRecordingRequest(intent);
+            if (!recording) {
+                pendingRecordingTimeData = newSessionTimeData();
+                inferenceSequence = 0;
+            }
             notificationController.start(
                     "Whisper 録音を準備中",
                     "モデルを準備しています",
@@ -319,7 +325,12 @@ public class BackgroundWhisperService extends Service {
             return;
         }
 
-        if (!ensureInferenceAccepting()) {
+        if (pendingRecordingTimeData == null) {
+            pendingRecordingTimeData = newSessionTimeData();
+        }
+        final String sessionTimeData = pendingRecordingTimeData;
+        recordingSessionId = sessionId("record", sessionTimeData);
+        if (!ensureInferenceAccepting(sessionTimeData)) {
             pendingRecordingStart = true;
             publishState("推論workerの再起動後に録音を開始します");
             return;
@@ -333,7 +344,6 @@ public class BackgroundWhisperService extends Service {
             return;
         }
 
-        recordingSessionId = newSessionId("record");
         if (!openAudioFile(recordingSessionId, sampleRate)) {
             stopInferenceIfNotRecording();
             return;
@@ -345,6 +355,8 @@ public class BackgroundWhisperService extends Service {
             return;
         }
         pendingRecordingStart = false;
+        recordingTimeData = sessionTimeData;
+        pendingRecordingTimeData = null;
         recordWorker = new AudioRecordWorker(
                 sampleRate,
                 bufferSize,
@@ -400,7 +412,7 @@ public class BackgroundWhisperService extends Service {
             return;
         }
         pendingInferenceResume = true;
-        if (ensureInferenceAccepting()) {
+        if (ensureInferenceAccepting(recordingTimeData)) {
             pendingInferenceResume = false;
             currentState = RecordTranscriptionState.Recording;
             publishState("リアルタイム推論を再開しました");
@@ -430,9 +442,19 @@ public class BackgroundWhisperService extends Service {
         }
     }
 
-    /** @return 音声投入可能な推論workerを用意できた場合true。例: {@code true} */
-    private boolean ensureInferenceAccepting() {
+    /**
+     * 指定時刻データの推論workerを用意します。
+     * @param sessionTimeData 録音と共有する時刻データ。例: {@code "19f99e5b391-317248c70b73"}
+     * @return 音声投入可能な推論workerを用意できた場合true。例: {@code true}
+     */
+    private boolean ensureInferenceAccepting(@NonNull final String sessionTimeData) {
         if (transcriptionWorker != null && transcriptionWorker.isAlive()) {
+            if (inferenceSessionId == null
+                    || !inferenceSessionId.endsWith("-" + sessionTimeData)) {
+                inferenceAccepting = false;
+                transcriptionWorker.requestStop();
+                return false;
+            }
             final boolean resumed = transcriptionWorker.resumeAudioSubmission();
             inferenceAlive = true;
             inferenceAccepting = resumed;
@@ -441,13 +463,16 @@ public class BackgroundWhisperService extends Service {
         if (transcriptionJsonWorker != null && transcriptionJsonWorker.isAlive()) {
             return false;
         }
-        startInferencePipeline();
+        startInferencePipeline(sessionTimeData);
         return true;
     }
 
-    /** 現在設定でリアルタイム推論workerとJSON workerを開始します。 */
-    private void startInferencePipeline() {
-        inferenceSessionId = newSessionId("live-" + inferenceSequence++);
+    /**
+     * 現在設定と録音共通の時刻データで推論workerを開始します。
+     * @param sessionTimeData 録音と共有する時刻データ。例: {@code "19f99e5b391-317248c70b73"}
+     */
+    private void startInferencePipeline(@NonNull final String sessionTimeData) {
+        inferenceSessionId = sessionId("live-" + inferenceSequence++, sessionTimeData);
         transcriptionWorker = new WhisperTranscriptionWorker(
                 modelPath,
                 vadModelPath,
@@ -529,7 +554,7 @@ public class BackgroundWhisperService extends Service {
         if (recording) {
             if (pendingInferenceResume && jsonThreadStopped) {
                 pendingInferenceResume = false;
-                startInferencePipeline();
+                startInferencePipeline(recordingTimeData);
                 currentState = RecordTranscriptionState.Recording;
                 publishState("リアルタイム推論を再開しました");
             } else {
@@ -626,7 +651,11 @@ public class BackgroundWhisperService extends Service {
                 retranscriptionQueue.offer(new RetranscriptionRequest(
                         file,
                         settings,
-                        newSessionId("recorded-file")
+                        sessionId(
+                                "recorded-file",
+                                recordingTimeData == null
+                                        ? newSessionTimeData() : recordingTimeData
+                        )
                 ));
             }
         } catch (IOException e) {
@@ -789,20 +818,36 @@ public class BackgroundWhisperService extends Service {
         inferenceAlive = false;
         inferenceAccepting = false;
         currentState = null;
+        recordingSessionId = null;
+        recordingTimeData = null;
+        pendingRecordingTimeData = null;
         stopForeground(STOP_FOREGROUND_REMOVE);
         stopSelf();
     }
 
     /**
-     * 重複しにくいセッションIDを作成します。
-     * @param prefix 用途名。例: {@code "record"}
-     * @return ID。例: {@code "record-1a-2b"}
+     * 録音と文字起こしで共有する重複しにくい時刻データを作成します。
+     * @return 時刻データ。例: {@code "19f99e5b391-317248c70b73"}
      */
     @NonNull
-    private static String newSessionId(@NonNull final String prefix) {
-        return StringBufferBuilderPool.Join("-", prefix,
+    private static String newSessionTimeData() {
+        return StringBufferBuilderPool.Join("-",
                 Long.toHexString(System.currentTimeMillis()),
                 Long.toHexString(System.nanoTime()));
+    }
+
+    /**
+     * 用途名と共通時刻データからセッションIDを作成します。
+     * @param prefix 用途名。例: {@code "live-0"}
+     * @param timeData 共通時刻データ。例: {@code "19f99e5b391-317248c70b73"}
+     * @return セッションID。例: {@code "live-0-19f99e5b391-317248c70b73"}
+     */
+    @NonNull
+    private static String sessionId(
+            @NonNull final String prefix,
+            @NonNull final String timeData
+    ) {
+        return StringBufferBuilderPool.Join("-", prefix, timeData);
     }
 
     private static final class RetranscriptionRequest {
