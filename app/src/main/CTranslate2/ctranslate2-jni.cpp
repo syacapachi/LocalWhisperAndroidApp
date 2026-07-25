@@ -16,6 +16,7 @@
 #include "whisper-token-decoder.h"
 #include "whisper-vad-filter.h"
 #include "../NativeAudio/pcm16-float-converter.h"
+#include "../NativeText/utf-converter.h"
 
 namespace {
 
@@ -30,26 +31,47 @@ struct WhisperHandle {
   app::ctranslate2_jni::WhisperVadContextPtr vad_context;
 };
 
-class JStringChars {
+class JStringUtf8 {
 public:
-  JStringChars(JNIEnv* env, jstring value)
-      : _env(env), _value(value), _chars(value == nullptr ? nullptr : env->GetStringUTFChars(value, nullptr)) {
+  // value例: Javaの"こんにちは"。通常UTF-8へ変換し、JNI取得失敗時は空文字を保持します。
+  // std::bad_allocは変換先メモリを確保できない場合に送出します。
+  JStringUtf8(JNIEnv* env, jstring value) {
+    if (value == nullptr)
+      return;
+    const jsize length = env->GetStringLength(value);
+    const jchar* chars = env->GetStringChars(value, nullptr);
+    if (chars == nullptr)
+      return;
+    try {
+      _text = app::native_text::utf16_to_utf8_replacing_invalid(
+          reinterpret_cast<const std::uint16_t*>(chars),
+          static_cast<std::size_t>(length));
+    } catch (...) {
+      env->ReleaseStringChars(value, chars);
+      throw;
+    }
+    env->ReleaseStringChars(value, chars);
   }
 
-  ~JStringChars() {
-    if (_chars != nullptr)
-      _env->ReleaseStringUTFChars(_value, _chars);
+  // 引数なし。戻り値例: "こんにちは"の通常UTF-8。例外は送出しません。
+  const std::string& str() const noexcept {
+    return _text;
   }
 
-  std::string str() const {
-    return _chars == nullptr ? std::string() : std::string(_chars);
-  }
-
-private:
-  JNIEnv* _env;
-  jstring _value;
-  const char* _chars;
+ private:
+  std::string _text;
 };
+
+// text例: 通常UTF-8の"こんにちは"。Java String例"こんにちは"を返します。
+// 不正UTF-8はU+FFFDへ置換し、JNIがメモリを確保できない場合はnullを返して例外を保留します。
+jstring new_java_string_from_utf8(JNIEnv* env, const std::string& text) {
+  const std::u16string utf16 =
+      app::native_text::utf8_to_utf16_replacing_invalid(text);
+  static_assert(sizeof(jchar) == sizeof(char16_t));
+  return env->NewString(
+      reinterpret_cast<const jchar*>(utf16.data()),
+      static_cast<jsize>(utf16.size()));
+}
 
 void throw_java(JNIEnv* env, const char* class_name, const std::string& message) {
   const jclass exception_class = env->FindClass(class_name);
@@ -72,9 +94,9 @@ Java_CTranslate2_CTranslate2Bridge_create(
     jstring vad_model_path,
     jint threads) {
   try {
-    const JStringChars model_path(env, model_directory);
-    const JStringChars compute(env, compute_type);
-    const JStringChars vad_path(env, vad_model_path);
+    const JStringUtf8 model_path(env, model_directory);
+    const JStringUtf8 compute(env, compute_type);
+    const JStringUtf8 vad_path(env, vad_model_path);
     if (model_path.str().empty())
       throw std::invalid_argument("modelDirectory must not be empty");
     if (threads <= 0)
@@ -160,7 +182,7 @@ Java_CTranslate2_CTranslate2Bridge_transcribe(
           vad_threshold,
           handle->vad_samples);
       if (!has_speech)
-        return env->NewStringUTF("");
+        return new_java_string_from_utf8(env, "");
       inference_samples = &handle->vad_samples;
     }
     // 軸に対する周波数の解像度(経験的に80,128が多い)
@@ -175,8 +197,8 @@ Java_CTranslate2_CTranslate2Bridge_transcribe(
         {1, static_cast<ctranslate2::dim_t>(n_mels), 3000},
         handle->mel_features.data());
 
-    const JStringChars language_code(env, language);
-    const JStringChars prompt_text(env, initial_prompt);
+    const JStringUtf8 language_code(env, language);
+    const JStringUtf8 prompt_text(env, initial_prompt);
     std::string language_token;
     // 自動検出モードの場合言語検出を実行
     if (translate_to_english || language_code.str() == "auto") {
@@ -211,10 +233,10 @@ Java_CTranslate2_CTranslate2Bridge_transcribe(
       // 結果は、複数の候補でやってくるので、先頭(最も確率が高い)を使う。
     const auto result = futures.at(0).get();
     if (result.sequences.empty())
-      return env->NewStringUTF("");
+      return new_java_string_from_utf8(env, "");
       // 結果は、複数の候補でやってくるので、先頭(最も確率が高い)を使う。
     const std::string text = app::ctranslate2_jni::decode_whisper_tokens(result.sequences[0]);
-    return env->NewStringUTF(text.c_str());
+    return new_java_string_from_utf8(env, text);
   } catch (const std::invalid_argument& error) {
     throw_java(env, "java/lang/IllegalArgumentException", error.what());
   } catch (const std::exception& error) {

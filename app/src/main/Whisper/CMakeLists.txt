@@ -154,6 +154,7 @@ add_library(
         ctranslate2-jni
         SHARED
         ../NativeAudio/pcm16-float-converter.cpp
+        ../NativeText/utf-converter.cpp
         ../CTranslate2/ctranslate2-jni.cpp
         ../CTranslate2/whisper-feature-extractor.cpp
         ../CTranslate2/whisper-prompt-tokenizer.cpp
