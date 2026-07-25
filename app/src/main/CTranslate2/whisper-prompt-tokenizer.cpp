@@ -105,7 +105,7 @@ WhisperPromptTokenizer::WhisperPromptTokenizer(const std::string& model_director
     }
   }
 }
-
+/** テキストを推論モデルに渡すトークン列に変換します。 */
 std::vector<std::string> WhisperPromptTokenizer::encode(
     const std::string& text,
     const size_t max_tokens) const {

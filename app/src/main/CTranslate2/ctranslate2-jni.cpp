@@ -178,6 +178,7 @@ Java_CTranslate2_CTranslate2Bridge_transcribe(
     const JStringChars language_code(env, language);
     const JStringChars prompt_text(env, initial_prompt);
     std::string language_token;
+    // 自動検出モードの場合言語検出を実行
     if (translate_to_english || language_code.str() == "auto") {
       auto language_futures = handle->model->detect_language(features);
       const auto probabilities = language_futures.at(0).get();
