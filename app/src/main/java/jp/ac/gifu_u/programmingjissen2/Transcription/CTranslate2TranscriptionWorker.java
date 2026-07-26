@@ -4,6 +4,8 @@ import android.util.Log;
 
 import androidx.annotation.NonNull;
 
+import java.nio.ByteBuffer;
+
 import CTranslate2.CTranslate2Bridge;
 import Utils.StringPool.StringBufferBuilderPool;
 import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.WhisperSettings;
@@ -43,28 +45,23 @@ public final class CTranslate2TranscriptionWorker implements AutoCloseable {
     }
 
     /**
-     * 1つの音声窓を推論し、結果から抽出した直近単語一覧を次回文脈として保存します。
-     * @param samples 16kHzモノラルPCM16。例: {@code new short[80000]}
+     * リングバッファ上の最大2区間を連続音声として推論します。
+     * @param samples Direct PCM16保存領域。例: {@code ByteBuffer.allocateDirect(320000)}
+     * @param firstByteOffset 第1区間byte位置。例: {@code 160000}
+     * @param firstSampleCount 第1区間数。例: {@code 40000}
+     * @param secondByteOffset 第2区間byte位置。例: {@code 0}
+     * @param secondSampleCount 第2区間数。例: {@code 40000}
      * @return 本文と話者情報。例: {@code new TranscriptionWorkerResult("こんにちは", false)}
-     * @throws IllegalStateException native推論に失敗した場合
-     */
-    @NonNull
-    public TranscriptionWorkerResult transcribe(@NonNull final short[] samples) {
-        return transcribe(samples, samples.length);
-    }
-
-    /**
-     * 再利用PCM16配列の有効部分だけを推論します。
-     * @param samples PCM16出力バッファ。例: {@code new short[80000]}
-     * @param sampleCount 有効サンプル数。例: {@code 64000}
-     * @return 本文と話者情報。例: {@code new TranscriptionWorkerResult("こんにちは", false)}
-     * @throws IllegalArgumentException sampleCountが配列範囲外の場合
+     * @throws IllegalArgumentException Directバッファまたは区間が不正な場合
      * @throws IllegalStateException native推論に失敗した場合
      */
     @NonNull
     public TranscriptionWorkerResult transcribe(
-            @NonNull final short[] samples,
-            final int sampleCount
+            @NonNull final ByteBuffer samples,
+            final int firstByteOffset,
+            final int firstSampleCount,
+            final int secondByteOffset,
+            final int secondSampleCount
     ) {
         final String prompt;
         if (previousWordContext.isEmpty()) {
@@ -77,7 +74,10 @@ public final class CTranslate2TranscriptionWorker implements AutoCloseable {
         }
         final String text = bridge.transcribe(
                 samples,
-                sampleCount,
+                firstByteOffset,
+                firstSampleCount,
+                secondByteOffset,
+                secondSampleCount,
                 settings.language(),
                 settings.translateToEnglish(),
                 prompt,

@@ -2,6 +2,8 @@ package Whisper;
 
 import androidx.annotation.NonNull;
 
+import java.nio.ByteBuffer;
+
 import Utils.ScopableUtility;
 import Utils.StringPool.StringBufferBuilderPool;
 
@@ -227,10 +229,22 @@ public class WhisperBridge {
      * PCM16音声をnative側でfloatへ正規化してfull推論します。
      * @param context native context。例: {@code 1L}
      * @param params full推論設定。例: {@code defaultFullParams(SAMPLING_GREEDY)}
-     * @param pcmData 16kHzモノラルPCM16。例: {@code new short[16000]}
+     * @param pcmData Direct PCM16保存領域。例: {@code ByteBuffer.allocateDirect(32000)}
+     * @param firstByteOffset 第1区間byte位置。例: {@code 0}
+     * @param firstSampleCount 第1区間数。例: {@code 16000}
+     * @param secondByteOffset 第2区間byte位置。例: {@code 0}
+     * @param secondSampleCount 第2区間数。例: {@code 0}
      * @return whisper_fullの結果。例: {@code 0}
+     * @throws IllegalArgumentException 非Directまたは区間が範囲外の場合
      */
-    public static native int fullPcm16(long context, FullParams params, short[] pcmData);
+    public static native int fullPcm16(
+            long context,
+            FullParams params,
+            ByteBuffer pcmData,
+            int firstByteOffset,
+            int firstSampleCount,
+            int secondByteOffset,
+            int secondSampleCount);
 
     /**
      * 指定した state を使って音声全体を文字起こしします。

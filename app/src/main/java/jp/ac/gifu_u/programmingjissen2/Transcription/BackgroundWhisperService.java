@@ -32,6 +32,7 @@ import events.Threading.ThreadStoppedEvent;
 import events.Whisper.WhisperRecordingStateEvent;
 import events.Whisper.WhisperTranscriptionEvent;
 import jp.ac.gifu_u.programmingjissen2.Record.AudioRecordWorker;
+import jp.ac.gifu_u.programmingjissen2.Record.Buffer.PooledPcmChunk;
 import jp.ac.gifu_u.programmingjissen2.Record.RecordTranscriptionState;
 import jp.ac.gifu_u.programmingjissen2.Record.RecordedAudioFileWriter;
 import jp.ac.gifu_u.programmingjissen2.Record.RecordingAudioSource;
@@ -424,22 +425,29 @@ public class BackgroundWhisperService extends Service {
 
     /**
      * マイクPCMをWAVと推論workerへ振り分けます。
-     * @param samples PCM16。例: {@code new short[8000]}
-     * @param length 有効サンプル数。例: {@code 8000}
+     * @param chunk 所有権付きDirect PCM16。例: {@code pool.acquire()}
+     * @throws RuntimeException 保存・投入の予期しない失敗時。未移譲チャンクは必ず返却します。
      */
-    private void onAudioChunk(final short[] samples, final int length) {
-        final RecordedAudioFileWriter writer = audioFileWriter;
-        if (writer != null) {
-            try {
-                writer.append(samples, length);
-            } catch (IOException e) {
-                Log.e(TAG, "Audio recording write failed", e);
-                closeAudioFile(false);
+    private void onAudioChunk(@NonNull final PooledPcmChunk chunk) {
+        boolean transferred = false;
+        try {
+            final RecordedAudioFileWriter writer = audioFileWriter;
+            if (writer != null) {
+                try {
+                    writer.append(chunk.bytes(), 0, chunk.sampleCount());
+                } catch (IOException e) {
+                    Log.e(TAG, "Audio recording write failed", e);
+                    closeAudioFile(false);
+                }
             }
-        }
-        final WhisperTranscriptionWorker worker = transcriptionWorker;
-        if (worker != null && inferenceAccepting) {
-            worker.submit(samples, length);
+            final WhisperTranscriptionWorker worker = transcriptionWorker;
+            if (worker != null && inferenceAccepting) {
+                transferred = worker.submit(chunk);
+            }
+        } finally {
+            if (!transferred) {
+                chunk.close();
+            }
         }
     }
 

@@ -4,6 +4,8 @@ import android.util.Log;
 
 import androidx.annotation.NonNull;
 
+import java.nio.ByteBuffer;
+
 import Utils.StringPool.StringBufferBuilderPool;
 
 /** CTranslate2 の Whisper 推論を Java から呼び出す JNI ブリッジです。 */
@@ -56,7 +58,11 @@ public final class CTranslate2Bridge implements AutoCloseable {
     /**
      * 16kHzモノラルPCMをWhisperで文字起こしします。
      *
-     * @param samples 16bit PCM。例: {@code new short[80000]}
+     * @param samples Direct PCM16保存領域。例: {@code ByteBuffer.allocateDirect(160000)}
+     * @param firstByteOffset 第1区間のbyte offset。例: {@code 96000}
+     * @param firstSampleCount 第1区間のサンプル数。例: {@code 32000}
+     * @param secondByteOffset 第2区間のbyte offset。例: {@code 0}
+     * @param secondSampleCount 第2区間のサンプル数。例: {@code 48000}
      * @param language Whisper言語コード。例: {@code "ja"}
      * @param translateToEnglish 英語翻訳ならtrue。例: {@code false}
      * @param initialPrompt 初期プロンプトと直前文脈。例: {@code "専門用語: CTranslate2\n前の文"}
@@ -68,34 +74,11 @@ public final class CTranslate2Bridge implements AutoCloseable {
      */
     @NonNull
     public synchronized String transcribe(
-            @NonNull final short[] samples,
-            @NonNull final String language,
-            final boolean translateToEnglish,
-            @NonNull final String initialPrompt,
-            final boolean vadEnabled,
-            final float vadThreshold
-    ) {
-        return transcribe(samples, samples.length, language, translateToEnglish,
-                initialPrompt, vadEnabled, vadThreshold);
-    }
-
-    /**
-     * 再利用PCM16配列の有効部分だけをWhisperで文字起こしします。
-     * @param samples 再利用可能なPCM16配列。例: {@code new short[80000]}
-     * @param sampleCount 有効サンプル数。例: {@code 64000}
-     * @param language Whisper言語コード。例: {@code "ja"}
-     * @param translateToEnglish 英語翻訳ならtrue。例: {@code false}
-     * @param initialPrompt 初期プロンプト。例: {@code "Whisper CTranslate2"}
-     * @param vadEnabled 無音判定を使う場合true。例: {@code true}
-     * @param vadThreshold Silero VADの発話確率閾値。例: {@code 0.6f}
-     * @return 文字起こし本文。例: {@code "こんにちは"}
-     * @throws IllegalArgumentException sampleCountが配列範囲外の場合
-     * @throws IllegalStateException 解放後、またはnative推論に失敗した場合
-     */
-    @NonNull
-    public synchronized String transcribe(
-            @NonNull final short[] samples,
-            final int sampleCount,
+            @NonNull final ByteBuffer samples,
+            final int firstByteOffset,
+            final int firstSampleCount,
+            final int secondByteOffset,
+            final int secondSampleCount,
             @NonNull final String language,
             final boolean translateToEnglish,
             @NonNull final String initialPrompt,
@@ -105,13 +88,18 @@ public final class CTranslate2Bridge implements AutoCloseable {
         if (handle == 0) {
             throw new IllegalStateException("CTranslate2 model is already closed");
         }
-        if (sampleCount < 0 || sampleCount > samples.length) {
-            throw new IllegalArgumentException("sampleCount is outside samples");
+        if (!samples.isDirect()) {
+            throw new IllegalArgumentException("samples must be a DirectByteBuffer");
         }
+        validateRange(samples, firstByteOffset, firstSampleCount, "first");
+        validateRange(samples, secondByteOffset, secondSampleCount, "second");
         return transcribe(
                 handle,
                 samples,
-                sampleCount,
+                firstByteOffset,
+                firstSampleCount,
+                secondByteOffset,
+                secondSampleCount,
                 language,
                 translateToEnglish,
                 initialPrompt,
@@ -120,6 +108,26 @@ public final class CTranslate2Bridge implements AutoCloseable {
                 1,
                 448
         );
+    }
+
+    /**
+     * JNIへ渡すPCM区間がDirectバッファ内か検証します。
+     * @param samples Direct保存領域。例: {@code ByteBuffer.allocateDirect(160000)}
+     * @param byteOffset byte位置。例: {@code 32000}
+     * @param sampleCount サンプル数。例: {@code 64000}
+     * @param name エラー表示名。例: {@code "first"}
+     * @throws IllegalArgumentException offsetが奇数、負数、または容量外の場合
+     */
+    private static void validateRange(
+            @NonNull final ByteBuffer samples,
+            final int byteOffset,
+            final int sampleCount,
+            @NonNull final String name
+    ) {
+        if (byteOffset < 0 || (byteOffset & 1) != 0 || sampleCount < 0
+                || (long) byteOffset + (long) sampleCount * Short.BYTES > samples.capacity()) {
+            throw new IllegalArgumentException(name + " PCM16 range is outside samples");
+        }
     }
 
     /** nativeモデルを解放します。複数回呼んでも安全です。 */
@@ -140,8 +148,11 @@ public final class CTranslate2Bridge implements AutoCloseable {
     private static native void destroy(long handle);
     private static native String transcribe(
             long handle,
-            short[] samples,
-            int sampleCount,
+            ByteBuffer samples,
+            int firstByteOffset,
+            int firstSampleCount,
+            int secondByteOffset,
+            int secondSampleCount,
             String language,
             boolean translateToEnglish,
             String initialPrompt,

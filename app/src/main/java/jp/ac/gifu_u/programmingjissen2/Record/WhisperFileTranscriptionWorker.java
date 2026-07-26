@@ -136,7 +136,13 @@ public final class WhisperFileTranscriptionWorker implements Runnable {
         final TranscriptionWorkerResult result;
         try (WhisperCPPTranscriptionWorker worker = new WhisperCPPTranscriptionWorker(
                 modelPath, vadModelPath, settings)) {
-            result = worker.transcribe(audio.samples(), true);
+            result = worker.transcribe(
+                    audio.samples(),
+                    0,
+                    audio.sampleCount(),
+                    0,
+                    0,
+                    true);
         }
         final long processingTimeMs = TimeUnit.NANOSECONDS.toMillis(
                 System.nanoTime() - startedAt);

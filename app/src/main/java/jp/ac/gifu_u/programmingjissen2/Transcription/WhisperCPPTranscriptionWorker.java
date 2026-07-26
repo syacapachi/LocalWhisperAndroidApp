@@ -5,6 +5,7 @@ import android.util.Log;
 import androidx.annotation.NonNull;
 
 import java.io.IOException;
+import java.nio.ByteBuffer;
 
 import Utils.StringPool.StringBufferBuilderPool;
 import Whisper.WhisperBridge;
@@ -43,25 +44,61 @@ public final class WhisperCPPTranscriptionWorker implements AutoCloseable {
 
     /**
      * 音声配列全体を分割せず1回のfull呼び出しで推論します。
-     * @param samples 16kHzモノラルPCM16全体。例: {@code new short[16000]}
+     * @param samples Direct PCM16全体。例: {@code ByteBuffer.allocateDirect(32000)}
+     * @param firstByteOffset 第1区間byte位置。例: {@code 0}
+     * @param firstSampleCount 第1区間数。例: {@code 16000}
+     * @param secondByteOffset 第2区間byte位置。例: {@code 0}
+     * @param secondSampleCount 第2区間数。例: {@code 0}
      * @param includeTimestamps セグメント時刻を本文へ付けるならtrue。例: {@code true}
      * @return 全セグメントを結合した結果。例: {@code new TranscriptionWorkerResult("[00:00.000] ...", false)}
      * @throws IOException native推論が失敗した場合
      */
     @NonNull
     public TranscriptionWorkerResult transcribe(
-            @NonNull final short[] samples,
+            @NonNull final ByteBuffer samples,
+            final int firstByteOffset,
+            final int firstSampleCount,
+            final int secondByteOffset,
+            final int secondSampleCount,
             final boolean includeTimestamps
     ) throws IOException {
         if (context == 0) {
             throw new IOException("Whisper.cpp model is already closed");
         }
         final WhisperBridge.FullParams params = createFullParams(includeTimestamps);
-        final int result = WhisperBridge.fullPcm16(context, params, samples);
+        if (!samples.isDirect()) {
+            throw new IllegalArgumentException("samples must be a DirectByteBuffer");
+        }
+        validateRange(samples, firstByteOffset, firstSampleCount, "first");
+        validateRange(samples, secondByteOffset, secondSampleCount, "second");
+        final int result = WhisperBridge.fullPcm16(
+                context, params, samples,
+                firstByteOffset, firstSampleCount,
+                secondByteOffset, secondSampleCount);
         if (result != 0) {
             throw new IOException("Whisper.cpp inference failed: " + result);
         }
         return collectResult(includeTimestamps);
+    }
+
+    /**
+     * Direct PCM区間がバッファ内か検証します。
+     * @param samples Direct保存領域。例: {@code ByteBuffer.allocateDirect(32000)}
+     * @param byteOffset byte位置。例: {@code 0}
+     * @param sampleCount サンプル数。例: {@code 16000}
+     * @param name エラー表示名。例: {@code "first"}
+     * @throws IllegalArgumentException offsetが奇数、負数、または範囲外の場合
+     */
+    private static void validateRange(
+            @NonNull final ByteBuffer samples,
+            final int byteOffset,
+            final int sampleCount,
+            @NonNull final String name
+    ) {
+        if (byteOffset < 0 || (byteOffset & 1) != 0 || sampleCount < 0
+                || (long) byteOffset + (long) sampleCount * Short.BYTES > samples.capacity()) {
+            throw new IllegalArgumentException(name + " PCM16 range is outside samples");
+        }
     }
 
     /**

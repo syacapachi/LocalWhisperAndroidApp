@@ -12,9 +12,15 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.annotation.RequiresPermission;
 
+import java.nio.ByteBuffer;
+import java.nio.ShortBuffer;
+
 import Utils.StringPool.StringBufferBuilderPool;
 import events.SystemEventHub;
 import events.Threading.ThreadStoppedEvent;
+import jp.ac.gifu_u.programmingjissen2.Record.Buffer.DirectPcm16Buffer;
+import jp.ac.gifu_u.programmingjissen2.Record.Buffer.DirectPcm16BufferPool;
+import jp.ac.gifu_u.programmingjissen2.Record.Buffer.PooledPcmChunk;
 
 /**
  * AudioRecord の生成、録音ループ、停止イベント通知を担当する worker です。
@@ -56,11 +62,11 @@ public class AudioRecordWorker implements Runnable {
     /** 対象アプリの再生音声を読むAudioRecordです。 */
     private AudioRecord playbackRecord;
 
-    /** AudioRecord.read() が書き込む PCM バッファです。 */
-    private final short[] audioBuffer;
+    /** 録音チャンクを推論終了まで上書きせず再利用するDirectバッファプールです。 */
+    private final DirectPcm16BufferPool audioBufferPool;
 
     /** マイクとアプリ音声を混ぜる際の再生音声バッファです。 */
-    private final short[] playbackBuffer;
+    private final DirectPcm16Buffer playbackBuffer;
 
     /**
      * AudioRecord から読み出した PCM チャンクを受け取る listener です。
@@ -69,10 +75,11 @@ public class AudioRecordWorker implements Runnable {
         /**
          * 録音スレッドから PCM チャンクが届いたときに呼ばれます。
          *
-         * @param samples 16kHz・モノラル・PCM16。例: {@code new short[8000]}
-         * @param length samples のうち有効な要素数
+         * @param chunk 16kHz・モノラル・PCM16の所有権付きDirectチャンク。
+         *              例: {@code pool.acquire()}
+         * @throws RuntimeException 通知先の処理に失敗した場合。未移譲チャンクは録音側が返却します。
          */
-        void onAudioChunk(final short[] samples, final int length);
+        void onAudioChunk(@NonNull final PooledPcmChunk chunk);
     }
 
     /**
@@ -119,8 +126,9 @@ public class AudioRecordWorker implements Runnable {
         this.audioSource = audioSource;
         this.mediaProjection = mediaProjection;
         this.captureTargetUid = captureTargetUid;
-        this.audioBuffer = new short[Math.max(1, bufferSize / Short.BYTES)];
-        this.playbackBuffer = new short[this.audioBuffer.length];
+        final int sampleCapacity = Math.max(1, bufferSize / Short.BYTES);
+        this.audioBufferPool = new DirectPcm16BufferPool(sampleCapacity, 132);
+        this.playbackBuffer = new DirectPcm16Buffer(sampleCapacity);
     }
 
     /**
@@ -321,32 +329,48 @@ public class AudioRecordWorker implements Runnable {
     private void readNextAudioChunk() {
         final AudioRecord primary = audioSource == RecordingAudioSource.APP_CAPTURE
                 ? playbackRecord : microphoneRecord;
-        final int dataSize = primary.read(
-                audioBuffer,
-                0,
-                audioBuffer.length,
-                AudioRecord.READ_BLOCKING
-        );
+        final PooledPcmChunk chunk = audioBufferPool.acquire();
+        boolean ownershipTransferred = false;
+        try {
+            final ByteBuffer audioBytes = chunk.bytes();
+            audioBytes.clear();
+            final int byteCount = primary.read(
+                    audioBytes,
+                    audioBytes.capacity(),
+                    AudioRecord.READ_BLOCKING
+            );
 
-        if (dataSize > 0) {
-            int outputSize = dataSize;
-            if (audioSource == RecordingAudioSource.MICROPHONE_AND_APP) {
-                final int playbackSize = playbackRecord.read(
-                        playbackBuffer, 0, dataSize, AudioRecord.READ_BLOCKING);
-                if (playbackSize < 0) {
-                    Log.w(TAG, "Playback AudioRecord read error: " + playbackSize);
-                    return;
+            if (byteCount > 0) {
+                int outputBytes = byteCount - byteCount % Short.BYTES;
+                if (audioSource == RecordingAudioSource.MICROPHONE_AND_APP) {
+                    final ByteBuffer playbackBytes = playbackBuffer.bytes();
+                    playbackBytes.clear();
+                    final int playbackByteCount = playbackRecord.read(
+                            playbackBytes,
+                            Math.min(outputBytes, playbackBytes.capacity()),
+                            AudioRecord.READ_BLOCKING);
+                    if (playbackByteCount < 0) {
+                        Log.w(TAG, "Playback AudioRecord read error: " + playbackByteCount);
+                        return;
+                    }
+                    outputBytes = Math.min(outputBytes,
+                            playbackByteCount - playbackByteCount % Short.BYTES);
+                    mixBuffers(audioBytes, playbackBytes, outputBytes / Short.BYTES);
                 }
-                outputSize = Math.min(dataSize, playbackSize);
-                mixBuffers(outputSize);
+                chunk.setSampleCount(outputBytes / Short.BYTES);
+                listener.onAudioChunk(chunk);
+                ownershipTransferred = true;
+            } else if (byteCount < 0) {
+                Log.w(TAG, StringBufferBuilderPool.Join(
+                        "",
+                        "AudioRecord read error: ",
+                        byteCount
+                ));
             }
-            listener.onAudioChunk(audioBuffer, outputSize);
-        } else if (dataSize < 0) {
-            Log.w(TAG, StringBufferBuilderPool.Join(
-                    "",
-                    "AudioRecord read error: ",
-                    dataSize
-            ));
+        } finally {
+            if (!ownershipTransferred) {
+                chunk.close();
+            }
         }
     }
 
@@ -383,12 +407,22 @@ public class AudioRecordWorker implements Runnable {
 
     /**
      * マイクとアプリ音声を同じ音量比で加算し、PCM16範囲へ収めます。
+     * @param microphone 上書き先Direct PCM16。例: {@code chunk.bytes()}
+     * @param playback 加算元Direct PCM16。例: {@code playbackBuffer.bytes()}
      * @param length 混合するサンプル数。例: {@code 8000}
+     * @throws IndexOutOfBoundsException lengthがいずれかのバッファ容量を超える場合
      */
-    private void mixBuffers(final int length) {
+    private static void mixBuffers(
+            @NonNull final ByteBuffer microphone,
+            @NonNull final ByteBuffer playback,
+            final int length
+    ) {
+        final ShortBuffer microphoneSamples = microphone.asShortBuffer();
+        final ShortBuffer playbackSamples = playback.asShortBuffer();
         for (int index = 0; index < length; index++) {
-            final int mixed = (audioBuffer[index] + playbackBuffer[index]) / 2;
-            audioBuffer[index] = (short) Math.max(Short.MIN_VALUE, Math.min(Short.MAX_VALUE, mixed));
+            final int mixed = (microphoneSamples.get(index) + playbackSamples.get(index)) / 2;
+            microphoneSamples.put(index,
+                    (short) Math.max(Short.MIN_VALUE, Math.min(Short.MAX_VALUE, mixed)));
         }
     }
 
@@ -414,6 +448,7 @@ public class AudioRecordWorker implements Runnable {
             playbackRecord.release();
             playbackRecord = null;
         }
+        audioBufferPool.clear();
     }
 
     /**

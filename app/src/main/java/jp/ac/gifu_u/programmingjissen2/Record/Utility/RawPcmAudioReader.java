@@ -10,6 +10,8 @@ import androidx.annotation.NonNull;
 import java.nio.ByteBuffer;
 
 import jp.ac.gifu_u.programmingjissen2.Record.DecodedAudio;
+import jp.ac.gifu_u.programmingjissen2.Record.Buffer.DirectPcm16Buffer;
+import jp.ac.gifu_u.programmingjissen2.Record.Buffer.DirectPcm16Builder;
 import jp.ac.gifu_u.programmingjissen2.Transcription.WhisperTranscriptionWorker;
 
 /** MediaExtractor から raw PCM 音声を直接読む helper です。 */
@@ -24,7 +26,7 @@ public final class RawPcmAudioReader {
      *
      * @param extractor audio track が select 済みの extractor。例: {@code extractor}
      * @param format extractor から取得した MediaFormat。例: {@code extractor.getTrackFormat(0)}
-     * @return Whisperに渡せるPCM16。例: {@code new DecodedAudio(new short[16000], 16000)}
+     * @return Whisperに渡せるDirect PCM16。例: {@code result.sampleCount() == 16000}
      * @throws IllegalArgumentException 未対応 PCM 形式や不正なチャンネル数の場合
      */
     @NonNull
@@ -46,8 +48,7 @@ public final class RawPcmAudioReader {
         // 空のバッファを作成。
         final ByteBuffer buffer = ByteBuffer.allocateDirect(bufferSize);
         final MediaCodec.BufferInfo info = new MediaCodec.BufferInfo();
-        final Pcm16AudioConverter.ShortArrayBuilder samples =
-                new Pcm16AudioConverter.ShortArrayBuilder();
+        final DirectPcm16Builder samples = new DirectPcm16Builder();
 
         while (true) {
             buffer.clear();
@@ -63,10 +64,11 @@ public final class RawPcmAudioReader {
         }
 
         final int targetSampleRate = WhisperTranscriptionWorker.DEFAULT_SAMPLE_RATE;
-        final short[] whisperPcm = new short[Pcm16AudioConverter.resampledLength(
-                samples.size(), sampleRate, targetSampleRate)];
-        samples.resampleTo(sampleRate, targetSampleRate, whisperPcm);
-        return new DecodedAudio(whisperPcm, WhisperTranscriptionWorker.DEFAULT_SAMPLE_RATE);
+        final DirectPcm16Buffer whisperPcm = samples.resample(sampleRate, targetSampleRate);
+        return new DecodedAudio(
+                whisperPcm.bytes(),
+                whisperPcm.sampleCount(),
+                WhisperTranscriptionWorker.DEFAULT_SAMPLE_RATE);
     }
 
     private static int readInt(

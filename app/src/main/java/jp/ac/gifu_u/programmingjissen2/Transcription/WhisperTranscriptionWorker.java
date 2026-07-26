@@ -4,23 +4,23 @@ import android.util.Log;
 
 import androidx.annotation.NonNull;
 
-import java.util.Arrays;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.TimeUnit;
 
-import Utils.Pool.ObjectPool;
 import Utils.StringPool.StringBufferBuilderPool;
 import events.SystemEventHub;
 import events.Threading.ThreadStoppedEvent;
 import events.Whisper.WhisperTranscriptionEvent;
 import events.Whisper.WhisperTranscriptionTag;
 import events.Whisper.WhisperProgressEvent;
+import jp.ac.gifu_u.programmingjissen2.Record.Buffer.DirectPcm16RingBuffer;
+import jp.ac.gifu_u.programmingjissen2.Record.Buffer.PooledPcmChunk;
 import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.WhisperSettings;
 
 /**
  * 録音スレッドから受け取った音声チャンクを、CTranslate2専用workerへ渡すクラスです。
  *
- * <p>モデルはworkerスレッド開始時に一度だけ読み込み、録音中は{@link #submit(short[], int)}
+ * <p>モデルはworkerスレッド開始時に一度だけ読み込み、録音中は{@link #submit(PooledPcmChunk)}
  * で渡された PCM を一定時間ごとにまとめて推論します。推論結果は
  * {@link WhisperTranscriptionEvent} として {@link SystemEventHub} へ publish します。</p>
  */
@@ -60,22 +60,12 @@ public class WhisperTranscriptionWorker implements Runnable {
 
     /** 停止時の最終推論に必要な最小サンプル数です。 */
     private final int minFinalSamples;
-    /** 録音スレッドから渡された PCM チャンクを保存しておくバッファのプールです。 */
-    private final ObjectPool<ShortAudioBuffer> audioBufferPool = new ObjectPool<>(
-            ShortAudioBuffer::new,
-            null,
-            ShortAudioBuffer::clear,
-            (buffer)->{Log.d(TAG,"deleted");},
-            QUEUE_CAPACITY,
-            QUEUE_CAPACITY);
-
     /** 録音スレッドから渡された PCM チャンクを受け取るキューです。 */
-    private final ArrayBlockingQueue<ShortAudioBuffer> audioQueue = new ArrayBlockingQueue<>(QUEUE_CAPACITY);
+    private final ArrayBlockingQueue<PooledPcmChunk> audioQueue =
+            new ArrayBlockingQueue<>(QUEUE_CAPACITY);
 
     /** 推論窓に達するまで PCM をためるバッファです。 */
-    private final ShortAudioBuffer pendingAudio;
-    /** workerスレッドだけが使う再利用推論窓です。 */
-    private final short[] inferenceWindowBuffer;
+    private final DirectPcm16RingBuffer pendingAudio;
 
     /** worker スレッドの継続フラグです。 */
     private volatile boolean running;
@@ -185,8 +175,7 @@ public class WhisperTranscriptionWorker implements Runnable {
         this.windowSamples = Math.max(1, sampleRate * this.settings.windowMs() / 1000);
         this.overlapSamples = Math.max(0, sampleRate * this.settings.overlapMs() / 1000);
         this.minFinalSamples = Math.max(1, sampleRate * this.settings.minFinalMs() / 1000);
-        this.pendingAudio = new ShortAudioBuffer(windowSamples * 2);
-        this.inferenceWindowBuffer = new short[windowSamples];
+        this.pendingAudio = new DirectPcm16RingBuffer(windowSamples * 2 + sampleRate);
     }
 
     /** Whisper 推論スレッドを開始します。 */
@@ -220,28 +209,24 @@ public class WhisperTranscriptionWorker implements Runnable {
     /**
      * 録音された音声チャンクを worker に渡します。
      *
-     * @param samples 16kHz・モノラル・PCM16。例: {@code new short[8000]}
-     * @param length samples のうち有効な要素数
-     * @return キューへ追加できた場合true。例: {@code true}
+     * @param chunk 16kHz・モノラル・Direct PCM16の所有権付きチャンク。
+     *              例: {@code pool.acquire()}
+     * @return 所有権をキューへ移譲できた場合true。falseなら呼び出し側がcloseします。
+     *         例: {@code true}
+     * @throws IllegalStateException 返却済みチャンクを渡した場合
      */
-    public boolean submit(final short[] samples, final int length) {
-        if (!running || !acceptingAudio || samples == null || samples.length == 0 || length <= 0) {
+    public synchronized boolean submit(@NonNull final PooledPcmChunk chunk) {
+        if (!running || !acceptingAudio || chunk.sampleCount() <= 0) {
             return false;
         }
-        final ShortAudioBuffer copy;
-        synchronized (audioBufferPool) {
-            copy = audioBufferPool.getOrCreate();
-        }
-        copy.append(samples, Math.min(length, samples.length));
-        
-        if (!audioQueue.offer(copy)) {
-            final ShortAudioBuffer old = audioQueue.poll();
+
+        if (!audioQueue.offer(chunk)) {
+            final PooledPcmChunk old = audioQueue.poll();
             if(old != null) {
-                releaseAudioBuffer(old);
+                old.close();
                 Log.w(TAG, "Whisper queue is full. Dropped old audio chunk.");
             }
-            if(!audioQueue.offer(copy)) {
-                releaseAudioBuffer(copy);
+            if(!audioQueue.offer(chunk)) {
                 Log.w(TAG, "Whisper queue is full. Dropped current audio chunk.");
                 return false;
             }
@@ -300,11 +285,13 @@ public class WhisperTranscriptionWorker implements Runnable {
                     new CTranslate2TranscriptionWorker(modelPath, vadModelPath, settings)) {
             while (running && !currentThread.isInterrupted()) {
                 //　キューに溜まったデータを取得
-                final ShortAudioBuffer chunk = audioQueue.poll(200, TimeUnit.MILLISECONDS);
+                final PooledPcmChunk chunk = audioQueue.poll(200, TimeUnit.MILLISECONDS);
                 if (chunk != null) {
-                    // 窓に追加
-                    pendingAudio.append(chunk);
-                    releaseAudioBuffer(chunk);
+                    try {
+                        pendingAudio.append(chunk.bytes(), chunk.sampleCount());
+                    } finally {
+                        chunk.close();
+                    }
                     // 一定以上ある場合は推論
                     while (pendingAudio.size() >= windowSamples && !currentThread.isInterrupted()) {
                         transcribeNextWindow(cTranslate2Worker,false);
@@ -323,11 +310,14 @@ public class WhisperTranscriptionWorker implements Runnable {
         } finally {
             // バッファクリア
             pendingAudio.clear();
-            running = false;
-            acceptingAudio = false;
-            drainStopRequested = false;
-            terminating = true;
-            workerThread = null;
+            synchronized (this) {
+                running = false;
+                acceptingAudio = false;
+                drainStopRequested = false;
+                terminating = true;
+                closeQueuedAudio();
+                workerThread = null;
+            }
             publishStoppedEvent(currentThread, "");
         }
     }
@@ -337,7 +327,7 @@ public class WhisperTranscriptionWorker implements Runnable {
      * @param currentThread worker 自身のスレッド
      */
     private void transcribeRemainingAudio(@NonNull CTranslate2TranscriptionWorker cTranslate2Worker, @NonNull final Thread currentThread) {
-        drainQueuedAudio();
+        drainQueuedAudio(cTranslate2Worker, currentThread);
         final boolean hasRequiredAudio = pendingAudio.size() >= minFinalSamples;
         final boolean hasForcedFinalAudio = finishAfterQueuedAudio && pendingAudio.size() > 0;
         if (!currentThread.isInterrupted() && (hasRequiredAudio || hasForcedFinalAudio)) {
@@ -346,23 +336,33 @@ public class WhisperTranscriptionWorker implements Runnable {
     }
 
     /**
-     * 停止要求前にキューへ入っていた音声を pendingAudio に移します。
+     * 停止要求前にキューへ入っていた音声を推論します。
      */
-    private void drainQueuedAudio() {
-        ShortAudioBuffer chunk;
+    private void drainQueuedAudio(
+            @NonNull final CTranslate2TranscriptionWorker cTranslate2Worker,
+            @NonNull final Thread currentThread
+    ) {
+        PooledPcmChunk chunk;
         while ((chunk = audioQueue.poll()) != null) {
-            pendingAudio.append(chunk);
-            releaseAudioBuffer(chunk);
+            try {
+                pendingAudio.append(chunk.bytes(), chunk.sampleCount());
+            } finally {
+                chunk.close();
+            }
+            while (pendingAudio.size() >= windowSamples && !currentThread.isInterrupted()) {
+                transcribeNextWindow(cTranslate2Worker, false);
+            }
         }
     }
 
     /**
-     * 複数スレッドから安全に音声バッファをプールへ返します。
-     * @param buffer 返却対象。例: {@code chunk}
+     * キューに残った所有権付きチャンクを録音側プールへ返します。
+     * 引数と戻り値はなく、closeは冪等なので例外はありません。
      */
-    private void releaseAudioBuffer(@NonNull final ShortAudioBuffer buffer) {
-        synchronized (audioBufferPool) {
-            audioBufferPool.releaseOrDelete(buffer);
+    private void closeQueuedAudio() {
+        PooledPcmChunk chunk;
+        while ((chunk = audioQueue.poll()) != null) {
+            chunk.close();
         }
     }
 
@@ -389,7 +389,6 @@ public class WhisperTranscriptionWorker implements Runnable {
         final int sampleCount = finalResult
                 ? pendingAudio.size()
                 : windowSamples;
-        pendingAudio.writeFirst(sampleCount, inferenceWindowBuffer);
         final long startMs = samplesToMs(processedSamples);
         final long durationMs = samplesToMs(sampleCount);
 
@@ -403,7 +402,12 @@ public class WhisperTranscriptionWorker implements Runnable {
         final long startedAt = System.nanoTime();
         Log.d(TAG,"start transcription");
         final TranscriptionWorkerResult result =
-                cTranslate2Worker.transcribe(inferenceWindowBuffer, sampleCount);
+                cTranslate2Worker.transcribe(
+                        pendingAudio.storage(),
+                        pendingAudio.firstByteOffset(sampleCount),
+                        pendingAudio.firstSampleCount(sampleCount),
+                        pendingAudio.secondByteOffset(sampleCount),
+                        pendingAudio.secondSampleCount(sampleCount));
         final long processingTimeMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt);
 
         Log.d(TAG, result.text);
@@ -490,100 +494,6 @@ public class WhisperTranscriptionWorker implements Runnable {
     /** サンプル数を録音開始からのミリ秒へ変換します。 */
     private long samplesToMs(final long samples) {
         return samples * 1000L / sampleRate;
-    }
-
-    /**
-     * 静的ネストクラス
-     */
-    private static final class ShortAudioBuffer implements AutoCloseable {
-        private static final int DEFAULTCAPACITY = 1024;
-        /** 実データを保持する内部配列です。 */
-        private short[] buffer;
-        /** 現在バッファに入っている有効サンプル数です。 */
-        private int size;
-
-        ShortAudioBuffer(){this(DEFAULTCAPACITY);}
-        ShortAudioBuffer(int initialCapacity) {
-            buffer = new short[Math.max(1, initialCapacity)];
-        }
-
-        /** バッファを返します。 */
-        short[] buffer() {
-            return buffer;
-        }
-        /** バッファ内の有効サンプル数を返します。 */
-        int size() {
-            return size;
-        }
-
-        /** PCM サンプルを指定の長さ分末尾へ追加します。 */
-        int append(@NonNull final short[] samples,final int length) {
-            ensureCapacity(size + length);
-            System.arraycopy(samples, 0, buffer, size, length);
-            size += length;
-            return length;
-        }
-        /** PCM サンプルを末尾へ追加します。 */
-        int append(@NonNull final short[] samples) {
-            return append(samples,samples.length);
-        }
-
-        /**
-         * 自身に指定のShortAudioBufferをコピーして追加します。
-         * @param other コピー元のバッファ
-         */
-        int append(@NonNull final ShortAudioBuffer other) {
-            return append(other.buffer,other.size);
-        }
-
-
-        /** 先頭から指定サンプル数を,対象バッファの先頭からに書き込みます。 */
-        int writeFirst(final int count, @NonNull final short[] writeBuffer){
-            final int minSize = Math.min(writeBuffer.length, size);
-            final int copyLength = Math.min(count, minSize);
-            System.arraycopy(buffer, 0, writeBuffer, 0, copyLength);
-            return copyLength;
-        }
-
-        /** 先頭から指定サンプル数を破棄します。 */
-        void discardFirst(final int count) {
-            if (count <= 0) {
-                return;
-            }
-
-            if (count >= size) {
-                size = 0;
-                return;
-            }
-
-            int remaining = size - count;
-            // バッファのcount~endを0からremainingまで移動
-            System.arraycopy(buffer, count, buffer, 0, remaining);
-            size = remaining;
-        }
-
-        /** 指定容量を格納できるように内部配列を拡張します。 */
-        private void ensureCapacity(int capacity) {
-            if (capacity <= buffer.length) {
-                return;
-            }
-
-            int newCapacity = buffer.length;
-            while (newCapacity < capacity) {
-                newCapacity *= 2;
-            }
-            buffer = Arrays.copyOf(buffer, newCapacity);
-        }
-        private void trimToSize(){
-            buffer = Arrays.copyOf(buffer,size);
-        }
-        void clear(){
-            size = 0;
-        }
-        @Override
-        public void close(){
-            clear();
-        }
     }
 
 }

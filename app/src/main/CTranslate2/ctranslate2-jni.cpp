@@ -145,8 +145,11 @@ Java_CTranslate2_CTranslate2Bridge_transcribe(
     JNIEnv* env,
     jclass,
     jlong native_handle,
-    jshortArray pcm,
-    jint sample_count,
+    jobject pcm,
+    jint first_byte_offset,
+    jint first_sample_count,
+    jint second_byte_offset,
+    jint second_sample_count,
     jstring language,
     jboolean translate_to_english,
     jstring initial_prompt,
@@ -160,16 +163,30 @@ Java_CTranslate2_CTranslate2Bridge_transcribe(
       throw std::invalid_argument("native handle is null");
     if (pcm == nullptr)
       throw std::invalid_argument("samples must not be null");
-    const jsize array_length = env->GetArrayLength(pcm);
-    if (sample_count < 0 || sample_count > array_length)
-      throw std::invalid_argument("sampleCount is outside samples");
+    auto* pcm_bytes = static_cast<std::uint8_t*>(env->GetDirectBufferAddress(pcm));
+    const jlong pcm_capacity = env->GetDirectBufferCapacity(pcm);
+    if (pcm_bytes == nullptr || pcm_capacity < 0)
+      throw std::invalid_argument("samples must be a DirectByteBuffer");
+    const auto validate_span = [pcm_capacity](
+        const jint byte_offset, const jint sample_count, const char* name) {
+      if (byte_offset < 0 || (byte_offset & 1) != 0 || sample_count < 0
+          || static_cast<jlong>(byte_offset)
+              + static_cast<jlong>(sample_count) * sizeof(std::int16_t)
+              > pcm_capacity) {
+        throw std::invalid_argument(std::string(name) + " PCM16 range is outside samples");
+      }
+    };
+    validate_span(first_byte_offset, first_sample_count, "first");
+    validate_span(second_byte_offset, second_sample_count, "second");
     // 排他処理の開始
     std::lock_guard<std::mutex> inference_lock(handle->inference_mutex);
-    // short[]をfloat[](-1~1)へ変換
-    app::native_audio::pcm16_to_float_vector(
-        env, pcm, handle->pcm_samples, sample_count);
-    if (env->ExceptionCheck())
-      return nullptr;
+    // リング末尾で折り返す最大2区間を、連続したfloat作業領域へ変換する。
+    app::native_audio::pcm16_spans_to_float_vector(
+        reinterpret_cast<const std::int16_t*>(pcm_bytes + first_byte_offset),
+        static_cast<std::size_t>(first_sample_count),
+        reinterpret_cast<const std::int16_t*>(pcm_bytes + second_byte_offset),
+        static_cast<std::size_t>(second_sample_count),
+        handle->pcm_samples);
 
     const std::vector<float>* inference_samples = &handle->pcm_samples;
     if (vad_enabled) {
