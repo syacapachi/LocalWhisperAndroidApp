@@ -7,8 +7,10 @@ import androidx.annotation.NonNull;
 import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
+import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
 
-/** マイクのfloat PCMを録音単位のWAVファイルへ保存します。 */
+/** マイクのPCM16を録音単位のWAVファイルへ保存します。 */
 public final class RecordedAudioFileWriter implements AutoCloseable {
     public static final String DIRECTORY_NAME = "recordings";
     private static final int HEADER_SIZE = 44;
@@ -17,6 +19,7 @@ public final class RecordedAudioFileWriter implements AutoCloseable {
 
     private final File outputFile;
     private final RandomAccessFile output;
+    private final FileChannel channel;
     private final int sampleRate;
     private long pcmBytes;
     private boolean closed;
@@ -55,31 +58,41 @@ public final class RecordedAudioFileWriter implements AutoCloseable {
         }
         outputFile = new File(directory, sanitize(sessionId) + ".wav");
         output = new RandomAccessFile(outputFile, "rw");
+        channel = output.getChannel();
         output.setLength(0);
         writeHeader(0);
     }
 
     /**
-     * float PCMの有効部分を16bit PCMへ変換して追記します。
+     * PCM16の有効部分をWAVへ追記します。
      *
-     * @param samples -1.0〜1.0のモノラルPCM。例: {@code new float[]{0.0f, 0.5f}}
+     * @param samples DirectモノラルPCM16。例: {@code ByteBuffer.allocateDirect(4)}
+     * @param byteOffset 読み出し開始byte位置。例: {@code 0}
      * @param length 有効サンプル数。例: {@code 2}
      * @return 実際に保存したサンプル数。例: {@code 2}
      * @throws IOException ファイルが閉じている、または書き込みに失敗した場合
+     * @throws IllegalArgumentException 非Direct、offset不正、または範囲外の場合
      */
-    public synchronized int append(@NonNull final float[] samples, final int length)
+    public synchronized int append(
+            @NonNull final ByteBuffer samples,
+            final int byteOffset,
+            final int length
+    )
             throws IOException {
         if (closed) {
             throw new IOException("recording file is already closed");
         }
-        final int count = Math.max(0, Math.min(length, samples.length));
-        for (int i = 0; i < count; i++) {
-            final float value = Math.max(-1.0f, Math.min(1.0f, samples[i]));
-            final short pcm = (short) Math.round(value * (value < 0 ? 32768.0f : 32767.0f));
-            writeLittleEndianShort(pcm);
+        if (!samples.isDirect() || byteOffset < 0 || (byteOffset & 1) != 0 || length < 0
+                || (long) byteOffset + (long) length * Short.BYTES > samples.capacity()) {
+            throw new IllegalArgumentException("invalid Direct PCM16 range");
         }
-        pcmBytes += (long) count * Short.BYTES;
-        return count;
+        final ByteBuffer view = samples.duplicate();
+        view.position(byteOffset).limit(byteOffset + length * Short.BYTES);
+        while (view.hasRemaining()) {
+            channel.write(view);
+        }
+        pcmBytes += (long) length * Short.BYTES;
+        return length;
     }
 
     /**

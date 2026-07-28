@@ -32,11 +32,13 @@ import events.Threading.ThreadStoppedEvent;
 import events.Whisper.WhisperRecordingStateEvent;
 import events.Whisper.WhisperTranscriptionEvent;
 import jp.ac.gifu_u.programmingjissen2.Record.AudioRecordWorker;
+import jp.ac.gifu_u.programmingjissen2.Record.Buffer.PooledPcmChunk;
 import jp.ac.gifu_u.programmingjissen2.Record.RecordTranscriptionState;
 import jp.ac.gifu_u.programmingjissen2.Record.RecordedAudioFileWriter;
 import jp.ac.gifu_u.programmingjissen2.Record.RecordingAudioSource;
 import jp.ac.gifu_u.programmingjissen2.Record.WhisperFileTranscriptionWorker;
 import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.WhisperSettings;
+import jp.ac.gifu_u.programmingjissen2.SettingUI.ModelPathResolver;
 import jp.ac.gifu_u.programmingjissen2.SettingUI.WhisperSettingsStore;
 import jp.ac.gifu_u.programmingjissen2.TransscriptsJSON.TranscriptionJsonWorker;
 
@@ -69,6 +71,8 @@ public class BackgroundWhisperService extends Service {
     private String modelPath;
     private String vadModelPath;
     private String recordingSessionId;
+    private String recordingTimeData;
+    private String pendingRecordingTimeData;
     private String inferenceSessionId;
     private String retranscriptionSessionId;
     private int inferenceSequence;
@@ -186,6 +190,10 @@ public class BackgroundWhisperService extends Service {
             requestResumeInference();
         } else {
             readRecordingRequest(intent);
+            if (!recording) {
+                pendingRecordingTimeData = newSessionTimeData();
+                inferenceSequence = 0;
+            }
             notificationController.start(
                     "Whisper 録音を準備中",
                     "モデルを準備しています",
@@ -280,7 +288,10 @@ public class BackgroundWhisperService extends Service {
 
     /** 録音開始処理を専用スレッドへ渡します。 */
     private void startRecordingInternalAsync() {
-        new Thread(this::startRecordingInternal, "BackgroundWhisperStart").start();
+        StringBufferBuilderPool.NewThreadWithPoolCleanup(
+                this::startRecordingInternal,
+                "BackgroundWhisperStart"
+        ).start();
     }
 
     /** マイク、推論worker、必要ならWAV保存先を準備して録音を開始します。 */
@@ -316,7 +327,12 @@ public class BackgroundWhisperService extends Service {
             return;
         }
 
-        if (!ensureInferenceAccepting()) {
+        if (pendingRecordingTimeData == null) {
+            pendingRecordingTimeData = newSessionTimeData();
+        }
+        final String sessionTimeData = pendingRecordingTimeData;
+        recordingSessionId = sessionId("record", sessionTimeData);
+        if (!ensureInferenceAccepting(sessionTimeData)) {
             pendingRecordingStart = true;
             publishState("推論workerの再起動後に録音を開始します");
             return;
@@ -330,7 +346,6 @@ public class BackgroundWhisperService extends Service {
             return;
         }
 
-        recordingSessionId = newSessionId("record");
         if (!openAudioFile(recordingSessionId, sampleRate)) {
             stopInferenceIfNotRecording();
             return;
@@ -342,6 +357,8 @@ public class BackgroundWhisperService extends Service {
             return;
         }
         pendingRecordingStart = false;
+        recordingTimeData = sessionTimeData;
+        pendingRecordingTimeData = null;
         recordWorker = new AudioRecordWorker(
                 sampleRate,
                 bufferSize,
@@ -397,7 +414,7 @@ public class BackgroundWhisperService extends Service {
             return;
         }
         pendingInferenceResume = true;
-        if (ensureInferenceAccepting()) {
+        if (ensureInferenceAccepting(recordingTimeData)) {
             pendingInferenceResume = false;
             currentState = RecordTranscriptionState.Recording;
             publishState("リアルタイム推論を再開しました");
@@ -408,28 +425,45 @@ public class BackgroundWhisperService extends Service {
 
     /**
      * マイクPCMをWAVと推論workerへ振り分けます。
-     * @param samples float PCM。例: {@code new float[8000]}
-     * @param length 有効サンプル数。例: {@code 8000}
+     * @param chunk 所有権付きDirect PCM16。例: {@code pool.acquire()}
+     * @throws RuntimeException 保存・投入の予期しない失敗時。未移譲チャンクは必ず返却します。
      */
-    private void onAudioChunk(final float[] samples, final int length) {
-        final RecordedAudioFileWriter writer = audioFileWriter;
-        if (writer != null) {
-            try {
-                writer.append(samples, length);
-            } catch (IOException e) {
-                Log.e(TAG, "Audio recording write failed", e);
-                closeAudioFile(false);
+    private void onAudioChunk(@NonNull final PooledPcmChunk chunk) {
+        boolean transferred = false;
+        try {
+            final RecordedAudioFileWriter writer = audioFileWriter;
+            if (writer != null) {
+                try {
+                    writer.append(chunk.bytes(), 0, chunk.sampleCount());
+                } catch (IOException e) {
+                    Log.e(TAG, "Audio recording write failed", e);
+                    closeAudioFile(false);
+                }
             }
-        }
-        final WhisperTranscriptionWorker worker = transcriptionWorker;
-        if (worker != null && inferenceAccepting) {
-            worker.submit(samples, length);
+            final WhisperTranscriptionWorker worker = transcriptionWorker;
+            if (worker != null && inferenceAccepting) {
+                transferred = worker.submit(chunk);
+            }
+        } finally {
+            if (!transferred) {
+                chunk.close();
+            }
         }
     }
 
-    /** @return 音声投入可能な推論workerを用意できた場合true。例: {@code true} */
-    private boolean ensureInferenceAccepting() {
+    /**
+     * 指定時刻データの推論workerを用意します。
+     * @param sessionTimeData 録音と共有する時刻データ。例: {@code "19f99e5b391-317248c70b73"}
+     * @return 音声投入可能な推論workerを用意できた場合true。例: {@code true}
+     */
+    private boolean ensureInferenceAccepting(@NonNull final String sessionTimeData) {
         if (transcriptionWorker != null && transcriptionWorker.isAlive()) {
+            if (inferenceSessionId == null
+                    || !inferenceSessionId.endsWith("-" + sessionTimeData)) {
+                inferenceAccepting = false;
+                transcriptionWorker.requestStop();
+                return false;
+            }
             final boolean resumed = transcriptionWorker.resumeAudioSubmission();
             inferenceAlive = true;
             inferenceAccepting = resumed;
@@ -438,13 +472,16 @@ public class BackgroundWhisperService extends Service {
         if (transcriptionJsonWorker != null && transcriptionJsonWorker.isAlive()) {
             return false;
         }
-        startInferencePipeline();
+        startInferencePipeline(sessionTimeData);
         return true;
     }
 
-    /** 現在設定でリアルタイム推論workerとJSON workerを開始します。 */
-    private void startInferencePipeline() {
-        inferenceSessionId = newSessionId("live-" + inferenceSequence++);
+    /**
+     * 現在設定と録音共通の時刻データで推論workerを開始します。
+     * @param sessionTimeData 録音と共有する時刻データ。例: {@code "19f99e5b391-317248c70b73"}
+     */
+    private void startInferencePipeline(@NonNull final String sessionTimeData) {
+        inferenceSessionId = sessionId("live-" + inferenceSequence++, sessionTimeData);
         transcriptionWorker = new WhisperTranscriptionWorker(
                 modelPath,
                 vadModelPath,
@@ -481,7 +518,7 @@ public class BackgroundWhisperService extends Service {
      * worker停止イベントを対応する状態へ反映します。
      * @param event 停止情報。例: {@code new ThreadStoppedEvent(...)}
      */
-    private synchronized void onThreadStopped(final ThreadStoppedEvent event) {
+    private synchronized void onThreadStopped(@NonNull final ThreadStoppedEvent event) {
         if ("Record".equals(event.owner()) && recordingSessionId != null
                 && event.threadId().startsWith(recordingSessionId)) {
             finishRecordThread();
@@ -526,7 +563,7 @@ public class BackgroundWhisperService extends Service {
         if (recording) {
             if (pendingInferenceResume && jsonThreadStopped) {
                 pendingInferenceResume = false;
-                startInferencePipeline();
+                startInferencePipeline(recordingTimeData);
                 currentState = RecordTranscriptionState.Recording;
                 publishState("リアルタイム推論を再開しました");
             } else {
@@ -623,7 +660,11 @@ public class BackgroundWhisperService extends Service {
                 retranscriptionQueue.offer(new RetranscriptionRequest(
                         file,
                         settings,
-                        newSessionId("recorded-file")
+                        sessionId(
+                                "recorded-file",
+                                recordingTimeData == null
+                                        ? newSessionTimeData() : recordingTimeData
+                        )
                 ));
             }
         } catch (IOException e) {
@@ -698,8 +739,7 @@ public class BackgroundWhisperService extends Service {
             return true;
         }
         if (projectionResultCode != Activity.RESULT_OK
-                || projectionResultData == null
-                || requestedCaptureTargetUid < 0) {
+                || projectionResultData == null) {
             return false;
         }
         try {
@@ -748,18 +788,12 @@ public class BackgroundWhisperService extends Service {
         projection.stop();
     }
 
-    /** @throws IOException 選択したWhisperモデルまたはVADモデルをassetsから準備できない場合 */
+    /** @throws IOException 選択したCTranslate2モデルまたはSilero VADをassetsから準備できない場合 */
     private void prepareModels() throws IOException {
-        if (settings.useCTranslate2()) {
-            modelPath = MyUtils.prepareModelDirectory(
-                    this,
-                    settings.model().cTranslate2AssetDirectory()
-            );
-            vadModelPath = null;
-        } else {
-            modelPath = MyUtils.prepareModelPath(this, settings.model().assetName());
-            vadModelPath = MyUtils.prepareModelPath(this, WhisperVadConfig.MODEL_ASSET_NAME);
-        }
+        modelPath = ModelPathResolver.resolve(this, settings.model());
+        vadModelPath = settings.vadEnabled()
+                ? MyUtils.prepareModelPath(this, WhisperVadConfig.MODEL_ASSET_NAME)
+                : null;
     }
 
     /** 録音開始失敗時、先に起動した推論workerを排出停止します。 */
@@ -790,20 +824,36 @@ public class BackgroundWhisperService extends Service {
         inferenceAlive = false;
         inferenceAccepting = false;
         currentState = null;
+        recordingSessionId = null;
+        recordingTimeData = null;
+        pendingRecordingTimeData = null;
         stopForeground(STOP_FOREGROUND_REMOVE);
         stopSelf();
     }
 
     /**
-     * 重複しにくいセッションIDを作成します。
-     * @param prefix 用途名。例: {@code "record"}
-     * @return ID。例: {@code "record-1a-2b"}
+     * 録音と文字起こしで共有する重複しにくい時刻データを作成します。
+     * @return 時刻データ。例: {@code "19f99e5b391-317248c70b73"}
      */
     @NonNull
-    private static String newSessionId(@NonNull final String prefix) {
-        return StringBufferBuilderPool.Join("-", prefix,
+    private static String newSessionTimeData() {
+        return StringBufferBuilderPool.Join("-",
                 Long.toHexString(System.currentTimeMillis()),
                 Long.toHexString(System.nanoTime()));
+    }
+
+    /**
+     * 用途名と共通時刻データからセッションIDを作成します。
+     * @param prefix 用途名。例: {@code "live-0"}
+     * @param timeData 共通時刻データ。例: {@code "19f99e5b391-317248c70b73"}
+     * @return セッションID。例: {@code "live-0-19f99e5b391-317248c70b73"}
+     */
+    @NonNull
+    private static String sessionId(
+            @NonNull final String prefix,
+            @NonNull final String timeData
+    ) {
+        return StringBufferBuilderPool.Join("-", prefix, timeData);
     }
 
     private static final class RetranscriptionRequest {

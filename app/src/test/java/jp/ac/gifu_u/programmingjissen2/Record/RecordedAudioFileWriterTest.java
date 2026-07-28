@@ -18,7 +18,7 @@ public class RecordedAudioFileWriterTest {
                 new RecordedAudioFileWriter(directory, "record:test", 16000);
         final File outputFile = writer.getOutputFile();
 
-        assertEquals(2, writer.append(new float[]{-1.0f, 1.0f, 0.0f}, 2));
+        assertEquals(2, writer.append(new short[]{Short.MIN_VALUE, Short.MAX_VALUE, 0}, 2));
         writer.close();
 
         assertEquals(48, outputFile.length());

@@ -3,26 +3,15 @@ package jp.ac.gifu_u.programmingjissen2.SettingUI.Data;
 import androidx.annotation.NonNull;
 
 /** Whisper で利用できるモデルの選択肢です。 */
-public enum WhisperModelOption {
-    BASE("base", "ggml-base.bin", WhisperInferenceEngine.WHISPER_CPP, "default",
-            "Whisper.cpp base・F16"),
-    BASE_Q8_0("ggml-base-q8-0", "ggml-base_q8_0.bin", WhisperInferenceEngine.WHISPER_CPP,
-            "default", "Whisper.cpp base・Q8_0量子化"),
-    SMALL("small", "ggml-small.bin", WhisperInferenceEngine.WHISPER_CPP, "default",
-            "Whisper.cpp small・F16"),
-    SMALL_Q8_0("ggml-small-q8-0", "ggml-small_q8_0.bin", WhisperInferenceEngine.WHISPER_CPP,
-            "default", "Whisper.cpp small・Q8_0量子化"),
-    KOTOBA_WHISPER_Q8_0("ggml-kotoba-whisper_q8_0", "ggml-kotoba-whisper_q8_0.bin",WhisperInferenceEngine.WHISPER_CPP,
-            "default", "Whisper.cpp small・Q8_0量子化"),
+public enum WhisperModelOption implements ITranscriptionModel {
     CT2_BASE_INT8("ct2-openai-base-int8", "ctranslate2/openai-whisper-base-int8",
             WhisperInferenceEngine.CTRANSLATE2, "int8", "CTranslate2 openai/whisper-base・int8"),
     CT2_SMALL_INT8("ct2-openai-small-int8", "ctranslate2/openai-whisper-small-int8",
-            WhisperInferenceEngine.CTRANSLATE2, "int8", "CTranslate2 openai/whisper-small・int8"),
-    CT2_KOTOBA_V2_2_INT8("ct2-kotoba-v2-2-int8", "ctranslate2/kotoba-whisper-v2.2-int8",
-            WhisperInferenceEngine.CTRANSLATE2, "int8", "CTranslate2 kotoba-whisper-v2.2・int8");
+            WhisperInferenceEngine.CTRANSLATE2, "int8", "CTranslate2 openai/whisper-small・int8");
 
     private final String key;
     private final String assetPath;
+    private final String displayName;
     private final WhisperInferenceEngine engine;
     private final String computeType;
     private final String description;
@@ -44,6 +33,7 @@ public enum WhisperModelOption {
     ) {
         this.key = key;
         this.assetPath = assetPath;
+        this.displayName = "assets/" + assetPath;
         this.engine = engine;
         this.computeType = computeType;
         this.description = description;
@@ -54,15 +44,26 @@ public enum WhisperModelOption {
         return key;
     }
 
+    /** @return モデルの説明名。例: {@code "CTranslate2 openai/whisper-small・int8"} */
+    @Override
+    @NonNull
+    public String label() { return description; }
+
     /** @return UIへ表示するassetsパス。例: {@code "assets/ggml-base.bin"} */
+    @NonNull
     public String displayName() {
-        return "assets/" + assetPath;
+        return displayName;
     }
 
     /** @return assets相対パス。例: {@code "ggml-base.bin"} */
     public String assetName() {
         return assetPath;
     }
+
+    /** @return assets相対モデルパス。例: {@code "ctranslate2/openai-whisper-small-int8"} */
+    @Override
+    @NonNull
+    public String modelPath() { return assetPath; }
 
     /**
      * assets内の変換済みCTranslate2モデルディレクトリを返します。
@@ -73,13 +74,13 @@ public enum WhisperModelOption {
     }
 
     /** @return 推論ランタイム。例: {@code WhisperInferenceEngine.CTRANSLATE2} */
-    public WhisperInferenceEngine engine() { return engine; }
+    @Override public WhisperInferenceEngine engine() { return engine; }
 
     /** @return CTranslate2計算型。例: {@code "int8"} */
-    public String computeType() { return computeType; }
+    @Override public String computeType() { return computeType; }
 
-    /** @return CTranslate2モデルならtrue。例: {@code true} */
-    public boolean usesCTranslate2() { return engine == WhisperInferenceEngine.CTRANSLATE2; }
+    /** @return assets同梱モデルなので常にtrue */
+    @Override public boolean bundled() { return true; }
 
     /** @return モデル形式と量子化の説明。例: {@code "Whisper.cpp base・Q8_0量子化"} */
     public String description() {
@@ -99,8 +100,6 @@ public enum WhisperModelOption {
     @NonNull
     public static WhisperModelOption fromKey(final String key) {
         if (key != null) {
-            if ("base".equals(key)) { return BASE; }
-            if ("small".equals(key)) { return SMALL; }
             for (WhisperModelOption value : values()) {
                 if (value.key.equals(key)) {
                     return value;

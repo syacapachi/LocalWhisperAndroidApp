@@ -24,9 +24,13 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
     <!--
      allowBackup FileDir(),getDir(),getDataBase(),getExternalFilesDir()のフォルダのバックアップ
+     dataExtractionRules バックアップの設定ファイルのパス @xml -> res/xml/になる
+     fullBackupContent バックアップの設定ファイルのパス
      icon アイコンのパス
      label アプリ名
-     ...
+     roundIcon 円形アイコンのパス
+     upportsRtl
+     heme　テーマ定義ファイルのパス
      -->
     <application
         android:allowBackup="true"
@@ -37,7 +41,12 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.ProgrammingJissen2">
-        <!-- バックグラウンドで実行されるクラス -->
+        <!-- バックグラウンドで実行されるサービス -->
+        <!--
+        android:name = {namespace}".ファイルパス"
+        android:exported = {true/false} 他のアプリから実行できるか
+        android:foregroundServiceType= "microphone|mediaProjection" バックグラウンドで実行する機能(マイクアクセス｜画面キャプチャ)
+        -->
         <service
             android:name=".Transcription.BackgroundWhisperService"
             android:exported="false"
@@ -46,15 +55,14 @@
         <activity
             android:name=".SettingUI.WhisperSettingsActivity"
             android:exported="false" />
-        <!-- 文字起こし結果UI画面 -->
-        <activity
-            android:name=".ResultUI.TranscriptionListActivity"
-            android:exported="false" />
-        <!-- 整形済み文字起こしテキストUI画面 -->
-        <activity
-            android:name=".ResultUI.TranscriptionTextListActivity"
-            android:exported="false" />
-        <!-- 外部サービス的なやつ。ファイル管理 -->
+        <!-- Android上のサービス。ファイル管理　ファイルの閲覧、保存に必要 -->
+        <!--
+        android:grantUriPermissions 他のアプリに書き込み・読み込み権限を与えるか(共有に必要)
+        <meta-data> カスタム設定
+        例
+        android:name="android.support.FILE_PROVIDER_PATHS" //外部アプリと共有可能なディレクトリ設定
+        android:resource="@xml/file_paths" //ディレクトリの設定ファイルんもパス
+        -->
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
@@ -64,15 +72,50 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths" />
         </provider>
-        <!-- メイン -->
+        <!-- メイン アプリ起動時に呼ばれる -->
+        <!--
+        launchMode UIの画面(タスク)をどうするか
+        standard デフォルト 新しいタスクを一番上(手前)に作る
+        singleTop 一番上(手前)のタスクが再生成されるときは同じものを持ってくる。
+        singleTask タスクは、１つしか存在しない
+        singleInstance Activityは同時に１つしか存在しない
+        -->
         <activity
             android:name=".MainActivity"
-            android:exported="true">
-            <!-- 最初のUI画面 -->
+            android:exported="true"
+            android:launchMode="singleTop">
+            <!-- 最初のUI画面(エントリーポイントとして認識されるために必須) -->
+            <!--
+            // android.intent.action.MAIN をつけるとこの Activity がアプリのエントリポイントになる
+            <action android:name="android.intent.action.MAIN" />
+            // android.intent.category.HOME をつけると起動時に最初に起動する画面として認識される
+            <category android:name="android.intent.category.HOME" />
+            // android.intent.category.LAUNCHER をつけるとホームボタンから起動できる画面として認識される
+            <category android:name="android.intent.category.LAUNCHER" />
+            // android.intent.category.DEFAULT をつけると暗黙的インテント(「アプリで開く」で開くアプリに登録できる)から起動できる画面として認識される
+            <category android:name="android.intent.category.DEFAULT" />
+            // android.intent.category.BROWSABLEをつけると、ブラウザアプリから起動できる画面として認識される。
+            <category android:name="android.intent.category.BROWSABLE" />
+            -->
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
 
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- ファイル管理アプリの「アプリで開く」から音声・動画を受け取る
+             <action android:name="android.intent.action.VIEW" />アプリで開くの一覧です
+             <data >開けるファイルの設定
+             @Override
+             protected void onNewIntent(@NonNull final Intent intent){}に届く
+             -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+
+                <data android:mimeType="audio/*" />
+                <data android:mimeType="video/*" />
             </intent-filter>
         </activity>
     </application>

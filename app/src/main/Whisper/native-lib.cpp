@@ -5,6 +5,8 @@
 #include <string>
 #include <vector>
 
+#include "../NativeAudio/pcm16-float-converter.h"
+
 #include "whisper.h"
 // Java JNIに接続する文言を置き換える
 #define JNI_METHOD(return_type, name) \
@@ -576,6 +578,62 @@ JNI_METHOD(jint, full)(JNIEnv * env, jclass, jlong context, jobject params_objec
     return with_float_array(env, pcm_data, [&](const float * samples, int count) {
         return whisper_full(ctx, params.params, samples, count);
     });
+}
+
+// context例: 有効なwhisper_context、pcm_data例: DirectByteBuffer(32000byte)。
+// 最大2区間のPCM16をfloatへ変換し、成功時whisper_fullの結果（例0）を返します。
+// 非Direct、奇数offset、範囲外ではIllegalArgumentExceptionを送出して-1を返します。
+JNI_METHOD(jint, fullPcm16)(
+        JNIEnv * env,
+        jclass,
+        jlong context,
+        jobject params_object,
+        jobject pcm_data,
+        jint first_byte_offset,
+        jint first_sample_count,
+        jint second_byte_offset,
+        jint second_sample_count) {
+    if (pcm_data == nullptr) {
+        return -1;
+    }
+    auto * pcm_bytes = static_cast<std::uint8_t *>(env->GetDirectBufferAddress(pcm_data));
+    const jlong pcm_capacity = env->GetDirectBufferCapacity(pcm_data);
+    const auto throw_invalid_argument = [env](const std::string & message) {
+        const jclass exception_class = env->FindClass("java/lang/IllegalArgumentException");
+        if (exception_class != nullptr) {
+            env->ThrowNew(exception_class, message.c_str());
+        }
+    };
+    if (pcm_bytes == nullptr || pcm_capacity < 0) {
+        throw_invalid_argument("samples must be a DirectByteBuffer");
+        return -1;
+    }
+    const auto range_is_valid = [pcm_capacity](jint byte_offset, jint sample_count) {
+        return byte_offset >= 0 && (byte_offset & 1) == 0 && sample_count >= 0
+                && static_cast<jlong>(byte_offset)
+                    + static_cast<jlong>(sample_count) * sizeof(std::int16_t)
+                    <= pcm_capacity;
+    };
+    if (!range_is_valid(first_byte_offset, first_sample_count)
+            || !range_is_valid(second_byte_offset, second_sample_count)) {
+        throw_invalid_argument("PCM16 range is outside samples");
+        return -1;
+    }
+    whisper_context * ctx = as_context(context);
+    FullParamsHolder params = make_full_params(env, params_object);
+    std::vector<float> samples;
+    try {
+        app::native_audio::pcm16_spans_to_float_vector(
+                reinterpret_cast<const std::int16_t *>(pcm_bytes + first_byte_offset),
+                static_cast<std::size_t>(first_sample_count),
+                reinterpret_cast<const std::int16_t *>(pcm_bytes + second_byte_offset),
+                static_cast<std::size_t>(second_sample_count),
+                samples);
+    } catch (const std::exception & error) {
+        throw_invalid_argument(error.what());
+        return -1;
+    }
+    return whisper_full(ctx, params.params, samples.data(), static_cast<int>(samples.size()));
 }
 
 JNI_METHOD(jint, fullWithState)(JNIEnv * env, jclass, jlong context, jlong state, jobject params_object, jfloatArray pcm_data) {

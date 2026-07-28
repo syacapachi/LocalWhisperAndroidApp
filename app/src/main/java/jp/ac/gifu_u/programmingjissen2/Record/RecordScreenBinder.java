@@ -3,13 +3,14 @@ package jp.ac.gifu_u.programmingjissen2.Record;
 import android.view.View;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
-import android.widget.RadioGroup;
 
 import androidx.annotation.NonNull;
 
 import Utils.StringPool.StringBufferBuilderPool;
 import events.Whisper.WhisperTranscriptionEvent;
-import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.WhisperModelOption;
+import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.ITranscriptionModel;
+import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.WhisperInferenceEngine;
+import jp.ac.gifu_u.programmingjissen2.SettingUI.ExternalModelRepository;
 import jp.ac.gifu_u.programmingjissen2.SettingUI.WhisperRecordControls;
 
 import java.util.List;
@@ -18,6 +19,8 @@ import java.util.List;
 public final class RecordScreenBinder {
     private final WhisperRecordControls controls;
     private boolean updatingModelSelector;
+    private ITranscriptionModel[] realtimeModels = new ITranscriptionModel[0];
+    private ITranscriptionModel[] fileModels = new ITranscriptionModel[0];
 
     /** 録音入力の変更を通知するlistenerです。 */
     public interface AudioSourceSelectedListener {
@@ -33,9 +36,9 @@ public final class RecordScreenBinder {
         /**
          * モデルRadioGroupで選択されたモデルを通知します。
          *
-         * @param model 選択されたモデル。例: {@code WhisperModelOption.BASE}
+         * @param model 選択されたモデル。例: {@code WhisperModelOption.CT2_SMALL_INT8}
          */
-        void onModelSelected(WhisperModelOption model);
+        void onModelSelected(ITranscriptionModel model);
     }
 
     /**
@@ -172,20 +175,24 @@ public final class RecordScreenBinder {
     /**
      * モデルassetsパスのドロップダウンと変更処理を設定します。
      *
-     * @param currentModel 現在のモデル。例: {@code WhisperModelOption.BASE}
+     * @param currentModel 現在のモデル。例: {@code WhisperModelOption.CT2_SMALL_INT8}
      * @param listener 選択変更通知先。例: {@code this::onModelSelected}
      */
     public void bindModelSelector(
-            @NonNull final WhisperModelOption currentModel,
+            @NonNull final ITranscriptionModel currentModel,
             @NonNull final ModelSelectedListener listener
     ) {
         if (controls.modelSpinner == null) {
             return;
         }
-        final ArrayAdapter<WhisperModelOption> adapter = new ArrayAdapter<>(
+        final ExternalModelRepository repository =
+                new ExternalModelRepository(controls.modelSpinner.getContext());
+        realtimeModels = repository.list(WhisperInferenceEngine.CTRANSLATE2);
+        fileModels = repository.list(WhisperInferenceEngine.WHISPER_CPP);
+        final ArrayAdapter<ITranscriptionModel> adapter = new ArrayAdapter<>(
                 controls.modelSpinner.getContext(),
                 android.R.layout.simple_spinner_item,
-                WhisperModelOption.values()
+                realtimeModels
         );
         adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
         controls.modelSpinner.setAdapter(adapter);
@@ -199,7 +206,7 @@ public final class RecordScreenBinder {
                     final long id
             ) {
                 if (!updatingModelSelector) {
-                    listener.onModelSelected(WhisperModelOption.values()[position]);
+                    listener.onModelSelected(realtimeModels[position]);
                 }
             }
 
@@ -211,15 +218,22 @@ public final class RecordScreenBinder {
     /**
      * モデルパスドロップダウンの選択状態を画面へ反映します。
      *
-     * @param model 選択状態にするモデル。例: {@code WhisperModelOption.SMALL}
+     * @param model 選択状態にするモデル。例: {@code WhisperModelOption.CT2_MEDIUM_INT8}
      */
-    public void syncModelSelector(@NonNull final WhisperModelOption model) {
+    public void syncModelSelector(@NonNull final ITranscriptionModel model) {
         if (controls.modelSpinner == null) {
             return;
         }
 
         updatingModelSelector = true;
-        controls.modelSpinner.setSelection(model.ordinal(), false);
+        int selection = 0;
+        for (int index = 0; index < realtimeModels.length; index++) {
+            if (realtimeModels[index].key().equals(model.key())) {
+                selection = index;
+                break;
+            }
+        }
+        controls.modelSpinner.setSelection(selection, false);
         updatingModelSelector = false;
     }
 
@@ -265,8 +279,27 @@ public final class RecordScreenBinder {
      */
     public void showMessage(final String message) {
         if (controls.resultTextView != null) {
-            controls.resultTextView.setText(message);
+            controls.resultTextView.setText(limitLatestText(message, 120));
         }
+    }
+
+    /**
+     * 最新結果欄へ収まるようUnicodeコードポイント単位で末尾を省略します。
+     * @param value 表示候補。例: {@code "長い文字起こし結果"}
+     * @param maxCodePoints 上限。例: {@code 120}
+     * @return 上限内の文字列。省略時は末尾に三点リーダー。例: {@code "結果…"}
+     */
+    @NonNull
+    private String limitLatestText(final String value, final int maxCodePoints) {
+        if (value == null || value.isEmpty()) {
+            return "";
+        }
+        final int count = value.codePointCount(0, value.length());
+        if (count <= maxCodePoints) {
+            return value;
+        }
+        final int start = value.offsetByCodePoints(0, count - maxCodePoints);
+        return "…" + value.substring(start);
     }
 
     /**
@@ -314,7 +347,6 @@ public final class RecordScreenBinder {
             @NonNull final String text,
             @NonNull final WhisperTranscriptionEvent event
     ) {
-        final WhisperModelOption model = WhisperModelOption.fromKey(event.modelKey());
         return StringBufferBuilderPool.Join(
                 "",
                 label,
@@ -324,12 +356,32 @@ public final class RecordScreenBinder {
                 event.startMs() + event.durationMs(),
                 "ms\n",
                 "モデル: ",
-                model.displayName(),
+                modelDisplayName(event.modelKey()),
                 " / 推論: ",
                 event.processingTimeMs(),
                 "ms\n",
                 text
         );
+    }
+
+    /**
+     * CTranslate2またはWhisper.cppの保存キーを表示名へ変換します。
+     * @param modelKey モデルキー。例: {@code "cpp-small-q8-0"}
+     * @return 対応表示名。不明値はキーそのもの。例: {@code "Whisper.cpp small・Q8_0"}
+     */
+    @NonNull
+    private String modelDisplayName(final String modelKey) {
+        for (ITranscriptionModel option : realtimeModels) {
+            if (option.key().equals(modelKey)) {
+                return option.displayName();
+            }
+        }
+        for (ITranscriptionModel option : fileModels) {
+            if (option.key().equals(modelKey)) {
+                return option.toString();
+            }
+        }
+        return modelKey == null || modelKey.isEmpty() ? "不明" : modelKey;
     }
 
 }

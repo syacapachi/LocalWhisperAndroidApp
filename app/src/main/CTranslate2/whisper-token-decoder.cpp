@@ -21,7 +21,7 @@ std::vector<unsigned int> utf8_code_points(const std::string& text) {
   }
   return points;
 }
-
+/** unicodeに対応するcharを返すデコーダを作成する。 static const で保持すること推奨 */
 std::unordered_map<unsigned int, unsigned char> byte_decoder() {
   std::vector<unsigned int> bytes;
   for (unsigned int value = 33; value <= 126; ++value) bytes.push_back(value);
@@ -44,7 +44,7 @@ std::unordered_map<unsigned int, unsigned char> byte_decoder() {
 }
 
 }  // namespace
-
+/** 出力されてたトークン列を文字列に変換します。 */
 std::string decode_whisper_tokens(const std::vector<std::string>& tokens) {
   static const auto decoder = byte_decoder();
   std::string output;

@@ -146,15 +146,20 @@ add_library(
         SHARED
         # コンパイル対象のソースファイル
         native-lib.cpp
+        ../NativeAudio/pcm16-float-converter.cpp
 )
 
 # CTranslate2 のモデル管理、log-Mel生成、Whisper生成処理をJavaへ公開するJNI。
 add_library(
         ctranslate2-jni
         SHARED
+        ../NativeAudio/pcm16-float-converter.cpp
+        ../NativeText/utf-converter.cpp
         ../CTranslate2/ctranslate2-jni.cpp
         ../CTranslate2/whisper-feature-extractor.cpp
+        ../CTranslate2/whisper-prompt-tokenizer.cpp
         ../CTranslate2/whisper-token-decoder.cpp
+        ../CTranslate2/whisper-vad-filter.cpp
 )
 
 target_include_directories(
@@ -162,6 +167,9 @@ target_include_directories(
         PRIVATE
         ../CTranslate2
         ../CTranslate2/upstream/include
+        ../CTranslate2/upstream/src
+        ../CTranslate2/upstream/third_party
+        include
 )
 
 # JNI側も-O3
@@ -202,5 +210,6 @@ target_link_libraries(
 target_link_libraries(
         ctranslate2-jni
         ctranslate2
+        whisper
         ${log-lib}
 )

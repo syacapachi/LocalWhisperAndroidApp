@@ -17,6 +17,7 @@ import androidx.core.content.ContextCompat;
 
 import java.util.function.Consumer;
 
+import Utils.ScopableUtility;
 import Utils.StringPool.StringBufferBuilderPool;
 import events.AwaitEvent.AwaiterHub;
 import events.Request.PermissionAwaiter;
@@ -26,7 +27,9 @@ import events.Whisper.WhisperTranscriptionEvent;
 import events.Whisper.WhisperTranscriptionTag;
 import jp.ac.gifu_u.programmingjissen2.Transcription.BackgroundWhisperService;
 import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.WhisperInferenceStats;
-import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.WhisperModelOption;
+import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.ITranscriptionModel;
+import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.WhisperInferenceEngine;
+import jp.ac.gifu_u.programmingjissen2.SettingUI.ExternalModelRepository;
 import jp.ac.gifu_u.programmingjissen2.SettingUI.WhisperRecordControls;
 import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.WhisperSettings;
 import jp.ac.gifu_u.programmingjissen2.SettingUI.WhisperSettingsActivity;
@@ -58,7 +61,6 @@ public class RecordActivity {
     private WhisperFileTranscriptionWorker fileTranscriptionWorker;
     private ActivityResultLauncher<Intent> projectionPermissionLauncher;
     private RecordingAudioSource pendingAudioSource;
-    private CaptureTargetApp pendingCaptureTarget;
 
     /** 従来の最小 UI で録音制御クラスを作成します。 */
     public RecordActivity(Activity activity, Button button, TextView resultTextView) {
@@ -132,7 +134,7 @@ public class RecordActivity {
 
     private void setupModelSelector() {
         screenBinder.bindModelSelector(currentSettings.model(), (selected) -> {
-            if (selected == currentSettings.model()) {
+            if (selected.key().equals(currentSettings.model().key())) {
                 return;
             }
 
@@ -148,16 +150,11 @@ public class RecordActivity {
         });
     }
 
-    /** Android 10以降が対象のアプリ候補と録音入力プルダウンを画面へ設定します。 */
+    /** 録音入力プルダウンだけを設定し、キャプチャ対象選択はMediaProjectionのOS画面へ任せます。 */
     private void setupAudioSourceSelectors() {
         screenBinder.bindAudioSourceSelectors(
-                PlaybackCaptureAppRepository.load(activity.getPackageManager()),
-                source -> {
-                    if (source.requiresAppCapture()
-                            && screenBinder.selectedCaptureTargetApp() == null) {
-                        outputMessage("キャプチャ対象にできるアプリがありません");
-                    }
-                }
+                java.util.Collections.emptyList(),
+                source -> { }
         );
     }
 
@@ -165,7 +162,7 @@ public class RecordActivity {
     public void RefreshSettings() {
         if (!isTranscribing) {
             currentSettings = settingsStore.load();
-            screenBinder.syncModelSelector(currentSettings.model());
+            setupModelSelector();
         }
         syncStateFromBackgroundService();
         screenBinder.setRecordButtonState(state);
@@ -217,21 +214,17 @@ public class RecordActivity {
         currentSettings = settingsStore.load();
         final RecordingAudioSource source = screenBinder.selectedAudioSource();
         if (source.requiresAppCapture()) {
-            final CaptureTargetApp target = screenBinder.selectedCaptureTargetApp();
-            if (target == null) {
-                outputMessage("キャプチャ対象アプリを選択してください");
-                return false;
-            }
             if (projectionPermissionLauncher == null) {
                 outputMessage("キャプチャ許可画面を開始できません");
                 return false;
             }
             pendingAudioSource = source;
-            pendingCaptureTarget = target;
+            //　キャプチャアプリのマネージャークラス
             final MediaProjectionManager manager =
                     (MediaProjectionManager) activity.getSystemService(
                             Activity.MEDIA_PROJECTION_SERVICE
                     );
+            // キャプチャの許可画面を表示
             projectionPermissionLauncher.launch(manager.createScreenCaptureIntent());
             outputMessage("対象アプリ音声のキャプチャを許可してください");
             return false;
@@ -246,14 +239,12 @@ public class RecordActivity {
      */
     public void onMediaProjectionPermissionResult(final int resultCode, final Intent data) {
         final RecordingAudioSource source = pendingAudioSource;
-        final CaptureTargetApp target = pendingCaptureTarget;
         pendingAudioSource = null;
-        pendingCaptureTarget = null;
-        if (resultCode != Activity.RESULT_OK || data == null || source == null || target == null) {
+        if (resultCode != Activity.RESULT_OK || data == null || source == null) {
             outputMessage("アプリ音声のキャプチャが許可されませんでした");
             return;
         }
-        startBackgroundRecording(source, target, resultCode, data);
+        startBackgroundRecording(source, null, resultCode, data);
     }
 
     /**
@@ -452,6 +443,20 @@ public class RecordActivity {
     private void refreshWhisperInfo() {
         final WhisperSettings settings = currentSettings;
         final String stateText = stateText();
+        if (state == RecordTranscriptionState.FileTranscribing) {
+            setStatusText(StringBufferBuilderPool.Join(
+                    "",
+                    "状態: ",
+                    stateText,
+                    " / モデル: ",
+                    settings.fileTranscription().model(),
+                    " / 言語: ",
+                    settings.fileTranscription().language(),
+                    " / 一括推論"
+            ));
+            screenBinder.setBenchmarkText(buildBenchmarkText());
+            return;
+        }
         setStatusText(StringBufferBuilderPool.Join(
                 "",
                 "状態: ",
@@ -471,18 +476,21 @@ public class RecordActivity {
 
     @NonNull
     private String buildBenchmarkText() {
-        final StringBuilder builder = new StringBuilder();
-        for (WhisperModelOption model : WhisperModelOption.values()) {
-            if (builder.length() > 0) {
-                builder.append('\n');
+        try(StringBufferBuilderPool builder = ScopableUtility.getBuilder()){
+            final ITranscriptionModel[] models = new ExternalModelRepository(
+                    activity).list(WhisperInferenceEngine.CTRANSLATE2);
+            for (ITranscriptionModel model : models) {
+                if (builder.length() > 0) {
+                    builder.append('\n');
+                }
+                builder.append(formatStats(model));
             }
-            builder.append(formatStats(model));
+            return builder.toString();
         }
-        return builder.toString();
     }
 
     @NonNull
-    private String formatStats(final WhisperModelOption model) {
+    private String formatStats(final ITranscriptionModel model) {
         final WhisperInferenceStats stats = settingsStore.loadStats(model);
         if (!stats.hasSamples()) {
             return StringBufferBuilderPool.Join(

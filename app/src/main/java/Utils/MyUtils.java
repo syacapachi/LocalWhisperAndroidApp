@@ -22,10 +22,12 @@ public class MyUtils {
      */
     @NonNull
     public static String prepareModelPath(@NonNull final Context context, final String assetName) throws IOException {
+        // アプリの絶対パス /data/.../ggml-base.bin
         File modelFile = new File(context.getFilesDir(), assetName);
 
         if (!modelFile.exists()) {
             try (
+                    // .../assets/ggml-base.bin
                     InputStream in = context.getAssets().open(assetName);
                     OutputStream out = new FileOutputStream(modelFile)
             ) {
@@ -42,7 +44,7 @@ public class MyUtils {
 
     /**
      * assetsのディレクトリを内部ストレージへ再帰コピーします。
-     * CTranslate2モデルのconfig.json、model.bin、vocabulary.jsonをまとめて準備する用途です。
+     * CTranslate2モデルのconfig.json、model.bin、vocabulary.json,tokenizer.jsonをまとめて準備する用途です。
      *
      * @param context assetsとfilesDirを提供するContext。例: {@code service}
      * @param assetDirectory assetディレクトリ。例: {@code "ctranslate2/base"}

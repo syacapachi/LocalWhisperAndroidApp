@@ -1,7 +1,11 @@
 package Whisper;
 
+import androidx.annotation.NonNull;
+
+import java.nio.ByteBuffer;
+
 import Utils.ScopableUtility;
-import Utils.StringPool.PooledStringBuilder;
+import Utils.StringPool.StringBufferBuilderPool;
 
 /**
  * Whisper.cpp を Java/Kotlin 側から呼び出すための JNI ブリッジです。
@@ -81,6 +85,7 @@ public class WhisperBridge {
      * @param pcmData 16kHz・モノラル・float PCM
      * @return 文字起こし結果。失敗時は空文字またはエラーメッセージ
      */
+    @NonNull
     public static String transcribe(final String modelPath, final float[] pcmData) {
         long context = initFromFile(modelPath, defaultContextParams());
         if (context == 0) {
@@ -219,6 +224,27 @@ public class WhisperBridge {
      * @return Whisper.cpp の戻り値。0 なら成功
      */
     public static native int full(long context, FullParams params, float[] pcmData);
+
+    /**
+     * PCM16音声をnative側でfloatへ正規化してfull推論します。
+     * @param context native context。例: {@code 1L}
+     * @param params full推論設定。例: {@code defaultFullParams(SAMPLING_GREEDY)}
+     * @param pcmData Direct PCM16保存領域。例: {@code ByteBuffer.allocateDirect(32000)}
+     * @param firstByteOffset 第1区間byte位置。例: {@code 0}
+     * @param firstSampleCount 第1区間数。例: {@code 16000}
+     * @param secondByteOffset 第2区間byte位置。例: {@code 0}
+     * @param secondSampleCount 第2区間数。例: {@code 0}
+     * @return whisper_fullの結果。例: {@code 0}
+     * @throws IllegalArgumentException 非Directまたは区間が範囲外の場合
+     */
+    public static native int fullPcm16(
+            long context,
+            FullParams params,
+            ByteBuffer pcmData,
+            int firstByteOffset,
+            int firstSampleCount,
+            int secondByteOffset,
+            int secondSampleCount);
 
     /**
      * 指定した state を使って音声全体を文字起こしします。
@@ -712,6 +738,7 @@ public class WhisperBridge {
      * @param context native context ハンドル
      * @return セグメント配列
      */
+    @NonNull
     public static Segment[] getSegments(long context) {
         final int count = fullNSegments(context);
         final Segment[] segments = new Segment[count];
@@ -732,6 +759,7 @@ public class WhisperBridge {
      * @param state native state ハンドル
      * @return セグメント配列
      */
+    @NonNull
     public static Segment[] getSegmentsFromState(long state) {
         final int count = fullNSegmentsFromState(state);
         final Segment[] segments = new Segment[count];
@@ -749,9 +777,10 @@ public class WhisperBridge {
      * @param context native context ハンドル
      * @return 文字起こし結果全体
      */
+    @NonNull
     public static String getText(long context) {
         final int count = fullNSegments(context);
-        try(PooledStringBuilder sb = ScopableUtility.getBuilder()) {
+        try(StringBufferBuilderPool sb = ScopableUtility.getBuilder()) {
 
             for (int i = 0; i < count; i++) {
                 sb.append(fullSegmentText(context, i));
@@ -766,6 +795,7 @@ public class WhisperBridge {
      * @param context native context ハンドル
      * @return モデル情報
      */
+    @NonNull
     public static ModelInfo getModelInfo(long context) {
         final ModelInfo info = new ModelInfo();
         info.nLen = nLen(context);
@@ -792,6 +822,7 @@ public class WhisperBridge {
     /**
      * context の segment API から Java 用 {@link Segment} を組み立てます。
      */
+    @NonNull
     private static Segment collectSegment(long context, int segmentIndex) {
         final Segment segment = new Segment();
         segment.index = segmentIndex;
@@ -815,6 +846,7 @@ public class WhisperBridge {
     /**
      * state の segment API から Java 用 {@link Segment} を組み立てます。
      */
+    @NonNull
     private static Segment collectSegmentFromState(long state, int segmentIndex) {
         final Segment segment = new Segment();
         segment.index = segmentIndex;
