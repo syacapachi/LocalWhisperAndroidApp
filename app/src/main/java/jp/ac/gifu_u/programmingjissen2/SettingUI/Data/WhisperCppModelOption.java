@@ -53,39 +53,6 @@ public enum WhisperCppModelOption implements ITranscriptionModel {
     /** @return UI表示名。例: {@code "Whisper.cpp small・Q8_0"} */
     @Override @NonNull public String displayName() { return displayName; }
 
-    /**
-     * 保存キーからモデルを復元します。
-     * @param key 保存値。例: {@code "cpp-base-q8-0"}
-     * @return 対応モデル。不明値はSMALL_Q8_0。例: {@code BASE_Q8_0}
-     */
-    @NonNull
-    public static WhisperCppModelOption fromKey(final String key) {
-        if (key != null) {
-            for (WhisperCppModelOption option : values()) {
-                if (option.key.equals(key)) {
-                    return option;
-                }
-            }
-        }
-        return SMALL_Q8_0;
-    }
-
-    /**
-     * 旧CTranslate2モデル設定に対応するWhisper.cppモデルを返します。
-     * @param model 旧設定のモデル。例: {@code WhisperModelOption.CT2_BASE_INT8}
-     * @return 対応モデル。例: {@code BASE_Q8_0}
-     */
-    @NonNull
-    public static WhisperCppModelOption fromRealtimeModel(final ITranscriptionModel model) {
-        if (model == null) {
-            return SMALL_Q8_0;
-        }
-        if (WhisperModelOption.CT2_BASE_INT8.key().equals(model.key())) {
-            return BASE_Q8_0;
-        }
-        return SMALL_Q8_0;
-    }
-
     /** @return UI表示名。例: {@code "Whisper.cpp small・Q8_0"} */
     @NonNull
     @Override

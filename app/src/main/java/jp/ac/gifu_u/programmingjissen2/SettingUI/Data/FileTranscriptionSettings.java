@@ -12,7 +12,6 @@ public final class FileTranscriptionSettings {
     private final ITranscriptionModel model;
     private final String language;
     private final int maxThreads;
-    private final boolean useGpu;
     private final boolean vadEnabled;
     private final float vadThreshold;
     private final boolean translateToEnglish;
@@ -23,7 +22,6 @@ public final class FileTranscriptionSettings {
      * @param model Whisper.cppモデル。例: {@code WhisperCppModelOption.SMALL_Q8_0}
      * @param language 言語。例: {@code "ja"}
      * @param maxThreads 最大スレッド数。例: {@code 4}
-     * @param useGpu GPUを利用するならtrue。例: {@code false}
      * @param vadEnabled Silero VADを使うならtrue。例: {@code true}
      * @param vadThreshold 発話確率閾値。例: {@code 0.5f}
      * @param translateToEnglish 英語翻訳ならtrue。例: {@code false}
@@ -33,7 +31,6 @@ public final class FileTranscriptionSettings {
             final ITranscriptionModel model,
             final String language,
             final int maxThreads,
-            final boolean useGpu,
             final boolean vadEnabled,
             final float vadThreshold,
             final boolean translateToEnglish,
@@ -42,7 +39,6 @@ public final class FileTranscriptionSettings {
         this.model = model == null ? DEFAULT_MODEL : model;
         this.language = WhisperLanguageOption.fromValue(language).value();
         this.maxThreads = Math.max(1, Math.min(8, maxThreads));
-        this.useGpu = useGpu;
         this.vadEnabled = vadEnabled;
         this.vadThreshold = Math.max(0.0f, Math.min(1.0f, vadThreshold));
         this.translateToEnglish = translateToEnglish;
@@ -60,7 +56,6 @@ public final class FileTranscriptionSettings {
                 DEFAULT_MODEL,
                 WhisperSettings.DEFAULT_LANGUAGE,
                 WhisperSettings.DEFAULT_MAX_THREADS,
-                WhisperSettings.DEFAULT_USE_GPU,
                 DEFAULT_VAD_ENABLED,
                 DEFAULT_VAD_THRESHOLD,
                 WhisperSettings.DEFAULT_TRANSLATE_TO_ENGLISH,
@@ -71,7 +66,6 @@ public final class FileTranscriptionSettings {
     public ITranscriptionModel model() { return model; }
     public String language() { return language; }
     public int maxThreads() { return maxThreads; }
-    public boolean useGpu() { return useGpu; }
     public boolean vadEnabled() { return vadEnabled; }
     public float vadThreshold() { return vadThreshold; }
     public boolean translateToEnglish() { return translateToEnglish; }

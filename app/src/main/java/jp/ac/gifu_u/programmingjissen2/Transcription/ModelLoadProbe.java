@@ -117,7 +117,7 @@ public final class ModelLoadProbe {
             @NonNull final String computeType
     ) {
         try (CTranslate2Bridge ignored = new CTranslate2Bridge(
-                path, normalizeComputeType(computeType), 1)) {
+                path, normalizeComputeType(computeType), null, 1)) {
             return new ProbeAttempt(true, "");
         } catch (RuntimeException | LinkageError error) {
             return new ProbeAttempt(false, errorMessage(error));

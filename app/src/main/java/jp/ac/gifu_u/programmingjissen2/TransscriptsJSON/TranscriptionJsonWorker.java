@@ -12,6 +12,8 @@ import Utils.StringPool.StringBufferBuilderPool;
 import events.SystemEventHub;
 import events.Threading.ThreadStoppedEvent;
 import events.Whisper.WhisperTranscriptionEvent;
+import events.Whisper.WhisperTranscriptionTag;
+import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.WhisperSettings;
 import jp.ac.gifu_u.programmingjissen2.TranscriptionText.TranscriptionTextRepository;
 
 /**
@@ -29,6 +31,9 @@ public class TranscriptionJsonWorker implements Runnable {
 
     /** 録音開始ごとに作る session ID です。 */
     private final String sessionId;
+
+    /** session開始時に確定した文字起こし設定です。 */
+    private final WhisperSettings settings;
 
     /** この worker の停止イベントを識別する ID です。 */
     private final String stopEventId;
@@ -49,12 +54,18 @@ public class TranscriptionJsonWorker implements Runnable {
     /**
      * JSON 保存 worker を作成します。
      *
-     * @param context ファイル保存先を取得するための Context
-     * @param sessionId 録音 session ID
+     * @param context ファイル保存先を取得するためのContext。例: {@code service}
+     * @param sessionId 録音session ID。例: {@code "live-0-19f99e5b391-317248c70b73"}
+     * @param settings session開始時の設定。例: {@code WhisperSettings.defaultSettings()}
      */
-    public TranscriptionJsonWorker(@NonNull final Context context, final String sessionId) {
+    public TranscriptionJsonWorker(
+            @NonNull final Context context,
+            final String sessionId,
+            @NonNull final WhisperSettings settings
+    ) {
         this.context = context.getApplicationContext();
         this.sessionId = sessionId;
+        this.settings = settings;
         this.stopEventId = StringBufferBuilderPool.Join("", sessionId, ":json");
     }
 
@@ -139,7 +150,12 @@ public class TranscriptionJsonWorker implements Runnable {
         String stopErrorMessage = null;
 
         try {
-            writer = new TranscriptionJsonWriter(context, sessionId);
+            writer = new TranscriptionJsonWriter(
+                    context,
+                    sessionId,
+                    settings,
+                    WhisperTranscriptionTag.Recording
+            );
             // 停止要求または interrupt まで JSON 保存イベントを消費します。
             while (running && !currentThread.isInterrupted()) {
                 final WhisperTranscriptionEvent event = eventQueue.poll(200, TimeUnit.MILLISECONDS);

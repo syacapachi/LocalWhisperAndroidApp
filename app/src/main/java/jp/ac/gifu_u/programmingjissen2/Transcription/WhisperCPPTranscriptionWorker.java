@@ -35,7 +35,7 @@ public final class WhisperCPPTranscriptionWorker implements AutoCloseable {
         this.fileSettings = settings.fileTranscription();
         this.vadModelPath = vadModelPath;
         final WhisperBridge.ContextParams contextParams = WhisperBridge.defaultContextParams();
-        contextParams.useGpu = fileSettings.useGpu();
+        contextParams.useGpu = false;
         context = WhisperBridge.initFromFile(modelPath, contextParams);
         if (context == 0) {
             throw new IOException("Whisper.cpp model load failed: " + modelPath);

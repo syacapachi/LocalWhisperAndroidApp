@@ -423,7 +423,6 @@ public class WhisperSettingsActivity extends AppCompatActivity {
                 fileModel,
                 fileLanguage.value(),
                 parseInt(fileMaxThreadsEdit, WhisperSettings.DEFAULT_MAX_THREADS),
-                false,
                 fileVadSwitch.isChecked(),
                 parseFloat(fileVadThresholdEdit, FileTranscriptionSettings.DEFAULT_VAD_THRESHOLD),
                 fileTranslateSwitch.isChecked(),
@@ -437,16 +436,12 @@ public class WhisperSettingsActivity extends AppCompatActivity {
                 parseInt(overlapEdit, WhisperSettings.DEFAULT_OVERLAP_MS),
                 parseInt(minFinalEdit, WhisperSettings.DEFAULT_MIN_FINAL_MS),
                 parseInt(maxThreadsEdit, WhisperSettings.DEFAULT_MAX_THREADS),
-                false,
-                false,
-                false,
                 audioRecordingSwitch.isChecked(),
                 autoRetranscribeSwitch.isChecked(),
                 vadSwitch.isChecked(),
                 parseFloat(vadThresholdEdit, WhisperSettings.DEFAULT_VAD_THRESHOLD),
                 translateSwitch.isChecked(),
                 promptEdit.getText().toString(),
-                fileSettings.vadThreshold(),
                 fileSettings
         );
         store.save(settings);

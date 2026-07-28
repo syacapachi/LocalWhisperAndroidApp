@@ -93,20 +93,4 @@ public enum WhisperModelOption implements ITranscriptionModel {
     @Override
     public String toString() { return displayName(); }
 
-    /**
-     * 保存キーからモデルを復元します。
-     * @param key 保存キー。例: {@code "ct2-openai-base-int8"}
-     * @return 対応モデル。不明値は既定モデル。例: {@code WhisperModelOption.CT2_BASE_INT8}
-     */
-    @NonNull
-    public static WhisperModelOption fromKey(final String key) {
-        if (key != null) {
-            for (WhisperModelOption value : values()) {
-                if (value.key.equals(key)) {
-                    return value;
-                }
-            }
-        }
-        return WhisperSettings.DEFAULT_MODEL;
-    }
 }

@@ -25,10 +25,10 @@ public enum WhisperInferenceEngine {
      * @throws IllegalArgumentException 未対応値の場合
      */
     public static WhisperInferenceEngine fromJsonValue(final String value) {
-        if ("Whisper".equalsIgnoreCase(value) || "WHISPER_CPP".equalsIgnoreCase(value)) {
+        if ("Whisper".equalsIgnoreCase(value)) {
             return WHISPER_CPP;
         }
-        if ("CTranslate2".equalsIgnoreCase(value) || "CTRANSLATE2".equalsIgnoreCase(value)) {
+        if ("CTranslate2".equalsIgnoreCase(value)) {
             return CTRANSLATE2;
         }
         throw new IllegalArgumentException("Unknown execution model: " + value);

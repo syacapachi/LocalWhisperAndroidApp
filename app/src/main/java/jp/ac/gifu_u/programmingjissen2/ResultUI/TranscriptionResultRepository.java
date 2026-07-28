@@ -5,7 +5,6 @@ import android.content.Context;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
-import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.ByteArrayOutputStream;
@@ -149,16 +148,6 @@ public final class TranscriptionResultRepository {
                 recordedAt = root.optLong("createdAtUnixMs", recordedAt);
                 model = displayModel(context, root.optString("modelKey", model));
                 tag = root.optString("tag", tag);
-                // Version 1 の互換
-                final JSONArray items = root.optJSONArray("items");
-                if ((model.equals("不明") || tag.equals("未設定"))
-                        && items != null && items.length() > 0) {
-                    final JSONObject first = items.optJSONObject(0);
-                    if (first != null) {
-                        model = displayModel(context, first.optString("modelKey", model));
-                        tag = first.optString("tag", tag);
-                    }
-                }
             }
         } catch (Exception ignored) {
             tag = "メタデータ読込失敗";

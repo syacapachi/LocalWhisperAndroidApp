@@ -153,7 +153,12 @@ public final class WhisperFileTranscriptionWorker implements Runnable {
                 WhisperTranscriptionTag.FileTranscribing
         );
         final TranscriptionJsonWriter jsonWriter =
-                new TranscriptionJsonWriter(context, sessionId);
+                new TranscriptionJsonWriter(
+                        context,
+                        sessionId,
+                        settings,
+                        WhisperTranscriptionTag.FileTranscribing
+                );
         jsonWriter.append(event);
         jsonWriter.finish();
         TranscriptionTextRepository.saveFilteredText(context, sessionId, result.text);

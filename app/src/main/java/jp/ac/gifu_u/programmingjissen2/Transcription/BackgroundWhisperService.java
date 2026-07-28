@@ -488,7 +488,11 @@ public class BackgroundWhisperService extends Service {
                 inferenceSessionId,
                 settings
         );
-        transcriptionJsonWorker = new TranscriptionJsonWorker(this, inferenceSessionId);
+        transcriptionJsonWorker = new TranscriptionJsonWorker(
+                this,
+                inferenceSessionId,
+                settings
+        );
         whisperThreadStopped = false;
         jsonThreadStopped = false;
         inferenceAlive = true;
