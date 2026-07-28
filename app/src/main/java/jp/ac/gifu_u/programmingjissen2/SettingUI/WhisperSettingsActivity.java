@@ -605,7 +605,7 @@ public class WhisperSettingsActivity extends AppCompatActivity {
      * @param computeType CTranslate2計算型。例: {@code "int8"}
      */
     private void launchExternalModelPicker(
-            final String name,
+            @NonNull final String name,
             final String computeType
     ) {
         if (name.trim().isEmpty()) {

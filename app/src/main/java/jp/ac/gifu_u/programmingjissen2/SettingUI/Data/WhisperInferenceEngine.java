@@ -1,5 +1,9 @@
 package jp.ac.gifu_u.programmingjissen2.SettingUI.Data;
 
+import androidx.annotation.NonNull;
+
+import org.jetbrains.annotations.Contract;
+
 /** モデルファイルを実行する推論ランタイムです。 */
 public enum WhisperInferenceEngine {
     /** 単一ggmlファイルをwhisper.cppで実行します。 */
@@ -8,6 +12,8 @@ public enum WhisperInferenceEngine {
     CTRANSLATE2;
 
     /** @return JSON用実行モデル名。例: {@code "CTranslate2"} */
+    @NonNull
+    @Contract(pure = true)
     public String jsonValue() {
         return this == WHISPER_CPP ? "Whisper" : "CTranslate2";
     }

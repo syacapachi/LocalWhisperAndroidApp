@@ -65,7 +65,7 @@ public final class TranscriptionTextRepository {
             @NonNull final String baseName,
             final String text
     ) throws IOException {
-        return saveText(context, baseName, new TranscriptionTextFilter().filter(text));
+        return saveText(context, baseName, TranscriptionTextFilter.filter(text));
     }
 
     /**

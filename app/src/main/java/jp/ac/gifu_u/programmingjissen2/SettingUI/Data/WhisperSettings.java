@@ -18,8 +18,8 @@ public final class WhisperSettings {
     public static final boolean DEFAULT_AUDIO_RECORDING_ENABLED = false;
     public static final boolean DEFAULT_AUTO_RETRANSCRIBE_ENABLED = false;
     public static final boolean DEFAULT_VAD_ENABLED = true;
-    public static final float DEFAULT_VAD_THRESHOLD = 0.6f;
-    public static final float DEFAULT_SILERO_VAD_THRESHOLD = 0.5f;
+    public static final float DEFAULT_VAD_THRESHOLD = 0.1f;
+    public static final float DEFAULT_SILERO_VAD_THRESHOLD = 0.1f;
     public static final boolean DEFAULT_TRANSLATE_TO_ENGLISH = false;
     public static final String DEFAULT_PROMPT = "";
     private final ITranscriptionModel model;

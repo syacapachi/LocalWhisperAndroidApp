@@ -28,6 +28,7 @@ public enum WhisperCppModelOption implements ITranscriptionModel {
     }
 
     /** @return 保存キー。例: {@code "cpp-small-q8-0"} */
+    @NonNull
     public String key() { return key; }
 
     /** @return UI名。例: {@code "Whisper.cpp small・Q8_0"} */

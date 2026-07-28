@@ -8,6 +8,7 @@ import java.util.Objects;
 public final class ExternalTranscriptionModel implements ITranscriptionModel {
     private final String key;
     private final String name;
+    private final String displayName;
     private final String modelPath;
     private final WhisperInferenceEngine engine;
     private final String computeType;
@@ -33,6 +34,8 @@ public final class ExternalTranscriptionModel implements ITranscriptionModel {
         }
         this.key = key.trim();
         this.name = name.trim();
+        this.displayName = name + (engine == WhisperInferenceEngine.WHISPER_CPP
+                ? "(Whisper.cpp)" : "(CTranslate2)");
         this.modelPath = modelPath.trim();
         this.engine = Objects.requireNonNull(engine);
         this.computeType = computeType.trim();
@@ -49,10 +52,9 @@ public final class ExternalTranscriptionModel implements ITranscriptionModel {
     @Override
     @NonNull
     public String displayName() {
-        return name + "（" + (engine == WhisperInferenceEngine.WHISPER_CPP
-                ? "Whisper.cpp" : "CTranslate2") + "）\n" + modelPath;
+        return displayName;
     }
 
     /** @return {@link #displayName()}と同じ表示文字列 */
-    @Override @NonNull public String toString() { return displayName(); }
+    @Override @NonNull public String toString() { return displayName; }
 }

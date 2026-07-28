@@ -55,6 +55,7 @@ android {
             isJniDebuggable = false
 
             isShrinkResources= false
+            signingConfig = signingConfigs.getByName("debug")
 
             ndk {
                 debugSymbolLevel = "NONE"
