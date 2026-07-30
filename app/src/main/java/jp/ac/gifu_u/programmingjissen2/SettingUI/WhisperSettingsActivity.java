@@ -34,6 +34,7 @@ import java.util.Locale;
 import Utils.StringPool.StringBufferBuilderPool;
 import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.WhisperInferenceStats;
 import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.FileTranscriptionSettings;
+import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.FileTranscriptionWindowLimits;
 import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.WhisperLanguageOption;
 import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.WhisperSettings;
 import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.ITranscriptionModel;
@@ -61,8 +62,8 @@ public class WhisperSettingsActivity extends AppCompatActivity {
     private Spinner modelSpinner;
     /**  言語選択のドロップダウン */
     private Spinner languageSpinner;
-    /** 推論窓の大きさの 入力フィールド */
-    private EditText windowEdit;
+    /** リアルタイム推論窓のSeekBar＋秒数入力です。 */
+    private SeekEditControl windowControl;
     /** 推論窓の重なりの 入力フィールド */
     private EditText overlapEdit;
     /** 停止時の最終数論の 入力フィールド */
@@ -70,14 +71,15 @@ public class WhisperSettingsActivity extends AppCompatActivity {
     /** 推論に使う最大スレッド数の 入力フィールド */
     private EditText maxThreadsEdit;
     private SwitchCompat vadSwitch;
-    private EditText vadThresholdEdit;
+    private SeekEditControl vadThresholdControl;
     private SwitchCompat translateSwitch;
     private EditText promptEdit;
     private Spinner fileModelSpinner;
     private Spinner fileLanguageSpinner;
     private EditText fileMaxThreadsEdit;
+    private SeekEditControl fileWindowControl;
     private SwitchCompat fileVadSwitch;
-    private EditText fileVadThresholdEdit;
+    private SeekEditControl fileVadThresholdControl;
     private SwitchCompat fileTranslateSwitch;
     private EditText filePromptEdit;
     private SwitchCompat audioRecordingSwitch;
@@ -183,15 +185,16 @@ public class WhisperSettingsActivity extends AppCompatActivity {
 
         page.addView(sectionText("推論"));
         languageSpinner = addLanguageSpinnerRow(page);
-        windowEdit = addEditRow(page, "推論窓 ms", "例: 5000", InputType.TYPE_CLASS_NUMBER);
+        windowControl = SeekEditControl.add(
+                this, page, "推論窓（秒）", 1.0, 30.0, 1.0);
         overlapEdit = addEditRow(page, "重なり ms", "例: 1000", InputType.TYPE_CLASS_NUMBER);
         minFinalEdit = addEditRow(page, "停止時の最小 ms", "例: 1000", InputType.TYPE_CLASS_NUMBER);
         maxThreadsEdit = addEditRow(page, "最大スレッド数", "1-8", InputType.TYPE_CLASS_NUMBER);
 
         vadSwitch = addSwitchRow(page, "Silero VAD（発話抽出）を使う",
                 "推論前に発話区間だけを抽出し、CTranslate2へ渡します。", true);
-        vadThresholdEdit = addEditRow(page, "Silero VAD 発話確率閾値", "0.0-1.0（例: 0.6）",
-                InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        vadThresholdControl = SeekEditControl.add(
+                this, page, "Silero VAD 発話確率閾値", 0.0, 1.0, 0.1);
 
         page.addView(sectionText("翻訳とプロンプト"));
         translateSwitch = addSwitchRow(page, "英語へ翻訳する",
@@ -243,13 +246,27 @@ public class WhisperSettingsActivity extends AppCompatActivity {
 
         page.addView(sectionText("推論"));
         fileLanguageSpinner = addLanguageSpinnerRow(page);
+        final int fileWindowMaxSeconds = FileTranscriptionWindowLimits.maxSeconds();
+        fileWindowControl = SeekEditControl.add(
+                this,
+                page,
+                "推論窓（秒）",
+                FileTranscriptionWindowLimits.MIN_SECONDS,
+                fileWindowMaxSeconds,
+                FileTranscriptionWindowLimits.STEP_SECONDS
+        );
+        page.addView(descriptionText(StringBufferBuilderPool.Join(
+                "",
+                "30秒から",
+                fileWindowMaxSeconds,
+                "秒まで。端末メモリの半分または5分を上限として10秒刻みで設定します。"
+        )));
         fileMaxThreadsEdit = addEditRow(page, "最大スレッド数", "1-8",
                 InputType.TYPE_CLASS_NUMBER);
         fileVadSwitch = addSwitchRow(page, "Silero VAD（無音除外）を使う",
                 "発話区間だけをWhisper.cppへ渡し、無音時のハルシネーションを抑えます。", true);
-        fileVadThresholdEdit = addEditRow(page, "Silero VAD 発話確率閾値",
-                "0.0-1.0（例: 0.5）",
-                InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        fileVadThresholdControl = SeekEditControl.add(
+                this, page, "Silero VAD 発話確率閾値", 0.0, 1.0, 0.1);
         page.addView(descriptionText(
                 "音声が欠落する場合は値を下げ、無音の誤認識が多い場合は値を上げます。"));
 
@@ -386,12 +403,12 @@ public class WhisperSettingsActivity extends AppCompatActivity {
     private void bindSettings(@NonNull final WhisperSettings settings) {
         modelSpinner.setSelection(indexOf(realtimeModels, settings.model().key()));
         languageSpinner.setSelection(WhisperLanguageOption.fromValue(settings.language()).ordinal());
-        windowEdit.setText(String.valueOf(settings.windowMs()));
+        windowControl.setValue(settings.windowMs() / 1000.0);
         overlapEdit.setText(String.valueOf(settings.overlapMs()));
         minFinalEdit.setText(String.valueOf(settings.minFinalMs()));
         maxThreadsEdit.setText(String.valueOf(settings.maxThreads()));
         vadSwitch.setChecked(settings.vadEnabled());
-        vadThresholdEdit.setText(String.valueOf(settings.vadThreshold()));
+        vadThresholdControl.setValue(settings.vadThreshold());
         translateSwitch.setChecked(settings.translateToEnglish());
         promptEdit.setText(settings.prompt());
         audioRecordingSwitch.setChecked(settings.audioRecordingEnabled());
@@ -401,9 +418,10 @@ public class WhisperSettingsActivity extends AppCompatActivity {
         fileModelSpinner.setSelection(indexOf(fileModels, file.model().key()));
         fileLanguageSpinner.setSelection(
                 WhisperLanguageOption.fromValue(file.language()).ordinal());
+        fileWindowControl.setValue(file.windowMs() / 1000.0);
         fileMaxThreadsEdit.setText(String.valueOf(file.maxThreads()));
         fileVadSwitch.setChecked(file.vadEnabled());
-        fileVadThresholdEdit.setText(String.valueOf(file.vadThreshold()));
+        fileVadThresholdControl.setValue(file.vadThreshold());
         fileTranslateSwitch.setChecked(file.translateToEnglish());
         filePromptEdit.setText(file.prompt());
     }
@@ -423,8 +441,11 @@ public class WhisperSettingsActivity extends AppCompatActivity {
                 fileModel,
                 fileLanguage.value(),
                 parseInt(fileMaxThreadsEdit, WhisperSettings.DEFAULT_MAX_THREADS),
+                (int) Math.round(fileWindowControl.valueOr(
+                        FileTranscriptionSettings.DEFAULT_WINDOW_MS / 1000.0) * 1000.0),
                 fileVadSwitch.isChecked(),
-                parseFloat(fileVadThresholdEdit, FileTranscriptionSettings.DEFAULT_VAD_THRESHOLD),
+                (float) fileVadThresholdControl.valueOr(
+                        FileTranscriptionSettings.DEFAULT_VAD_THRESHOLD),
                 fileTranslateSwitch.isChecked(),
                 filePromptEdit.getText().toString()
         );
@@ -432,14 +453,15 @@ public class WhisperSettingsActivity extends AppCompatActivity {
         WhisperSettings settings = new WhisperSettings(
                 model,
                 language.value(),
-                parseInt(windowEdit, WhisperSettings.DEFAULT_WINDOW_MS),
+                (int) Math.round(windowControl.valueOr(
+                        WhisperSettings.DEFAULT_WINDOW_MS / 1000.0) * 1000.0),
                 parseInt(overlapEdit, WhisperSettings.DEFAULT_OVERLAP_MS),
                 parseInt(minFinalEdit, WhisperSettings.DEFAULT_MIN_FINAL_MS),
                 parseInt(maxThreadsEdit, WhisperSettings.DEFAULT_MAX_THREADS),
                 audioRecordingSwitch.isChecked(),
                 autoRetranscribeSwitch.isChecked(),
                 vadSwitch.isChecked(),
-                parseFloat(vadThresholdEdit, WhisperSettings.DEFAULT_VAD_THRESHOLD),
+                (float) vadThresholdControl.valueOr(WhisperSettings.DEFAULT_VAD_THRESHOLD),
                 translateSwitch.isChecked(),
                 promptEdit.getText().toString(),
                 fileSettings
@@ -838,20 +860,6 @@ public class WhisperSettingsActivity extends AppCompatActivity {
     private int parseInt(@NonNull final EditText editText, final int fallback) {
         try {
             return Integer.parseInt(editText.getText().toString().trim());
-        } catch (NumberFormatException e) {
-            return fallback;
-        }
-    }
-
-    /**
-     * 入力欄をfloatへ変換します。
-     * @param editText 入力欄。例: 内容が{@code "0.6"}の欄
-     * @param fallback 変換失敗時の値。例: {@code 0.6f}
-     * @return 変換値。例: {@code 0.6f}。例外は外へ送出しません
-     */
-    private float parseFloat(@NonNull final EditText editText, final float fallback) {
-        try {
-            return Float.parseFloat(editText.getText().toString().trim());
         } catch (NumberFormatException e) {
             return fallback;
         }

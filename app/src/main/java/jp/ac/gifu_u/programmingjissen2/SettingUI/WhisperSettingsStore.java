@@ -35,6 +35,7 @@ public final class WhisperSettingsStore {
     private static final String KEY_FILE_MODEL = "file_model";
     private static final String KEY_FILE_LANGUAGE = "file_language";
     private static final String KEY_FILE_MAX_THREADS = "file_max_threads";
+    private static final String KEY_FILE_WINDOW_MS = "file_window_ms";
     private static final String KEY_FILE_VAD_ENABLED = "file_vad_enabled";
     private static final String KEY_FILE_VAD_THRESHOLD = "file_vad_threshold";
     private static final String KEY_FILE_TRANSLATE_TO_ENGLISH = "file_translate_to_english";
@@ -105,6 +106,9 @@ public final class WhisperSettingsStore {
                 savedModel == null ? FileTranscriptionSettings.DEFAULT_MODEL : savedModel,
                 preferences.getString(KEY_FILE_LANGUAGE, WhisperSettings.DEFAULT_LANGUAGE),
                 preferences.getInt(KEY_FILE_MAX_THREADS, WhisperSettings.DEFAULT_MAX_THREADS),
+                preferences.getInt(
+                        KEY_FILE_WINDOW_MS,
+                        FileTranscriptionSettings.DEFAULT_WINDOW_MS),
                 preferences.getBoolean(
                         KEY_FILE_VAD_ENABLED,
                         FileTranscriptionSettings.DEFAULT_VAD_ENABLED),
@@ -142,6 +146,7 @@ public final class WhisperSettingsStore {
                 .putString(KEY_FILE_MODEL, file.model().key())
                 .putString(KEY_FILE_LANGUAGE, file.language())
                 .putInt(KEY_FILE_MAX_THREADS, file.maxThreads())
+                .putInt(KEY_FILE_WINDOW_MS, file.windowMs())
                 .putBoolean(KEY_FILE_VAD_ENABLED, file.vadEnabled())
                 .putFloat(KEY_FILE_VAD_THRESHOLD, file.vadThreshold())
                 .putBoolean(KEY_FILE_TRANSLATE_TO_ENGLISH, file.translateToEnglish())

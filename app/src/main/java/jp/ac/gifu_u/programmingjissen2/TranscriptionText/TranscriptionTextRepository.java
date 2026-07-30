@@ -69,6 +69,46 @@ public final class TranscriptionTextRepository {
     }
 
     /**
+     * 文字起こしテキストを空にして、チャンク追記を開始できる状態にします。
+     * @param context 保存先を取得するContext。例: {@code activity}
+     * @param baseName 拡張子なしの保存名。例: {@code "file-1a2b"}
+     * @return 空にしたファイル。例: {@code /data/.../transcription_texts/file-1a2b.txt}
+     * @throws IOException ディレクトリ作成またはファイル初期化に失敗した場合
+     */
+    @NonNull
+    public static File clearFilteredText(
+            @NonNull final Context context,
+            @NonNull final String baseName
+    ) throws IOException {
+        return saveText(context, baseName, "");
+    }
+
+    /**
+     * 整形済み文字起こしをフィルターして既存ファイル末尾へ追記します。
+     * @param context 保存先を取得するContext。例: {@code activity}
+     * @param baseName 拡張子なしの保存名。例: {@code "file-1a2b"}
+     * @param text 追記する本文。例: {@code "[00:30.000] 続き\n"}
+     * @return 追記したファイル。例: {@code /data/.../transcription_texts/file-1a2b.txt}
+     * @throws IOException ディレクトリ作成または追記に失敗した場合
+     */
+    @NonNull
+    public static File appendFilteredText(
+            @NonNull final Context context,
+            @NonNull final String baseName,
+            final String text
+    ) throws IOException {
+        final File directory = getDirectory(context);
+        if (!directory.exists() && !directory.mkdirs()) {
+            throw new IOException("Failed to create directory: " + directory);
+        }
+        final File file = new File(directory, sanitizeFileName(baseName) + ".txt");
+        try (FileOutputStream stream = new FileOutputStream(file, true)) {
+            stream.write(TranscriptionTextFilter.filter(text).getBytes(StandardCharsets.UTF_8));
+        }
+        return file;
+    }
+
+    /**
      * 保存済みテキストファイルを新しい順に取得します。
      *
      * @param context 保存先を取得する Context。例: {@code activity}

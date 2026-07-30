@@ -1,7 +1,6 @@
 package jp.ac.gifu_u.programmingjissen2.MainUI;
 
 import android.app.Activity;
-import android.text.InputType;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.Button;
@@ -18,6 +17,7 @@ import androidx.appcompat.widget.SwitchCompat;
 import events.Whisper.WhisperProgressEvent;
 import events.Whisper.WhisperTranscriptionEvent;
 import jp.ac.gifu_u.programmingjissen2.SettingUI.WhisperRecordControls;
+import jp.ac.gifu_u.programmingjissen2.SettingUI.SeekEditControl;
 
 /** 録音開始に必要な操作と進捗、最新結果を一画面へまとめたタブです。 */
 public final class QuickStartTabView {
@@ -26,8 +26,8 @@ public final class QuickStartTabView {
     private final Button fileButton;
     private final Button recordButton;
     private final Spinner sourceSpinner;
-    private final EditText windowEdit;
-    private final EditText vadThresholdEdit;
+    private final SeekEditControl windowControl;
+    private final SeekEditControl vadThresholdControl;
     private final SwitchCompat recordAndRetranscribeSwitch;
     private final ProgressBar progressBar;
     private final TextView progressText;
@@ -79,12 +79,10 @@ public final class QuickStartTabView {
         content.addView(label("録音対象"));
         sourceSpinner = new Spinner(activity);
         content.addView(sourceSpinner, matchWrap());
-        content.addView(label("推論窓の大きさ（ms）"));
-        windowEdit = numberEdit("例: 5000", false);
-        content.addView(windowEdit, matchWrap());
-        content.addView(label("Silero VAD 発話確率閾値"));
-        vadThresholdEdit = numberEdit("0.0～1.0（例: 0.6）", true);
-        content.addView(vadThresholdEdit, matchWrap());
+        windowControl = SeekEditControl.add(
+                activity, content, "推論窓（秒）", 1.0, 30.0, 1.0);
+        vadThresholdControl = SeekEditControl.add(
+                activity, content, "Silero VAD 発話確率閾値", 0.0, 1.0, 0.1);
         recordAndRetranscribeSwitch = new SwitchCompat(activity);
         recordAndRetranscribeSwitch.setText("録音してあとで再推論");
         recordAndRetranscribeSwitch.setMinHeight(dp(48));
@@ -107,10 +105,14 @@ public final class QuickStartTabView {
 
     /** @return ファイル選択を開始するButton。例: {@code fileButton} */
     @NonNull public Button fileButton() { return fileButton; }
-    /** @return 推論窓入力欄。例: 内容{@code "5000"} */
-    @NonNull public EditText windowEdit() { return windowEdit; }
+    /** @return 推論窓入力欄。例: 内容{@code "5"} */
+    @NonNull public EditText windowEdit() { return windowControl.editText(); }
     /** @return VAD閾値入力欄。例: 内容{@code "0.6"} */
-    @NonNull public EditText vadThresholdEdit() { return vadThresholdEdit; }
+    @NonNull public EditText vadThresholdEdit() { return vadThresholdControl.editText(); }
+    /** @return 推論窓のSeekBar＋数値入力。例: {@code windowControl} */
+    @NonNull public SeekEditControl windowControl() { return windowControl; }
+    /** @return VAD閾値のSeekBar＋数値入力。例: {@code vadThresholdControl} */
+    @NonNull public SeekEditControl vadThresholdControl() { return vadThresholdControl; }
     /** @return 録音保存・再推論Switch。例: {@code switchView} */
     @NonNull public SwitchCompat recordAndRetranscribeSwitch() {
         return recordAndRetranscribeSwitch;
@@ -139,8 +141,8 @@ public final class QuickStartTabView {
             final float vadThreshold,
             final boolean recordAndRetranscribe
     ) {
-        windowEdit.setText(String.valueOf(windowMs));
-        vadThresholdEdit.setText(String.valueOf(vadThreshold));
+        windowControl.setValue(windowMs / 1000.0);
+        vadThresholdControl.setValue(vadThreshold);
         recordAndRetranscribeSwitch.setChecked(recordAndRetranscribe);
     }
 
@@ -159,16 +161,6 @@ public final class QuickStartTabView {
     public void showCompleted(@NonNull final WhisperTranscriptionEvent event) {
         progressBar.setVisibility(View.GONE);
         progressText.setText(event.hasError() ? "処理に失敗しました" : "推論完了");
-    }
-
-    /** @param hint 例: {@code "5000"} @param decimal 小数ならtrue @return EditText */
-    @NonNull private EditText numberEdit(final String hint, final boolean decimal) {
-        final EditText edit = new EditText(activity);
-        edit.setSingleLine(true);
-        edit.setHint(hint);
-        edit.setInputType(InputType.TYPE_CLASS_NUMBER
-                | (decimal ? InputType.TYPE_NUMBER_FLAG_DECIMAL : 0));
-        return edit;
     }
 
     /** @param value 例: {@code "進捗"} @return 見出しTextView */

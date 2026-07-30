@@ -52,6 +52,9 @@ public class TranscriptionJsonWriter {
     /** session開始時のVAD発話確率閾値です。 */
     private final float vadThreshold;
 
+    /** session開始時の1回あたり推論窓msです。 */
+    private final int windowMs;
+
     /** JSON に保存する文字起こし結果一覧です。 */
     private final JSONArray items = new JSONArray();
 
@@ -90,10 +93,12 @@ public class TranscriptionJsonWriter {
             this.initialPrompt = fileSettings.prompt();
             this.vadEnabled = fileSettings.vadEnabled();
             this.vadThreshold = fileSettings.vadThreshold();
+            this.windowMs = fileSettings.windowMs();
         } else {
             this.initialPrompt = settings.prompt();
             this.vadEnabled = settings.vadEnabled();
             this.vadThreshold = settings.vadThreshold();
+            this.windowMs = settings.windowMs();
         }
 
         final File directory = new File(context.getFilesDir(), DIRECTORY_NAME);
@@ -116,6 +121,7 @@ public class TranscriptionJsonWriter {
      * Whisper の推論結果を JSON に追記します。
      *
      * @param event Whisper推論結果イベント。例: {@code transcriptionEvent}
+     * エラーは出しません。
      */
     public synchronized void append(final WhisperTranscriptionEvent event) {
         if (event == null || event.hasError()) {
@@ -170,6 +176,7 @@ public class TranscriptionJsonWriter {
         root.put("initialPrompt", initialPrompt);
         root.put("vadEnabled", vadEnabled);
         root.put("vadThreshold", vadThreshold);
+        root.put("windowMs", windowMs);
         root.put("items", items);
         return root;
     }

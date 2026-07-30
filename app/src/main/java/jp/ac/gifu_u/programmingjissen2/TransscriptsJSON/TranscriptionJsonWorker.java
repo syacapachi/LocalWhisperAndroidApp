@@ -5,6 +5,7 @@ import android.util.Log;
 
 import androidx.annotation.NonNull;
 
+import java.io.IOException;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.TimeUnit;
 
@@ -18,6 +19,7 @@ import jp.ac.gifu_u.programmingjissen2.TranscriptionText.TranscriptionTextReposi
 
 /**
  * Whisper の文字起こし結果を別スレッドで JSON ファイルへ保存する worker です。
+ * JSON保存が終了した際、結果を整形して出力します。(分割候補)
  */
 public class TranscriptionJsonWorker implements Runnable {
     /** ログ出力用タグです。 */
@@ -76,7 +78,6 @@ public class TranscriptionJsonWorker implements Runnable {
         if (running) {
             return;
         }
-
         running = true;
         workerThread = StringBufferBuilderPool.NewThreadWithPoolCleanup(
                 this,
@@ -150,6 +151,7 @@ public class TranscriptionJsonWorker implements Runnable {
         String stopErrorMessage = null;
 
         try {
+            TranscriptionTextRepository.clearFilteredText(context,sessionId);
             writer = new TranscriptionJsonWriter(
                     context,
                     sessionId,
@@ -161,6 +163,7 @@ public class TranscriptionJsonWorker implements Runnable {
                 final WhisperTranscriptionEvent event = eventQueue.poll(200, TimeUnit.MILLISECONDS);
                 if (event != null) {
                     appendEvent(event);
+                    TranscriptionTextRepository.appendFilteredText(context,sessionId,event.text());
                 }
             }
         } catch (InterruptedException e) {
