@@ -90,6 +90,20 @@ public final class WhisperFileTranscriptionWorker implements Runnable {
         return thread != null && thread.isAlive();
     }
 
+    /**
+     * ファイル文字起こしスレッドへ中断を要求します。
+     * @return 生存中のスレッドへ要求できた場合true。例: {@code true}
+     * 例外はなく、native推論中は現在のチャンク終了後に停止します。
+     */
+    public synchronized boolean requestStop() {
+        final Thread thread = workerThread;
+        if (thread == null || !thread.isAlive()) {
+            return false;
+        }
+        thread.interrupt();
+        return true;
+    }
+
     /** 実音声をデコードし、Whisper.cpp一括推論結果をイベントへ変換します。例外はエラーイベントへ変換します。 */
     @Override
     public void run() {

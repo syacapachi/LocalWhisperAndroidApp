@@ -24,7 +24,6 @@ import events.Request.PermissionAwaiter;
 import events.SystemEventHub;
 import events.Whisper.WhisperRecordingStateEvent;
 import events.Whisper.WhisperTranscriptionEvent;
-import events.Whisper.WhisperTranscriptionTag;
 import jp.ac.gifu_u.programmingjissen2.Transcription.BackgroundWhisperService;
 import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.WhisperInferenceStats;
 import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.ITranscriptionModel;
@@ -58,24 +57,8 @@ public class RecordActivity {
     private volatile boolean inferenceAlive;
     private volatile boolean inferenceAccepting;
     private WhisperSettings currentSettings;
-    private WhisperFileTranscriptionWorker fileTranscriptionWorker;
     private ActivityResultLauncher<Intent> projectionPermissionLauncher;
     private RecordingAudioSource pendingAudioSource;
-
-    /** 従来の最小 UI で録音制御クラスを作成します。 */
-    public RecordActivity(Activity activity, Button button, TextView resultTextView) {
-        this(activity, new WhisperRecordControls(
-                button,
-                null,
-                null,
-                null,
-                null,
-                null,
-                resultTextView,
-                null,
-                null
-        ));
-    }
 
     /** 録音 UI とバックグラウンド Whisper サービスの制御クラスを作成します。 */
     public RecordActivity(Activity activity, @NonNull WhisperRecordControls controls) {
@@ -352,30 +335,16 @@ public class RecordActivity {
         }
 
         currentSettings = settingsStore.load();
-        final String sessionId = StringBufferBuilderPool.Join(
-                "-",
-                "file",
-                Long.toHexString(System.currentTimeMillis()),
-                Long.toHexString(System.nanoTime())
-        );
-        fileTranscriptionWorker = new WhisperFileTranscriptionWorker(
-                activity,
-                uri,
-                sessionId,
-                currentSettings,
-                this::onFileTranscriptionComplete
-        );
-        setState(RecordTranscriptionState.FileTranscribing);
-        outputMessage("音声ファイルを読み込み中...");
-        refreshWhisperInfo();
-
-        if (!fileTranscriptionWorker.start()) {
-            setState(null);
-            fileTranscriptionWorker = null;
-            outputMessage("音声ファイル文字起こしを開始できませんでした");
-            refreshWhisperInfo();
+        requestPostNotificationPermissionIfNeeded();
+        if (!BackgroundWhisperService.transcribeAudioFile(activity, uri)) {
+            outputMessage("別のバックグラウンド処理を実行中です");
             return false;
         }
+        setState(RecordTranscriptionState.FileTranscribing);
+        inferenceAlive = true;
+        inferenceAccepting = false;
+        outputMessage("バックグラウンドで音声ファイルを読み込み中...");
+        refreshWhisperInfo();
         return true;
     }
 
@@ -388,30 +357,6 @@ public class RecordActivity {
     private void onTranscriptionEvent(final WhisperTranscriptionEvent event) {
         activity.runOnUiThread(() -> {
             screenBinder.showTranscription(event);
-            if (event.tag() == WhisperTranscriptionTag.FileTranscribing && !event.hasError()) {
-                settingsStore.recordInference(event.modelKey(), event.processingTimeMs());
-            }
-            refreshWhisperInfo();
-        });
-    }
-
-    /**
-     * ファイル文字起こし worker の完了通知を UI 状態へ反映します。
-     *
-     * @param sessionId 完了した session ID。例: {@code "file-1a2b"}
-     * @param errorMessage エラー時のメッセージ。成功時は空文字。例: {@code "audio track not found"}
-     */
-    private void onFileTranscriptionComplete(final String sessionId, final String errorMessage) {
-        activity.runOnUiThread(() -> {
-            setState(null);
-            fileTranscriptionWorker = null;
-            if (errorMessage != null && !errorMessage.isEmpty()) {
-                outputMessage(StringBufferBuilderPool.Join(
-                        "",
-                        "音声ファイル文字起こしに失敗しました: ",
-                        errorMessage
-                ));
-            }
             refreshWhisperInfo();
         });
     }
@@ -421,9 +366,14 @@ public class RecordActivity {
             recording = event.recording();
             inferenceAlive = event.inferenceAlive();
             inferenceAccepting = event.inferenceAccepting();
-            setState(event.stopping()
-                    ? RecordTranscriptionState.StopRecord
-                    : (event.recording() ? RecordTranscriptionState.Recording : null));
+            final RecordTranscriptionState serviceState =
+                    BackgroundWhisperService.currentState();
+            setState(serviceState == RecordTranscriptionState.FileTranscribing
+                    ? RecordTranscriptionState.FileTranscribing
+                    : (event.stopping()
+                            ? RecordTranscriptionState.StopRecord
+                            : (event.recording()
+                                    ? RecordTranscriptionState.Recording : null)));
             screenBinder.setRecordButtonState(state);
             screenBinder.setInferenceButtonState(
                     recording,
@@ -538,15 +488,16 @@ public class RecordActivity {
      * 録音サービスの状態を RecordActivity のステートへ反映します。
      */
     private void syncStateFromBackgroundService() {
-        if (state == RecordTranscriptionState.FileTranscribing) {
-            return;
-        }
         recording = BackgroundWhisperService.isRunning();
         inferenceAlive = BackgroundWhisperService.isInferenceAlive();
         inferenceAccepting = BackgroundWhisperService.isInferenceAccepting();
-        setState(BackgroundWhisperService.isStopping()
-                ? BackgroundWhisperService.currentState()
-                : (recording ? RecordTranscriptionState.Recording : null));
+        final RecordTranscriptionState serviceState =
+                BackgroundWhisperService.currentState();
+        setState(serviceState == RecordTranscriptionState.FileTranscribing
+                ? serviceState
+                : (BackgroundWhisperService.isStopping()
+                        ? serviceState
+                        : (recording ? RecordTranscriptionState.Recording : null)));
     }
 
     /**

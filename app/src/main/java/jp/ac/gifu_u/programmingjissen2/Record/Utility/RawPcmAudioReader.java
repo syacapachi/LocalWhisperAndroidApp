@@ -8,6 +8,7 @@ import android.media.MediaFormat;
 import androidx.annotation.NonNull;
 
 import java.nio.ByteBuffer;
+import java.io.InterruptedIOException;
 
 /** MediaExtractor から raw PCM 音声を直接読む helper です。 */
 public final class RawPcmAudioReader {
@@ -52,6 +53,9 @@ public final class RawPcmAudioReader {
                 new WhisperPcmChunkEmitter(sampleRate, chunkDurationMs, consumer);
 
         while (true) {
+            if (Thread.currentThread().isInterrupted()) {
+                throw new InterruptedIOException("File transcription was interrupted");
+            }
             buffer.clear();
             // バッファにデータコピー
             final int sampleSize = extractor.readSampleData(buffer, 0);

@@ -10,6 +10,7 @@ import android.net.Uri;
 import androidx.annotation.NonNull;
 
 import java.io.IOException;
+import java.io.InterruptedIOException;
 import java.nio.ByteBuffer;
 
 import jp.ac.gifu_u.programmingjissen2.Record.DecodedAudio;
@@ -153,6 +154,7 @@ public final class AudioFilePcmDecoder {
             boolean outputDone = false;
 
             while (!outputDone) {
+                throwIfInterrupted();
                 if (!inputDone) {
                     // 少しづつ変換
                     inputDone = queueInputBuffer(extractor, codec);
@@ -253,6 +255,17 @@ public final class AudioFilePcmDecoder {
             final int defaultValue
     ) {
         return format.containsKey(key) ? format.getInteger(key) : defaultValue;
+    }
+
+    /**
+     * 呼び出しスレッドの中断をデコード停止へ変換します。
+     * 戻り値はありません。
+     * @throws InterruptedIOException スレッドへinterrupt済みの場合
+     */
+    private static void throwIfInterrupted() throws InterruptedIOException {
+        if (Thread.currentThread().isInterrupted()) {
+            throw new InterruptedIOException("File transcription was interrupted");
+        }
     }
 
 }

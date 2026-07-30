@@ -52,6 +52,10 @@ public class BackgroundWhisperService extends Service {
             "jp.ac.gifu_u.programmingjissen2.whisper.STOP_INFERENCE";
     public static final String ACTION_RESUME_INFERENCE =
             "jp.ac.gifu_u.programmingjissen2.whisper.RESUME_INFERENCE";
+    public static final String ACTION_TRANSCRIBE_FILE =
+            "jp.ac.gifu_u.programmingjissen2.whisper.TRANSCRIBE_FILE";
+    public static final String ACTION_STOP_FILE_TRANSCRIPTION =
+            "jp.ac.gifu_u.programmingjissen2.whisper.STOP_FILE_TRANSCRIPTION";
     private static final String EXTRA_AUDIO_SOURCE = "audioSource";
     private static final String EXTRA_CAPTURE_TARGET_UID = "captureTargetUid";
     private static final String EXTRA_PROJECTION_RESULT_CODE = "projectionResultCode";
@@ -92,6 +96,7 @@ public class BackgroundWhisperService extends Service {
     private boolean pendingRecordingStart;
     private boolean pendingInferenceResume;
     private boolean inferenceFailed;
+    private volatile boolean destroyed;
     private boolean whisperThreadStopped = true;
     private boolean jsonThreadStopped = true;
     private final ArrayDeque<RetranscriptionRequest> retranscriptionQueue = new ArrayDeque<>();
@@ -147,6 +152,28 @@ public class BackgroundWhisperService extends Service {
         sendAction(context, ACTION_RESUME_INFERENCE, false);
     }
 
+    /**
+     * 選択音声のファイル文字起こしをForeground Serviceへ依頼します。
+     * @param context 開始要求元。例: {@code activity}
+     * @param uri 読み取り可能な音声URI。例: {@code content://media/1}
+     * @return 開始Intentを送信した場合true。例: {@code true}
+     * @throws NullPointerException uriがnullの場合
+     */
+    public static boolean transcribeAudioFile(
+            @NonNull final Context context,
+            @NonNull final android.net.Uri uri
+    ) {
+        if (active) {
+            return false;
+        }
+        final Intent intent = new Intent(context, BackgroundWhisperService.class)
+                .setAction(ACTION_TRANSCRIBE_FILE)
+                .setData(uri)
+                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        ContextCompat.startForegroundService(context, intent);
+        return true;
+    }
+
     public static boolean isRunning() { return active && recording; }
     public static boolean isInferenceAlive() { return active && inferenceAlive; }
     public static boolean isInferenceAccepting() { return active && inferenceAccepting; }
@@ -162,6 +189,7 @@ public class BackgroundWhisperService extends Service {
         settingsStore = new WhisperSettingsStore(this);
         notificationController = new WhisperForegroundNotification(this);
         notificationController.createChannel();
+        destroyed = false;
         active = true;
         SystemEventHub.subscribe(WhisperTranscriptionEvent.class, transcriptionListener);
         SystemEventHub.subscribe(ThreadStoppedEvent.class, threadStoppedListener);
@@ -184,10 +212,18 @@ public class BackgroundWhisperService extends Service {
         final String action = intent == null ? ACTION_START : intent.getAction();
         if (ACTION_STOP.equals(action)) {
             requestStopRecording();
+        } else if (ACTION_STOP_FILE_TRANSCRIPTION.equals(action)) {
+            requestStopFileTranscription();
         } else if (ACTION_STOP_INFERENCE.equals(action)) {
             requestStopInference();
         } else if (ACTION_RESUME_INFERENCE.equals(action)) {
             requestResumeInference();
+        } else if (ACTION_TRANSCRIBE_FILE.equals(action)) {
+            notificationController.startFileTranscription(
+                    "音声ファイルを読み込み中",
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+            );
+            enqueueSelectedFile(intent);
         } else {
             readRecordingRequest(intent);
             if (!recording) {
@@ -207,9 +243,15 @@ public class BackgroundWhisperService extends Service {
 
     @Override
     public void onDestroy() {
+        destroyed = true;
         SystemEventHub.unsubscribe(WhisperTranscriptionEvent.class, transcriptionListener);
         SystemEventHub.unsubscribe(ThreadStoppedEvent.class, threadStoppedListener);
         closeAudioFile(false);
+        if (retranscriptionWorker != null) {
+            retranscriptionWorker.requestStop();
+            retranscriptionWorker = null;
+        }
+        retranscriptionQueue.clear();
         releaseMediaProjection();
         active = false;
         recording = false;
@@ -393,6 +435,26 @@ public class BackgroundWhisperService extends Service {
         currentState = RecordTranscriptionState.StopRecord;
         publishState("録音停止: 残り音声を推論中です");
         requestRecordThreadStop();
+    }
+
+    /**
+     * ファイル文字起こしを停止し、待機中のファイル要求も破棄します。
+     * 戻り値と例外はありません。native推論中は現在の窓終了後に停止します。
+     */
+    private synchronized void requestStopFileTranscription() {
+        retranscriptionQueue.clear();
+        pendingRecordingStart = false;
+        if (retranscriptionWorker != null && retranscriptionWorker.requestStop()) {
+            latestText = "ファイル文字起こしを停止しています";
+            notificationController.updateFileTranscription(latestText);
+            publishState(latestText);
+            return;
+        }
+        retranscriptionSessionId = null;
+        inferenceAlive = false;
+        currentState = null;
+        publishState("ファイル文字起こしを停止しました");
+        stopForegroundAndSelf();
     }
 
     /** 録音を続けたまま推論への投入を止め、推論workerを排出停止させます。 */
@@ -596,10 +658,15 @@ public class BackgroundWhisperService extends Service {
         if (retranscriptionSessionId != null
                 && retranscriptionSessionId.equals(event.sessionId())) {
             latestText = event.hasError()
-                    ? "保存音声の再推論エラー: " + event.errorMessage()
+                    ? "ファイル文字起こしエラー: " + event.errorMessage()
                     : (event.text().isEmpty() ? "..." : event.text());
-            notificationController.update(latestText, false);
-            publishState("保存音声の再推論が完了しました");
+            if (!event.hasError()) {
+                settingsStore.recordInference(event.modelKey(), event.processingTimeMs());
+            }
+            notificationController.updateFileTranscription(latestText);
+            publishState(event.finalResult()
+                    ? "ファイル文字起こしが完了しました"
+                    : "ファイル文字起こし中です");
             return;
         }
         if (inferenceSessionId == null || !inferenceSessionId.equals(event.sessionId())) {
@@ -662,18 +729,47 @@ public class BackgroundWhisperService extends Service {
             if (enqueueRetranscription && settings != null
                     && settings.autoRetranscribeEnabled()) {
                 retranscriptionQueue.offer(new RetranscriptionRequest(
-                        file,
+                        FileProvider.getUriForFile(
+                                this,
+                                getPackageName() + ".fileprovider",
+                                file
+                        ),
                         settings,
                         sessionId(
                                 "recorded-file",
                                 recordingTimeData == null
                                         ? newSessionTimeData() : recordingTimeData
-                        )
+                        ),
+                        "保存音声"
                 ));
             }
         } catch (IOException e) {
             Log.e(TAG, "Audio recording close failed", e);
         }
+    }
+
+    /**
+     * Service開始IntentのURIをファイル文字起こし待ち行列へ追加します。
+     * @param intent ACTION_TRANSCRIBE_FILE Intent。例: {@code new Intent().setData(uri)}
+     * 戻り値と例外はなく、不正要求時はエラー状態を通知してServiceを終了します。
+     */
+    private synchronized void enqueueSelectedFile(@Nullable final Intent intent) {
+        final android.net.Uri uri = intent == null ? null : intent.getData();
+        if (uri == null) {
+            latestText = "音声ファイル文字起こし要求が不正です";
+            publishState(latestText);
+            stopForegroundAndSelf();
+            return;
+        }
+        final WhisperSettings requestSettings = settingsStore.load();
+        final String fileSessionId = sessionId("file", newSessionTimeData());
+        retranscriptionQueue.offer(new RetranscriptionRequest(
+                uri,
+                requestSettings,
+                fileSessionId,
+                "音声ファイル"
+        ));
+        startNextRetranscriptionOrStop();
     }
 
     /** 保存音声の次の再推論を開始し、残件がなければServiceを終了します。 */
@@ -693,15 +789,19 @@ public class BackgroundWhisperService extends Service {
             stopForegroundAndSelf();
             return;
         }
-        publishState("保存音声を再推論しています");
+        currentState = RecordTranscriptionState.FileTranscribing;
+        inferenceAlive = true;
+        inferenceAccepting = false;
+        currentModelKey = request.settings.fileTranscription().model().key();
+        notificationController.startFileTranscription(
+                request.label + "を文字起こししています",
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+        );
+        publishState(request.label + "をバックグラウンドで文字起こししています");
         retranscriptionSessionId = request.sessionId;
         retranscriptionWorker = new WhisperFileTranscriptionWorker(
                 this,
-                FileProvider.getUriForFile(
-                        this,
-                        getPackageName() + ".fileprovider",
-                        request.file
-                ),
+                request.uri,
                 request.sessionId,
                 request.settings,
                 this::onRetranscriptionComplete
@@ -709,6 +809,8 @@ public class BackgroundWhisperService extends Service {
         if (!retranscriptionWorker.start()) {
             retranscriptionWorker = null;
             retranscriptionSessionId = null;
+            inferenceAlive = false;
+            currentState = null;
             startNextRetranscriptionOrStop();
         }
     }
@@ -720,8 +822,14 @@ public class BackgroundWhisperService extends Service {
      */
     private void onRetranscriptionComplete(final String sessionId, final String errorMessage) {
         synchronized (this) {
+            if (destroyed) {
+                return;
+            }
             retranscriptionWorker = null;
             retranscriptionSessionId = null;
+            inferenceAlive = false;
+            inferenceAccepting = false;
+            currentState = null;
             if (errorMessage != null && !errorMessage.isEmpty()) {
                 Log.w(TAG, "Recorded audio retranscription failed: " + errorMessage);
             }
@@ -861,24 +969,28 @@ public class BackgroundWhisperService extends Service {
     }
 
     private static final class RetranscriptionRequest {
-        final File file;
+        final android.net.Uri uri;
         final WhisperSettings settings;
         final String sessionId;
+        final String label;
 
         /**
          * 再推論待ちデータを作成します。
-         * @param file WAVファイル。例: {@code new File("record.wav")}
+         * @param uri 音声URI。例: {@code content://media/1}
          * @param settings 推論設定。例: {@code WhisperSettings.defaultSettings()}
          * @param sessionId 結果ID。例: {@code "recorded-file-a1b2"}
+         * @param label 通知表示名。例: {@code "保存音声"}
          */
         RetranscriptionRequest(
-                @NonNull final File file,
+                @NonNull final android.net.Uri uri,
                 @NonNull final WhisperSettings settings,
-                @NonNull final String sessionId
+                @NonNull final String sessionId,
+                @NonNull final String label
         ) {
-            this.file = file;
+            this.uri = uri;
             this.settings = settings;
             this.sessionId = sessionId;
+            this.label = label;
         }
     }
 }

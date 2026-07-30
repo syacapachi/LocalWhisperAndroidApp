@@ -22,6 +22,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <!-- Android14以降 MediaProjectionで対象アプリの再生音声をキャプチャ -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+    <!-- Android14以降 データ同期処理を行う。この権限で ファイル変換・文字起こしをForegroundで継続 -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <!--
      allowBackup FileDir(),getDir(),getDataBase(),getExternalFilesDir()のフォルダのバックアップ
      dataExtractionRules バックアップの設定ファイルのパス @xml -> res/xml/になる
@@ -45,12 +47,13 @@
         <!--
         android:name = {namespace}".ファイルパス"
         android:exported = {true/false} 他のアプリから実行できるか
-        android:foregroundServiceType= "microphone|mediaProjection" バックグラウンドで実行する機能(マイクアクセス｜画面キャプチャ)
+        android:foregroundServiceType= "microphone|mediaProjection|dataSync"
+        バックグラウンドで実行する機能(マイクアクセス｜画面キャプチャ｜データ同期処理(この権限でファイル文字起こし))
         -->
         <service
             android:name=".Transcription.BackgroundWhisperService"
             android:exported="false"
-            android:foregroundServiceType="microphone|mediaProjection" />
+            android:foregroundServiceType="microphone|mediaProjection|dataSync" />
         <!-- 設定UI画面 -->
         <activity
             android:name=".SettingUI.WhisperSettingsActivity"
