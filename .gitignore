@@ -26,3 +26,4 @@ models/ggml-kotoba-whisper_q8_0.bin
 /models/ctranslate2/kotoba-whisper-v2.2-int8
 /models/ctranslate2/openai-whisper-medium-int8
 /models/ctranslate2/openai-whisper-small-int8
+/.codex-temp

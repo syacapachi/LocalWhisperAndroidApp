@@ -54,6 +54,14 @@ public final class DirectPcm16Builder {
         return size;
     }
 
+    /** 蓄積値を破棄し、確保済みDirectチャンクを再利用可能にします。戻り値と例外はありません。 */
+    public void clear() {
+        size = 0;
+        for (DirectPcm16Buffer chunk : chunks) {
+            chunk.clear();
+        }
+    }
+
     /**
      * 蓄積PCMを指定レートへ線形補間し、連続したDirectバッファを返します。
      * @param sourceSampleRate 入力Hz。例: {@code 44100}
@@ -70,10 +78,33 @@ public final class DirectPcm16Builder {
         final int outputLength = Pcm16AudioConverter.resampledLength(
                 size, sourceSampleRate, targetSampleRate);
         final DirectPcm16Buffer output = new DirectPcm16Buffer(Math.max(1, outputLength));
+        resampleInto(sourceSampleRate, targetSampleRate, output);
+        return output;
+    }
+
+    /**
+     * 蓄積PCMを指定レートへ線形補間し、既存Directバッファへ書き込みます。
+     * @param sourceSampleRate 入力Hz。例: {@code 48000}
+     * @param targetSampleRate 出力Hz。例: {@code 16000}
+     * @param output 再利用する出力先。例: {@code new DirectPcm16Buffer(16000)}
+     * @return 出力したサンプル数。例: {@code 16000}
+     * @throws IllegalArgumentException レートが0以下、または出力容量が不足する場合
+     */
+    public int resampleInto(
+            final int sourceSampleRate,
+            final int targetSampleRate,
+            @NonNull final DirectPcm16Buffer output
+    ) {
+        final int outputLength = Pcm16AudioConverter.resampledLength(
+                size, sourceSampleRate, targetSampleRate);
+        if (outputLength > output.sampleCapacity()) {
+            throw new IllegalArgumentException("resampled PCM exceeds output capacity");
+        }
+        output.clear();
         final ShortBuffer outputSamples = output.bytes().asShortBuffer();
         if (outputLength == 0) {
             output.setSampleCount(0);
-            return output;
+            return 0;
         }
         if (sourceSampleRate == targetSampleRate) {
             for (int index = 0; index < size; index++) {
@@ -94,7 +125,7 @@ public final class DirectPcm16Builder {
             }
         }
         output.setSampleCount(outputLength);
-        return output;
+        return outputLength;
     }
 
     /**

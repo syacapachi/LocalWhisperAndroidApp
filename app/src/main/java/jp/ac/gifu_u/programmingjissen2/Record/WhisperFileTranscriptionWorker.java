@@ -17,6 +17,7 @@ import events.Whisper.WhisperTranscriptionTag;
 import events.Whisper.WhisperProgressEvent;
 import jp.ac.gifu_u.programmingjissen2.Record.Utility.AudioFilePcmDecoder;
 import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.WhisperSettings;
+import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.FileTranscriptionWindowLimits;
 import jp.ac.gifu_u.programmingjissen2.SettingUI.ModelPathResolver;
 import jp.ac.gifu_u.programmingjissen2.Transcription.TranscriptionWorkerResult;
 import jp.ac.gifu_u.programmingjissen2.Transcription.WhisperCPPTranscriptionWorker;
@@ -24,7 +25,7 @@ import jp.ac.gifu_u.programmingjissen2.Transcription.WhisperVadConfig;
 import jp.ac.gifu_u.programmingjissen2.TranscriptionText.TranscriptionTextRepository;
 import jp.ac.gifu_u.programmingjissen2.TransscriptsJSON.TranscriptionJsonWriter;
 
-/** 音声ファイルを読み、Whisper.cpp専用workerへ全PCMを一度に渡す呼び出しworkerです。 */
+/** 音声ファイルを一定時間ずつデコードし、同じWhisper.cpp contextで順次推論するworkerです。 */
 public final class WhisperFileTranscriptionWorker implements Runnable {
     private static final String TAG = WhisperFileTranscriptionWorker.class.getSimpleName();
 
@@ -89,30 +90,67 @@ public final class WhisperFileTranscriptionWorker implements Runnable {
         return thread != null && thread.isAlive();
     }
 
+    /**
+     * ファイル文字起こしスレッドへ中断を要求します。
+     * @return 生存中のスレッドへ要求できた場合true。例: {@code true}
+     * 例外はなく、native推論中は現在のチャンク終了後に停止します。
+     */
+    public synchronized boolean requestStop() {
+        final Thread thread = workerThread;
+        if (thread == null || !thread.isAlive()) {
+            return false;
+        }
+        thread.interrupt();
+        return true;
+    }
+
     /** 実音声をデコードし、Whisper.cpp一括推論結果をイベントへ変換します。例外はエラーイベントへ変換します。 */
     @Override
     public void run() {
         String errorMessage = "";
+        TranscriptionJsonWriter jsonWriter = null;
         try {
             SystemEventHub.publish(new WhisperProgressEvent(
                     sessionId, WhisperProgressEvent.Phase.FILE_READING, 0, 0));
-            final DecodedAudio audio = AudioFilePcmDecoder.decodeToWhisperPcm(context, audioUri);
-            SystemEventHub.publish(new WhisperProgressEvent(
-                    sessionId,
-                    WhisperProgressEvent.Phase.FILE_TRANSCRIBING,
-                    0,
-                    audio.durationMs()
-            ));
             final String modelPath = ModelPathResolver.resolve(
                     context, settings.fileTranscription().model());
             final String vadModelPath = MyUtils.prepareModelPath(
                     context, WhisperVadConfig.MODEL_ASSET_NAME);
-            transcribeWholeAudio(modelPath, vadModelPath, audio);
+            jsonWriter = new TranscriptionJsonWriter(
+                    context,
+                    sessionId,
+                    settings,
+                    WhisperTranscriptionTag.FileTranscribing
+            );
+            TranscriptionTextRepository.clearFilteredText(context, sessionId);
+            final TranscriptionJsonWriter activeWriter = jsonWriter;
+            final int[] sequence = {0};
+            try (WhisperCPPTranscriptionWorker worker =
+                         new WhisperCPPTranscriptionWorker(modelPath, vadModelPath, settings)) {
+                AudioFilePcmDecoder.decodeToWhisperPcm(
+                        context,
+                        audioUri,
+                        Math.min(
+                                settings.fileTranscription().windowMs(),
+                                FileTranscriptionWindowLimits.maxSeconds() * 1000),
+                        (audio, startSample, finalChunk) -> transcribeChunk(
+                                worker,
+                                activeWriter,
+                                audio,
+                                startSample,
+                                sequence[0]++,
+                                finalChunk
+                        )
+                );
+            }
         } catch (Exception e) {
             Log.e(TAG, "File transcription failed", e);
             errorMessage = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
             publishError(errorMessage);
         } finally {
+            if (jsonWriter != null) {
+                jsonWriter.finish();
+            }
             workerThread = null;
             if (completionListener != null) {
                 completionListener.onComplete(sessionId, errorMessage);
@@ -121,42 +159,52 @@ public final class WhisperFileTranscriptionWorker implements Runnable {
     }
 
     /**
-     * デコード済みPCM全体をWhisper.cpp専用workerへ渡します。
-     * @param modelPath ggmlモデル。例: {@code "/data/.../ggml-small_q8_0.bin"}
-     * @param vadModelPath VADモデル。例: {@code "/data/.../ggml-silero-v6.2.0.bin"}
-     * @param audio 音声全体。例: {@code decodedAudio}
-     * @throws IOException モデル読み込み・推論・結果保存に失敗した場合
+     * 1つのPCMチャンクを推論し、JSON・テキスト・イベントへ逐次出力します。
+     * @param worker ファイル全体で再利用するWhisper worker。例: {@code worker}
+     * @param jsonWriter 同一sessionのJSON出力先。例: {@code jsonWriter}
+     * @param audio 16kHz PCMチャンク。例: {@code decodedAudio}
+     * @param startSample ファイル先頭からのサンプル位置。例: {@code 480000}
+     * @param sequence 結果番号。例: {@code 1}
+     * @param finalChunk 最後のチャンクならtrue。例: {@code false}
+     * @throws IOException 推論またはテキスト保存に失敗した場合
      */
-    private void transcribeWholeAudio(
-            @NonNull final String modelPath,
-            @NonNull final String vadModelPath,
-            @NonNull final DecodedAudio audio
+    private void transcribeChunk(
+            @NonNull final WhisperCPPTranscriptionWorker worker,
+            @NonNull final TranscriptionJsonWriter jsonWriter,
+            @NonNull final DecodedAudio audio,
+            final long startSample,
+            final int sequence,
+            final boolean finalChunk
     ) throws IOException {
-        final long startedAt = System.nanoTime();
-        final TranscriptionWorkerResult result;
-        try (WhisperCPPTranscriptionWorker worker = new WhisperCPPTranscriptionWorker(
-                modelPath, vadModelPath, settings)) {
-            result = worker.transcribe(
-                    audio.samples(),
-                    0,
-                    audio.sampleCount(),
-                    0,
-                    0,
-                    true);
+        if (Thread.currentThread().isInterrupted()) {
+            throw new IOException("File transcription was interrupted");
         }
+        final long startMs = startSample * 1000L / audio.sampleRate();
+        SystemEventHub.publish(new WhisperProgressEvent(
+                sessionId,
+                WhisperProgressEvent.Phase.FILE_TRANSCRIBING,
+                startMs,
+                audio.durationMs()
+        ));
+        final long startedAt = System.nanoTime();
+        final TranscriptionWorkerResult result = worker.transcribe(
+                audio.samples(),
+                0,
+                audio.sampleCount(),
+                0,
+                0,
+                true,
+                startMs);
         final long processingTimeMs = TimeUnit.NANOSECONDS.toMillis(
                 System.nanoTime() - startedAt);
         final WhisperTranscriptionEvent event = new WhisperTranscriptionEvent(
-                sessionId, 0, result.text, result.speakerChanged, true, null,
-                0, audio.durationMs(), processingTimeMs,
+                sessionId, sequence, result.text, result.speakerChanged, finalChunk, null,
+                startMs, audio.durationMs(), processingTimeMs,
                 settings.fileTranscription().model().key(),
                 WhisperTranscriptionTag.FileTranscribing
         );
-        final TranscriptionJsonWriter jsonWriter =
-                new TranscriptionJsonWriter(context, sessionId);
         jsonWriter.append(event);
-        jsonWriter.finish();
-        TranscriptionTextRepository.saveFilteredText(context, sessionId, result.text);
+        TranscriptionTextRepository.appendFilteredText(context, sessionId, result.text);
         SystemEventHub.publish(event);
     }
 

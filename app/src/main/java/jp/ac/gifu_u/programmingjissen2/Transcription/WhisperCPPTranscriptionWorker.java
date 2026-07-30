@@ -35,7 +35,7 @@ public final class WhisperCPPTranscriptionWorker implements AutoCloseable {
         this.fileSettings = settings.fileTranscription();
         this.vadModelPath = vadModelPath;
         final WhisperBridge.ContextParams contextParams = WhisperBridge.defaultContextParams();
-        contextParams.useGpu = fileSettings.useGpu();
+        contextParams.useGpu = false;
         context = WhisperBridge.initFromFile(modelPath, contextParams);
         if (context == 0) {
             throw new IOException("Whisper.cpp model load failed: " + modelPath);
@@ -50,6 +50,7 @@ public final class WhisperCPPTranscriptionWorker implements AutoCloseable {
      * @param secondByteOffset 第2区間byte位置。例: {@code 0}
      * @param secondSampleCount 第2区間数。例: {@code 0}
      * @param includeTimestamps セグメント時刻を本文へ付けるならtrue。例: {@code true}
+     * @param timestampOffsetMs ファイル先頭からのチャンク開始時刻。例: {@code 30000}
      * @return 全セグメントを結合した結果。例: {@code new TranscriptionWorkerResult("[00:00.000] ...", false)}
      * @throws IOException native推論が失敗した場合
      */
@@ -60,7 +61,8 @@ public final class WhisperCPPTranscriptionWorker implements AutoCloseable {
             final int firstSampleCount,
             final int secondByteOffset,
             final int secondSampleCount,
-            final boolean includeTimestamps
+            final boolean includeTimestamps,
+            final long timestampOffsetMs
     ) throws IOException {
         if (context == 0) {
             throw new IOException("Whisper.cpp model is already closed");
@@ -78,7 +80,7 @@ public final class WhisperCPPTranscriptionWorker implements AutoCloseable {
         if (result != 0) {
             throw new IOException("Whisper.cpp inference failed: " + result);
         }
-        return collectResult(includeTimestamps);
+        return collectResult(includeTimestamps, timestampOffsetMs);
     }
 
     /**
@@ -133,10 +135,14 @@ public final class WhisperCPPTranscriptionWorker implements AutoCloseable {
     /**
      * nativeセグメントを共通結果へまとめます。
      * @param includeTimestamps 時刻を本文へ付けるならtrue。例: {@code true}
+     * @param timestampOffsetMs ファイル先頭からのチャンク開始時刻。例: {@code 30000}
      * @return 結合結果。例: {@code new TranscriptionWorkerResult("本文", false)}
      */
     @NonNull
-    private TranscriptionWorkerResult collectResult(final boolean includeTimestamps) {
+    private TranscriptionWorkerResult collectResult(
+            final boolean includeTimestamps,
+            final long timestampOffsetMs
+    ) {
         final int segmentCount = WhisperBridge.fullNSegments(context);
         Log.d("CPP",String.valueOf(segmentCount));
         try (StringBufferBuilderPool builder = ScopableUtility.getBuilder()) {
@@ -146,7 +152,9 @@ public final class WhisperCPPTranscriptionWorker implements AutoCloseable {
                 Log.d("",text);
                 builder.append(includeTimestamps
                         ? TranscriptionTextFormatter.formatLine(
-                                WhisperBridge.fullSegmentT0(context, index) * 10L, text)
+                                Math.max(0L, timestampOffsetMs)
+                                        + WhisperBridge.fullSegmentT0(context, index) * 10L,
+                                text)
                         : text);
                 speakerChanged |= WhisperBridge.fullSegmentSpeakerTurnNext(context, index);
             }

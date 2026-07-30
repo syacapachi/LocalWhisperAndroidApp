@@ -41,21 +41,6 @@ public final class CTranslate2Bridge implements AutoCloseable {
     }
 
     /**
-     * VADを読み込まずCTranslate2モデルを開く互換コンストラクタです。
-     * @param modelDirectory モデルディレクトリ。例: {@code "/data/.../ct2/base"}
-     * @param computeType 計算型。例: {@code "int8"}
-     * @param threads 推論スレッド数。例: {@code 4}
-     * @throws IllegalStateException CTranslate2モデルまたはSilero VADモデルを読み込めない場合
-     */
-    public CTranslate2Bridge(
-            @NonNull final String modelDirectory,
-            @NonNull final String computeType,
-            final int threads
-    ) {
-        this(modelDirectory, computeType, null, threads);
-    }
-
-    /**
      * 16kHzモノラルPCMをWhisperで文字起こしします。
      *
      * @param samples Direct PCM16保存領域。例: {@code ByteBuffer.allocateDirect(160000)}

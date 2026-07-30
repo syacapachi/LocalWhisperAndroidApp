@@ -7,12 +7,13 @@ public final class FileTranscriptionSettings {
     public static final WhisperCppModelOption DEFAULT_MODEL = WhisperCppModelOption.SMALL_Q8_0;
     public static final boolean DEFAULT_VAD_ENABLED = true;
     public static final float DEFAULT_VAD_THRESHOLD = 0.5f;
+    public static final int DEFAULT_WINDOW_MS = 30_000;
     public static final String DEFAULT_PROMPT = "";
 
     private final ITranscriptionModel model;
     private final String language;
     private final int maxThreads;
-    private final boolean useGpu;
+    private final int windowMs;
     private final boolean vadEnabled;
     private final float vadThreshold;
     private final boolean translateToEnglish;
@@ -23,7 +24,7 @@ public final class FileTranscriptionSettings {
      * @param model Whisper.cppモデル。例: {@code WhisperCppModelOption.SMALL_Q8_0}
      * @param language 言語。例: {@code "ja"}
      * @param maxThreads 最大スレッド数。例: {@code 4}
-     * @param useGpu GPUを利用するならtrue。例: {@code false}
+     * @param windowMs 1回に推論する音声窓ms。例: {@code 30000}
      * @param vadEnabled Silero VADを使うならtrue。例: {@code true}
      * @param vadThreshold 発話確率閾値。例: {@code 0.5f}
      * @param translateToEnglish 英語翻訳ならtrue。例: {@code false}
@@ -33,7 +34,7 @@ public final class FileTranscriptionSettings {
             final ITranscriptionModel model,
             final String language,
             final int maxThreads,
-            final boolean useGpu,
+            final int windowMs,
             final boolean vadEnabled,
             final float vadThreshold,
             final boolean translateToEnglish,
@@ -42,7 +43,10 @@ public final class FileTranscriptionSettings {
         this.model = model == null ? DEFAULT_MODEL : model;
         this.language = WhisperLanguageOption.fromValue(language).value();
         this.maxThreads = Math.max(1, Math.min(8, maxThreads));
-        this.useGpu = useGpu;
+        this.windowMs = FileTranscriptionWindowLimits.normalizeSeconds(
+                windowMs / 1000,
+                FileTranscriptionWindowLimits.ABSOLUTE_MAX_SECONDS
+        ) * 1000;
         this.vadEnabled = vadEnabled;
         this.vadThreshold = Math.max(0.0f, Math.min(1.0f, vadThreshold));
         this.translateToEnglish = translateToEnglish;
@@ -60,7 +64,7 @@ public final class FileTranscriptionSettings {
                 DEFAULT_MODEL,
                 WhisperSettings.DEFAULT_LANGUAGE,
                 WhisperSettings.DEFAULT_MAX_THREADS,
-                WhisperSettings.DEFAULT_USE_GPU,
+                DEFAULT_WINDOW_MS,
                 DEFAULT_VAD_ENABLED,
                 DEFAULT_VAD_THRESHOLD,
                 WhisperSettings.DEFAULT_TRANSLATE_TO_ENGLISH,
@@ -71,7 +75,7 @@ public final class FileTranscriptionSettings {
     public ITranscriptionModel model() { return model; }
     public String language() { return language; }
     public int maxThreads() { return maxThreads; }
-    public boolean useGpu() { return useGpu; }
+    public int windowMs() { return windowMs; }
     public boolean vadEnabled() { return vadEnabled; }
     public float vadThreshold() { return vadThreshold; }
     public boolean translateToEnglish() { return translateToEnglish; }

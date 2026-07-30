@@ -45,6 +45,23 @@ android {
             abiFilters += listOf("arm64-v8a", "x86_64")
         }
     }
+    buildTypes{
+        release {
+
+            isMinifyEnabled = false
+
+            isDebuggable = false
+
+            isJniDebuggable = false
+
+            isShrinkResources= false
+            signingConfig = signingConfigs.getByName("debug")
+
+            ndk {
+                debugSymbolLevel = "NONE"
+            }
+        }
+    }
 
     externalNativeBuild {
         cmake {

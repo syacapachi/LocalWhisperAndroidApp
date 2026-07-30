@@ -37,7 +37,8 @@ final class ExternalModelJsonStore {
         if (!file.exists()) {
             return result;
         }
-        final JSONArray models = new JSONObject(readText(file)).optJSONArray("models");
+        final JSONObject root = new JSONObject(readText(file));
+        final JSONArray models = root.optJSONArray("models");
         if (models == null) {
             return result;
         }
@@ -48,10 +49,9 @@ final class ExternalModelJsonStore {
                         value.getString("key"),
                         value.getString("name"),
                         value.getString("modelPath"),
-                        WhisperInferenceEngine.fromJsonValue(value.has("executionModel")
-                                ? value.getString("executionModel")
-                                : value.getString("engine")),
-                        value.optString("computeType", "int8")
+                        WhisperInferenceEngine.fromJsonValue(
+                                value.getString("executionModel")),
+                        value.getString("computeType")
                 ));
             } catch (JSONException | IllegalArgumentException ignored) {
                 // ほかの有効なモデルを利用できるよう、不正な1要素だけを除外します。

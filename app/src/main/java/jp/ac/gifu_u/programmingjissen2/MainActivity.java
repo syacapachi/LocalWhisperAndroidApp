@@ -50,20 +50,24 @@ public final class MainActivity extends AppCompatActivity {
     @Override
     protected void onCreate(final Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        //画面上部のアクションバーを隠す
         if (getSupportActionBar() != null) {
             getSupportActionBar().hide();
         }
+        // 動画・音声ファイルを選択する方法と、選択した時の処理を登録します。
         audioFilePicker = registerForActivityResult(
                 new ActivityResultContracts.OpenDocument(), this::onAudioFileSelected);
+        // 画面キャプチャと、選択した時の処理を登録します。
         mediaProjectionPermissionLauncher = registerForActivityResult(
                 new ActivityResultContracts.StartActivityForResult(),
                 this::onMediaProjectionPermissionResult);
-
+        // アプリ内の設定をロード
         settingsStore = new WhisperSettingsStore(this);
         // UI設定
         screen = new MainScreenView(this);
         super.setContentView(screen.view());
         final QuickStartTabView quick = screen.quickStart();
+        // ボタンにイベントリスナーを登録(動画・音声ファイルの選択)
         quick.fileButton().setOnClickListener(view -> audioFilePicker.launch(
                 new String[]{"audio/*", "video/*", "application/octet-stream"}));
 
@@ -71,9 +75,13 @@ public final class MainActivity extends AppCompatActivity {
         recordActivity.setProjectionPermissionLauncher(mediaProjectionPermissionLauncher);
         bindQuickSettings(settingsStore.load());
         setupQuickSettingsSaving();
+        // 推論の進捗を反映
         SystemEventHub.subscribe(WhisperProgressEvent.class, progressListener);
+        // 推論結果を反映
         SystemEventHub.subscribe(WhisperTranscriptionEvent.class, resultListener);
+        // ファイル書き込みが終了したら再読み込み
         SystemEventHub.subscribe(ThreadStoppedEvent.class, stoppedListener);
+        // 「アプリで開く」の場合、super.getIntent()がnullでない。
         handleExternalMediaIntent(super.getIntent());
     }
 
@@ -150,10 +158,10 @@ public final class MainActivity extends AppCompatActivity {
             return;
         }
         final WhisperSettings current = settingsStore.load();
-        final int windowMs = parseInt(
-                screen.quickStart().windowEdit().getText().toString(), current.windowMs());
-        final float vad = parseFloat(
-                screen.quickStart().vadThresholdEdit().getText().toString(),
+        final int windowMs = (int) Math.round(
+                screen.quickStart().windowControl().valueOr(current.windowMs() / 1000.0)
+                        * 1000.0);
+        final float vad = (float) screen.quickStart().vadThresholdControl().valueOr(
                 current.vadThreshold());
         final boolean retranscribe =
                 screen.quickStart().recordAndRetranscribeSwitch().isChecked();
@@ -182,7 +190,7 @@ public final class MainActivity extends AppCompatActivity {
         }
     }
 
-    /** @param uri 選択音声。例: {@code content://media/1} */
+    /** @param uri 選択音声へのアクセス権限取得します。例: {@code content://media/1} */
     private void onAudioFileSelected(final Uri uri) {
         if (uri == null || recordActivity == null) {
             return;
@@ -203,6 +211,7 @@ public final class MainActivity extends AppCompatActivity {
         if (recordActivity == null) {
             return false;
         }
+        // IntentをUriに変換
         final Uri uri = ExternalMediaIntentReader.readSupportedUri(intent);
         return uri != null && recordActivity.TranscribeAudioFile(uri);
     }
@@ -213,18 +222,6 @@ public final class MainActivity extends AppCompatActivity {
             recordActivity.onMediaProjectionPermissionResult(
                     result.getResultCode(), result.getData());
         }
-    }
-
-    /** @param value 例: {@code "5000"} @param fallback 例: {@code 5000} @return int値 */
-    private int parseInt(@NonNull final String value, final int fallback) {
-        try { return Integer.parseInt(value.trim()); }
-        catch (NumberFormatException ignored) { return fallback; }
-    }
-
-    /** @param value 例: {@code "0.6"} @param fallback 例: {@code 0.6f} @return float値 */
-    private float parseFloat(@NonNull final String value, final float fallback) {
-        try { return Float.parseFloat(value.trim()); }
-        catch (NumberFormatException ignored) { return fallback; }
     }
 
     /** @param requestCode 例: {@code 2000} @param permissions 権限名配列 @param grantResults 結果配列 */

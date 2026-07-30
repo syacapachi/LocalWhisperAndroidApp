@@ -24,6 +24,29 @@ public final class DirectPcm16Buffer {
     }
 
     /**
+     * 消費済みDirect PCM16領域を新しいbuffer wrapperで再利用します。
+     * @param bytes Directかつ偶数byte容量の領域。例: {@code decodedAudio.samples()}
+     * @return 同じ保存領域を指す空のPCM buffer。例: {@code wrapped.sampleCount() == 0}
+     * @throws IllegalArgumentException 非Direct、空、または奇数byte容量の場合
+     */
+    @NonNull
+    public static DirectPcm16Buffer wrap(@NonNull final ByteBuffer bytes) {
+        if (!bytes.isDirect() || bytes.capacity() <= 0 || (bytes.capacity() & 1) != 0) {
+            throw new IllegalArgumentException("invalid Direct PCM16 storage");
+        }
+        return new DirectPcm16Buffer(bytes);
+    }
+
+    /**
+     * 既存領域を所有するwrapperを作ります。
+     * @param bytes 検証済みDirect PCM16領域。例: {@code directBytes}
+     * 戻り値は新しいinstanceで、例外はありません。
+     */
+    private DirectPcm16Buffer(@NonNull final ByteBuffer bytes) {
+        this.bytes = bytes.order(ByteOrder.nativeOrder());
+    }
+
+    /**
      * native byte orderのDirectByteBufferを返します。
      * @return 同じ保存領域を指すバッファ。例: {@code buffer.bytes().isDirect() == true}
      */

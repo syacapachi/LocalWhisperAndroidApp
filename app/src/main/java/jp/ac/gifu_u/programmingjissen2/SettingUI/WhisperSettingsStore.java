@@ -26,20 +26,16 @@ public final class WhisperSettingsStore {
     private static final String KEY_OVERLAP_MS = "overlap_ms";
     private static final String KEY_MIN_FINAL_MS = "min_final_ms";
     private static final String KEY_MAX_THREADS = "max_threads";
-    private static final String KEY_NO_CONTEXT = "no_context";
-    private static final String KEY_PRINT_TIMESTAMPS = "print_timestamps";
-    private static final String KEY_USE_GPU = "use_gpu";
     private static final String KEY_AUDIO_RECORDING_ENABLED = "audio_recording_enabled";
     private static final String KEY_AUTO_RETRANSCRIBE_ENABLED = "auto_retranscribe_enabled";
     private static final String KEY_VAD_ENABLED = "vad_enabled";
     private static final String KEY_VAD_THRESHOLD = "vad_threshold";
-    private static final String KEY_SILERO_VAD_THRESHOLD = "silero_vad_threshold";
     private static final String KEY_TRANSLATE_TO_ENGLISH = "translate_to_english";
     private static final String KEY_PROMPT = "prompt";
     private static final String KEY_FILE_MODEL = "file_model";
     private static final String KEY_FILE_LANGUAGE = "file_language";
     private static final String KEY_FILE_MAX_THREADS = "file_max_threads";
-    private static final String KEY_FILE_USE_GPU = "file_use_gpu";
+    private static final String KEY_FILE_WINDOW_MS = "file_window_ms";
     private static final String KEY_FILE_VAD_ENABLED = "file_vad_enabled";
     private static final String KEY_FILE_VAD_THRESHOLD = "file_vad_threshold";
     private static final String KEY_FILE_TRANSLATE_TO_ENGLISH = "file_translate_to_english";
@@ -73,7 +69,7 @@ public final class WhisperSettingsStore {
                 WhisperInferenceEngine.CTRANSLATE2);
         final ITranscriptionModel realtimeModel = savedRealtime == null
                 ? WhisperSettings.DEFAULT_MODEL : savedRealtime;
-        final FileTranscriptionSettings fileSettings = loadFileSettings(realtimeModel);
+        final FileTranscriptionSettings fileSettings = loadFileSettings();
         return new WhisperSettings(
                 realtimeModel,
                 preferences.getString(KEY_LANGUAGE, WhisperSettings.DEFAULT_LANGUAGE),
@@ -81,12 +77,6 @@ public final class WhisperSettingsStore {
                 preferences.getInt(KEY_OVERLAP_MS, WhisperSettings.DEFAULT_OVERLAP_MS),
                 preferences.getInt(KEY_MIN_FINAL_MS, WhisperSettings.DEFAULT_MIN_FINAL_MS),
                 preferences.getInt(KEY_MAX_THREADS, WhisperSettings.DEFAULT_MAX_THREADS),
-                preferences.getBoolean(KEY_NO_CONTEXT, WhisperSettings.DEFAULT_NO_CONTEXT),
-                preferences.getBoolean(
-                        KEY_PRINT_TIMESTAMPS,
-                        WhisperSettings.DEFAULT_PRINT_TIMESTAMPS
-                ),
-                preferences.getBoolean(KEY_USE_GPU,WhisperSettings.DEFAULT_USE_GPU),
                 preferences.getBoolean(KEY_AUDIO_RECORDING_ENABLED,
                         WhisperSettings.DEFAULT_AUDIO_RECORDING_ENABLED),
                 preferences.getBoolean(KEY_AUTO_RETRANSCRIBE_ENABLED,
@@ -96,63 +86,43 @@ public final class WhisperSettingsStore {
                 preferences.getBoolean(KEY_TRANSLATE_TO_ENGLISH,
                         WhisperSettings.DEFAULT_TRANSLATE_TO_ENGLISH),
                 preferences.getString(KEY_PROMPT, WhisperSettings.DEFAULT_PROMPT),
-                preferences.getFloat(
-                        KEY_SILERO_VAD_THRESHOLD,
-                        WhisperSettings.DEFAULT_SILERO_VAD_THRESHOLD
-                ),
                 fileSettings
         );
     }
 
     /**
-     * ファイル一括設定を読み込み、旧版ではリアルタイム設定から初期値を移行します。
-     * @param realtimeModel 旧版で選択されていたモデル。例: {@code WhisperModelOption.CT2_SMALL_INT8}
+     * ファイル一括設定を読み込みます。
      * @return 独立したWhisper.cpp設定。例: {@code FileTranscriptionSettings}
      */
     @NonNull
-    private FileTranscriptionSettings loadFileSettings(
-            @NonNull final ITranscriptionModel realtimeModel
-    ) {
-        final ITranscriptionModel defaultModel =
-                WhisperCppModelOption.fromRealtimeModel(realtimeModel);
+    private FileTranscriptionSettings loadFileSettings() {
         final ITranscriptionModel savedModel = modelRepository.find(
-                preferences.getString(KEY_FILE_MODEL, defaultModel.key()),
+                preferences.getString(
+                        KEY_FILE_MODEL,
+                        FileTranscriptionSettings.DEFAULT_MODEL.key()
+                ),
                 WhisperInferenceEngine.WHISPER_CPP);
         return new FileTranscriptionSettings(
-                savedModel == null ? defaultModel : savedModel,
-                preferences.getString(
-                        KEY_FILE_LANGUAGE,
-                        preferences.getString(KEY_LANGUAGE, WhisperSettings.DEFAULT_LANGUAGE)
-                ),
+                savedModel == null ? FileTranscriptionSettings.DEFAULT_MODEL : savedModel,
+                preferences.getString(KEY_FILE_LANGUAGE, WhisperSettings.DEFAULT_LANGUAGE),
+                preferences.getInt(KEY_FILE_MAX_THREADS, WhisperSettings.DEFAULT_MAX_THREADS),
                 preferences.getInt(
-                        KEY_FILE_MAX_THREADS,
-                        preferences.getInt(KEY_MAX_THREADS, WhisperSettings.DEFAULT_MAX_THREADS)
-                ),
-                preferences.getBoolean(
-                        KEY_FILE_USE_GPU,
-                        preferences.getBoolean(KEY_USE_GPU, WhisperSettings.DEFAULT_USE_GPU)
-                ),
+                        KEY_FILE_WINDOW_MS,
+                        FileTranscriptionSettings.DEFAULT_WINDOW_MS),
                 preferences.getBoolean(
                         KEY_FILE_VAD_ENABLED,
-                        preferences.getBoolean(KEY_VAD_ENABLED, FileTranscriptionSettings.DEFAULT_VAD_ENABLED)
-                ),
+                        FileTranscriptionSettings.DEFAULT_VAD_ENABLED),
                 preferences.getFloat(
                         KEY_FILE_VAD_THRESHOLD,
-                        preferences.getFloat(
-                                KEY_SILERO_VAD_THRESHOLD,
-                                FileTranscriptionSettings.DEFAULT_VAD_THRESHOLD
-                        )
+                        FileTranscriptionSettings.DEFAULT_VAD_THRESHOLD
                 ),
                 preferences.getBoolean(
                         KEY_FILE_TRANSLATE_TO_ENGLISH,
-                        preferences.getBoolean(
-                                KEY_TRANSLATE_TO_ENGLISH,
-                                WhisperSettings.DEFAULT_TRANSLATE_TO_ENGLISH
-                        )
+                        WhisperSettings.DEFAULT_TRANSLATE_TO_ENGLISH
                 ),
                 preferences.getString(
                         KEY_FILE_PROMPT,
-                        preferences.getString(KEY_PROMPT, FileTranscriptionSettings.DEFAULT_PROMPT)
+                        FileTranscriptionSettings.DEFAULT_PROMPT
                 )
         );
     }
@@ -167,20 +137,16 @@ public final class WhisperSettingsStore {
                 .putInt(KEY_OVERLAP_MS, value.overlapMs())
                 .putInt(KEY_MIN_FINAL_MS, value.minFinalMs())
                 .putInt(KEY_MAX_THREADS, value.maxThreads())
-                .putBoolean(KEY_NO_CONTEXT, value.noContext())
-                .putBoolean(KEY_PRINT_TIMESTAMPS, value.printTimestamps())
-                .putBoolean(KEY_USE_GPU, value.useGpu())
                 .putBoolean(KEY_AUDIO_RECORDING_ENABLED, value.audioRecordingEnabled())
                 .putBoolean(KEY_AUTO_RETRANSCRIBE_ENABLED, value.autoRetranscribeEnabled())
                 .putBoolean(KEY_VAD_ENABLED, value.vadEnabled())
                 .putFloat(KEY_VAD_THRESHOLD, value.vadThreshold())
-                .putFloat(KEY_SILERO_VAD_THRESHOLD, value.sileroVadThreshold())
                 .putBoolean(KEY_TRANSLATE_TO_ENGLISH, value.translateToEnglish())
                 .putString(KEY_PROMPT, value.prompt())
                 .putString(KEY_FILE_MODEL, file.model().key())
                 .putString(KEY_FILE_LANGUAGE, file.language())
                 .putInt(KEY_FILE_MAX_THREADS, file.maxThreads())
-                .putBoolean(KEY_FILE_USE_GPU, file.useGpu())
+                .putInt(KEY_FILE_WINDOW_MS, file.windowMs())
                 .putBoolean(KEY_FILE_VAD_ENABLED, file.vadEnabled())
                 .putFloat(KEY_FILE_VAD_THRESHOLD, file.vadThreshold())
                 .putBoolean(KEY_FILE_TRANSLATE_TO_ENGLISH, file.translateToEnglish())

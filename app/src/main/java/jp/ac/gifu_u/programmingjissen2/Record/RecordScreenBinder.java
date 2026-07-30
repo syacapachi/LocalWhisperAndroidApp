@@ -5,6 +5,7 @@ import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 
 import Utils.StringPool.StringBufferBuilderPool;
 import events.Whisper.WhisperTranscriptionEvent;
@@ -142,6 +143,7 @@ public final class RecordScreenBinder {
     }
 
     /** @return 選択中の対象アプリ。未選択ならnull。例: {@code new CaptureTargetApp("YouTube", "com.google.android.youtube", 10123)} */
+    @Nullable
     public CaptureTargetApp selectedCaptureTargetApp() {
         if (controls.captureTargetAppSpinner == null) {
             return null;

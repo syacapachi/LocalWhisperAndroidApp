@@ -17,6 +17,8 @@ import java.nio.charset.StandardCharsets;
 import Utils.StringPool.StringBufferBuilderPool;
 import events.Whisper.WhisperTranscriptionEvent;
 import events.Whisper.WhisperTranscriptionTag;
+import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.FileTranscriptionSettings;
+import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.WhisperSettings;
 import jp.ac.gifu_u.programmingjissen2.TransscriptsJSON.Data.TranscriptionJsonItem;
 
 /**
@@ -30,7 +32,7 @@ public class TranscriptionJsonWriter {
     public static final String DIRECTORY_NAME = "transcriptions";
 
     /** JSON の形式を将来変更するときに使う schema version です。 */
-    private static final int SCHEMA_VERSION = 2;
+    private static final int SCHEMA_VERSION = 1;
 
     /** 録音開始ごとに作られる session ID です。 */
     private final String sessionId;
@@ -40,6 +42,18 @@ public class TranscriptionJsonWriter {
 
     /** ファイル作成時刻です。Unix time milliseconds。 */
     private final long createdAtUnixMs;
+
+    /** session開始時のinitial promptです。 */
+    private final String initialPrompt;
+
+    /** session開始時にVADが有効ならtrueです。 */
+    private final boolean vadEnabled;
+
+    /** session開始時のVAD発話確率閾値です。 */
+    private final float vadThreshold;
+
+    /** session開始時の1回あたり推論窓msです。 */
+    private final int windowMs;
 
     /** JSON に保存する文字起こし結果一覧です。 */
     private final JSONArray items = new JSONArray();
@@ -60,11 +74,32 @@ public class TranscriptionJsonWriter {
      *
      * @param context ファイル保存先を取得するためのContext。例: {@code activity}
      * @param sessionId 録音session ID。例: {@code "live-0-19f99e5b391-317248c70b73"}
+     * @param settings session開始時の設定。例: {@code WhisperSettings.defaultSettings()}
+     * @param initialTag sessionの発行元。例: {@code WhisperTranscriptionTag.Recording}
      * @throws NullPointerException contextがnullの場合
      */
-    public TranscriptionJsonWriter(@NonNull Context context, String sessionId) {
+    public TranscriptionJsonWriter(
+            @NonNull final Context context,
+            final String sessionId,
+            @NonNull final WhisperSettings settings,
+            @NonNull final WhisperTranscriptionTag initialTag
+    ) {
         this.sessionId = sessionId;
         this.createdAtUnixMs = System.currentTimeMillis();
+        this.tag = initialTag;
+        this.modelKey = settings.model().key();
+        if (initialTag == WhisperTranscriptionTag.FileTranscribing) {
+            final FileTranscriptionSettings fileSettings = settings.fileTranscription();
+            this.initialPrompt = fileSettings.prompt();
+            this.vadEnabled = fileSettings.vadEnabled();
+            this.vadThreshold = fileSettings.vadThreshold();
+            this.windowMs = fileSettings.windowMs();
+        } else {
+            this.initialPrompt = settings.prompt();
+            this.vadEnabled = settings.vadEnabled();
+            this.vadThreshold = settings.vadThreshold();
+            this.windowMs = settings.windowMs();
+        }
 
         final File directory = new File(context.getFilesDir(), DIRECTORY_NAME);
         if (!directory.exists() && !directory.mkdirs()) {
@@ -86,6 +121,7 @@ public class TranscriptionJsonWriter {
      * Whisper の推論結果を JSON に追記します。
      *
      * @param event Whisper推論結果イベント。例: {@code transcriptionEvent}
+     * エラーは出しません。
      */
     public synchronized void append(final WhisperTranscriptionEvent event) {
         if (event == null || event.hasError()) {
@@ -125,7 +161,7 @@ public class TranscriptionJsonWriter {
     /**
      * 現在の内容を JSON オブジェクトとして組み立てます。
      *
-     * @return ファイルに保存するルートJSON。例: {@code {"schemaVersion":2,"items":[]}}
+     * @return ファイルに保存するルートJSON。例: {@code {"schemaVersion":1,"items":[]}}
      * @throws JSONException JSON への変換に失敗した場合
      */
     @NonNull
@@ -137,6 +173,10 @@ public class TranscriptionJsonWriter {
         root.put("finishedAtUnixMs", finishedAtUnixMs);
         root.put("modelKey", modelKey);
         root.put("tag", tag.name());
+        root.put("initialPrompt", initialPrompt);
+        root.put("vadEnabled", vadEnabled);
+        root.put("vadThreshold", vadThreshold);
+        root.put("windowMs", windowMs);
         root.put("items", items);
         return root;
     }

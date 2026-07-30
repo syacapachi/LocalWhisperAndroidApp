@@ -34,7 +34,7 @@ public final class MainScreenView {
         header.setGravity(Gravity.CENTER_VERTICAL);
         header.setPadding(dp(activity, 16), dp(activity, 8), dp(activity, 8), dp(activity, 6));
         final TextView appName = new TextView(activity);
-        appName.setText("Whisper文字起こしアプリ");
+        appName.setText("LocalScribe");
         appName.setTextSize(20);
         appName.setTypeface(Typeface.DEFAULT_BOLD);
         header.addView(appName, new LinearLayout.LayoutParams(0, -2, 1f));

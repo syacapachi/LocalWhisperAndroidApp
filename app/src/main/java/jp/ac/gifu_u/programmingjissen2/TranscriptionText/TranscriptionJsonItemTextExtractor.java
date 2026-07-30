@@ -38,7 +38,7 @@ public final class TranscriptionJsonItemTextExtractor {
     public static TranscriptionTextItem extract(@NonNull final JSONObject object)
             throws JSONException {
         return new TranscriptionTextItem(
-                object.optLong("recordingTimeMs", object.optLong("startMs", 0)),
+                object.optLong("recordingTimeMs", 0),
                 object.optString("text", "")
         );
     }

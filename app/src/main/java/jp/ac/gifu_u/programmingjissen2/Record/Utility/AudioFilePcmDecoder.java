@@ -10,33 +10,65 @@ import android.net.Uri;
 import androidx.annotation.NonNull;
 
 import java.io.IOException;
+import java.io.InterruptedIOException;
 import java.nio.ByteBuffer;
 
 import jp.ac.gifu_u.programmingjissen2.Record.DecodedAudio;
-import jp.ac.gifu_u.programmingjissen2.Record.Buffer.DirectPcm16Buffer;
-import jp.ac.gifu_u.programmingjissen2.Record.Buffer.DirectPcm16Builder;
-import jp.ac.gifu_u.programmingjissen2.Transcription.WhisperTranscriptionWorker;
 
-/** URI で指定された音声ファイルを Whisper 用 PCM へデコードする class です。 */
+/** URIで指定された音声を一定時間ごとのWhisper用Direct PCM16へデコードするclassです。 */
 public final class AudioFilePcmDecoder {
     private static final long CODEC_TIMEOUT_US = 10_000L;
 
     private AudioFilePcmDecoder() {
     }
 
+    /** 完成したPCMチャンクを同期的に処理します。 */
+    @FunctionalInterface
+    public interface DecodedAudioConsumer {
+        /**
+         * 1チャンクを処理します。戻るとPCM領域は解放・再利用可能になります。
+         * @param audio 16kHz・mono・Direct PCM16。例: {@code decodedAudio}
+         * @param startSample ファイル先頭からの16kHzサンプル位置。例: {@code 480000}
+         * @param finalChunk 最後のチャンクならtrue。例: {@code false}
+         * @throws IOException 推論や保存に失敗した場合
+         */
+        void onChunk(
+                @NonNull DecodedAudio audio,
+                long startSample,
+                boolean finalChunk
+        ) throws IOException;
+    }
+
     /**
-     * 音声ファイルを読み込み、16kHz・mono・float PCM に変換します。
+     * ストリームデコード全体の集計です。
+     * @param sampleCount 16kHz変換後の総サンプル数。例: {@code 960000}
+     * @param sampleRate 出力Hz。例: {@code 16000}
+     * @param chunkCount 出力チャンク数。例: {@code 2}
+     */
+    public record DecodeSummary(long sampleCount, int sampleRate, int chunkCount) {
+        /** @return 音声全体のms。例: {@code 60000}。例外はありません。 */
+        public long durationMs() {
+            return sampleCount * 1000L / sampleRate;
+        }
+    }
+
+    /**
+     * 音声ファイルを読み込み、一定時間ごとの16kHz・mono・Direct PCM16を通知します。
      *
      * @param context ContentResolver を取得する Context。例: {@code activity}
      * @param uri ドキュメントピッカーなどで得た音声 URI。例: {@code content://media/...}
-     * @return Whisperに渡せるDirect PCM16。例: {@code decodedAudio.sampleCount() == 16000}
+     * @param chunkDurationMs 1チャンクの目標時間ms。例: {@code 30000}
+     * @param consumer 各チャンクの同期処理先。例: {@code this::transcribeChunk}
+     * @return 変換全体の集計。例: {@code summary.chunkCount() == 2}
      * @throws IOException 音声トラックがない、decoder を作れない、読み込みに失敗した場合
      * @throws IllegalArgumentException PCM 変換時に未対応形式が返された場合
      */
     @NonNull
-    public static DecodedAudio decodeToWhisperPcm(
+    public static DecodeSummary decodeToWhisperPcm(
             @NonNull final Context context,
-            @NonNull final Uri uri
+            @NonNull final Uri uri,
+            final int chunkDurationMs,
+            @NonNull final DecodedAudioConsumer consumer
     ) throws IOException {
         // 音声データをデコードする MediaExtractor を作成
         final MediaExtractor extractor = new MediaExtractor();
@@ -59,10 +91,12 @@ public final class AudioFilePcmDecoder {
             }
             // RAWタイプなら RawPcmAudioReader でデコード
             if (MediaFormat.MIMETYPE_AUDIO_RAW.equals(mime)) {
-                return RawPcmAudioReader.read(extractor, inputFormat);
+                return RawPcmAudioReader.read(
+                        extractor, inputFormat, chunkDurationMs, consumer);
             }
 
-            return decodeTrack(extractor, inputFormat, mime);
+            return decodeTrack(
+                    extractor, inputFormat, mime, chunkDurationMs, consumer);
         } finally {
             extractor.release();
         }
@@ -89,19 +123,21 @@ public final class AudioFilePcmDecoder {
      * @param extractor 音声データを読み込む MediaExtractor
      * @param inputFormat 音声トラックのフォーマット
      * @param mime 音声トラックの mime
-     * @return デコードした PCM
+     * @param chunkDurationMs 1チャンクの目標時間ms。例: {@code 30000}
+     * @param consumer 完成チャンクの同期処理先。例: {@code this::transcribeChunk}
+     * @return 変換全体の集計。例: {@code summary.sampleRate() == 16000}
      * @throws IOException デコードに失敗した場合
      */
     @NonNull
-    private static DecodedAudio decodeTrack(
+    private static DecodeSummary decodeTrack(
             @NonNull final MediaExtractor extractor,
             @NonNull final MediaFormat inputFormat,
-            @NonNull final String mime
+            @NonNull final String mime,
+            final int chunkDurationMs,
+            @NonNull final DecodedAudioConsumer consumer
     ) throws IOException {
         // メディアのデコーダを作成。
         final MediaCodec codec = MediaCodec.createDecoderByType(mime);
-        // 出力音声バッファを作成。
-        final DirectPcm16Builder samples = new DirectPcm16Builder();
         int sampleRate = inputFormat.getInteger(MediaFormat.KEY_SAMPLE_RATE);
         int channelCount = inputFormat.getInteger(MediaFormat.KEY_CHANNEL_COUNT);
         int pcmEncoding = AudioFormat.ENCODING_PCM_16BIT;
@@ -112,11 +148,13 @@ public final class AudioFilePcmDecoder {
             codec.start();
             codecStarted = true;
 
+            WhisperPcmChunkEmitter emitter = null;
             final MediaCodec.BufferInfo info = new MediaCodec.BufferInfo();
             boolean inputDone = false;
             boolean outputDone = false;
 
             while (!outputDone) {
+                throwIfInterrupted();
                 if (!inputDone) {
                     // 少しづつ変換
                     inputDone = queueInputBuffer(extractor, codec);
@@ -136,10 +174,21 @@ public final class AudioFilePcmDecoder {
                 }
                 // 出力バッファに追加
                 if (outputIndex >= 0) {
-                    appendOutputBuffer(codec, outputIndex, info, channelCount, pcmEncoding, samples);
+                    if (emitter == null) {
+                        emitter = new WhisperPcmChunkEmitter(
+                                sampleRate, chunkDurationMs, consumer);
+                    }
+                    try {
+                        //　変換バッファに追加。一定量になったら変換してconsumerを呼ぶ。
+                        emitter.appendCodecOutput(
+                                codec, outputIndex, info, channelCount, pcmEncoding);
+                    } finally {
+                        codec.releaseOutputBuffer(outputIndex, false);
+                    }
                     outputDone = (info.flags & MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0;
                 }
             }
+            return emitter.finish();
         } finally {
             if (codecStarted) {
                 codec.stop();
@@ -147,12 +196,6 @@ public final class AudioFilePcmDecoder {
             codec.release();
         }
 
-        final int targetSampleRate = WhisperTranscriptionWorker.DEFAULT_SAMPLE_RATE;
-        final DirectPcm16Buffer whisperPcm = samples.resample(sampleRate, targetSampleRate);
-        return new DecodedAudio(
-                whisperPcm.bytes(),
-                whisperPcm.sampleCount(),
-                WhisperTranscriptionWorker.DEFAULT_SAMPLE_RATE);
     }
 
     /**
@@ -200,36 +243,6 @@ public final class AudioFilePcmDecoder {
     }
 
     /**
-     * 出力バッファに値を追加します。
-     * @param codec MediaCodec
-     * @param outputIndex 出力バッファの index
-     * @param info MediaCodec.BufferInfo
-     * @param channelCount 出力音声のチャンネル数
-     * @param pcmEncoding 出力音声のエンコーディング
-     * @param samples 出力バッファ
-     */
-    private static void appendOutputBuffer(
-            @NonNull final MediaCodec codec,
-            final int outputIndex,
-            @NonNull final MediaCodec.BufferInfo info,
-            final int channelCount,
-            final int pcmEncoding,
-            @NonNull final DirectPcm16Builder samples
-    ) {
-        final ByteBuffer outputBuffer = codec.getOutputBuffer(outputIndex);
-        if (outputBuffer != null && info.size > 0) {
-            Pcm16AudioConverter.appendMonoPcm16(
-                    outputBuffer,
-                    info,
-                    channelCount,
-                    pcmEncoding,
-                    samples
-            );
-        }
-        codec.releaseOutputBuffer(outputIndex, false);
-    }
-
-    /**
      *  MediaFormat から int を取得します。
      * @param format 変換元 MediaFormat
      * @param key 取得する値のキー文字列
@@ -242,6 +255,17 @@ public final class AudioFilePcmDecoder {
             final int defaultValue
     ) {
         return format.containsKey(key) ? format.getInteger(key) : defaultValue;
+    }
+
+    /**
+     * 呼び出しスレッドの中断をデコード停止へ変換します。
+     * 戻り値はありません。
+     * @throws InterruptedIOException スレッドへinterrupt済みの場合
+     */
+    private static void throwIfInterrupted() throws InterruptedIOException {
+        if (Thread.currentThread().isInterrupted()) {
+            throw new InterruptedIOException("File transcription was interrupted");
+        }
     }
 
 }
