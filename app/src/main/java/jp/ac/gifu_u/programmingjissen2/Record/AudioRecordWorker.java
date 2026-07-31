@@ -198,7 +198,9 @@ public class AudioRecordWorker implements Runnable {
     }
 
     /**
-     * 録音スレッドに停止を要求します。
+     * AudioRecordのブロッキングreadを解除し、現在処理中のPCM保存後に停止させます。
+     * @return 停止対象のworkerスレッドが存在する場合true。例: {@code true}
+     * 例外はなく、FileChannel書き込みを破損させるThread.interruptは使用しません。
      */
     public synchronized boolean requestStop() {
         running = false;
@@ -208,10 +210,7 @@ public class AudioRecordWorker implements Runnable {
             return false;
         }
 
-        // スレッドを停止するメッセージを送ります。
-        thread.interrupt();
-
-        // AudioRecord.read() のブロックを解除するために録音を停止します
+        // AudioRecord.read() のブロックだけを解除します。現在のPCM保存は完了させます。
         stopAudioRecord(microphoneRecord);
         stopAudioRecord(playbackRecord);
         return true;
@@ -229,7 +228,7 @@ public class AudioRecordWorker implements Runnable {
 
         try {
             startRequiredAudioRecords();
-            while (running && !currentThread.isInterrupted()) {
+            while (running) {
                 readNextAudioChunk();
             }
         } catch (Exception e) {
