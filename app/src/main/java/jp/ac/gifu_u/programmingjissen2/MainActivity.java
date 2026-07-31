@@ -28,7 +28,7 @@ import jp.ac.gifu_u.programmingjissen2.SettingUI.Data.WhisperSettings;
 import jp.ac.gifu_u.programmingjissen2.SettingUI.WhisperSettingsStore;
 import jp.ac.gifu_u.programmingjissen2.Transcription.BackgroundWhisperService;
 
-/** 録音実行、進捗、JSON結果、整形済み履歴を三つのタブで表示するメインActivityです。 */
+/** 録音実行、進捗、履歴と、任意のJSONデバッグ結果をタブ表示するメインActivityです。 */
 public final class MainActivity extends AppCompatActivity {
     /** アプリの画面UIクラス */
     private MainScreenView screen;
@@ -65,6 +65,7 @@ public final class MainActivity extends AppCompatActivity {
         settingsStore = new WhisperSettingsStore(this);
         // UI設定
         screen = new MainScreenView(this);
+        screen.setDebugHistoryVisible(settingsStore.isDebugResultVisible());
         super.setContentView(screen.view());
         final QuickStartTabView quick = screen.quickStart();
         // ボタンにイベントリスナーを登録(動画・音声ファイルの選択)
@@ -94,6 +95,7 @@ public final class MainActivity extends AppCompatActivity {
         }
         if (settingsStore != null && screen != null) {
             bindQuickSettings(settingsStore.load());
+            screen.setDebugHistoryVisible(settingsStore.isDebugResultVisible());
             screen.refreshHistories();
         }
     }

@@ -142,7 +142,7 @@ public class TranscriptionJsonWorker implements Runnable {
     /**
      * JSON 保存 worker スレッド本体です。
      *
-     * <p>キューに届いた文字起こしイベントを JSON に保存し、停止時に残りを保存してから
+     * <p>キューに届いた文字起こしイベントを JSONと結果テキストに保存し、停止時に残りを保存してから
      * 停止イベントを発行します。</p>
      */
     @Override
@@ -163,7 +163,7 @@ public class TranscriptionJsonWorker implements Runnable {
                 final WhisperTranscriptionEvent event = eventQueue.poll(200, TimeUnit.MILLISECONDS);
                 if (event != null) {
                     appendEvent(event);
-                    TranscriptionTextRepository.appendFilteredText(context,sessionId,event.text());
+                    TranscriptionTextRepository.appendFilteredText(context,sessionId,event.text()+"\n");
                 }
             }
         } catch (InterruptedException e) {

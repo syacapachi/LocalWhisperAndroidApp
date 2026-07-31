@@ -47,9 +47,6 @@ public class AudioRecordWorker implements Runnable {
     /** アプリ音声キャプチャの許可tokenです。 */
     private final MediaProjection mediaProjection;
 
-    /** キャプチャ対象アプリのLinux UIDです。 */
-    private final int captureTargetUid;
-
     /** 録音ループを継続するかどうかを表します。 */
     private volatile boolean running;
 
@@ -97,7 +94,7 @@ public class AudioRecordWorker implements Runnable {
             final AudioChunkListener listener
     ) {
         this(sampleRate, bufferSize, stopEventId, listener,
-                RecordingAudioSource.MICROPHONE, null, -1);
+                RecordingAudioSource.MICROPHONE, null);
     }
 
     /**
@@ -108,7 +105,6 @@ public class AudioRecordWorker implements Runnable {
      * @param listener PCM通知先。例: {@code this::onAudioChunk}
      * @param audioSource 入力。例: {@code RecordingAudioSource.MICROPHONE_AND_APP}
      * @param mediaProjection キャプチャ許可。マイクのみならnull。例: {@code projection}
-     * @param captureTargetUid 対象UID。マイクのみなら-1。例: {@code 10123}
      */
     public AudioRecordWorker(
             final int sampleRate,
@@ -116,8 +112,7 @@ public class AudioRecordWorker implements Runnable {
             final String stopEventId,
             final AudioChunkListener listener,
             @NonNull final RecordingAudioSource audioSource,
-            @Nullable final MediaProjection mediaProjection,
-            final int captureTargetUid
+            @Nullable final MediaProjection mediaProjection
     ) {
         this.sampleRate = sampleRate;
         this.bufferSize = bufferSize;
@@ -125,7 +120,6 @@ public class AudioRecordWorker implements Runnable {
         this.listener = listener;
         this.audioSource = audioSource;
         this.mediaProjection = mediaProjection;
-        this.captureTargetUid = captureTargetUid;
         final int sampleCapacity = Math.max(1, bufferSize / Short.BYTES);
         this.audioBufferPool = new DirectPcm16BufferPool(sampleCapacity, 132);
         this.playbackBuffer = new DirectPcm16Buffer(sampleCapacity);
@@ -204,7 +198,9 @@ public class AudioRecordWorker implements Runnable {
     }
 
     /**
-     * 録音スレッドに停止を要求します。
+     * AudioRecordのブロッキングreadを解除し、現在処理中のPCM保存後に停止させます。
+     * @return 停止対象のworkerスレッドが存在する場合true。例: {@code true}
+     * 例外はなく、FileChannel書き込みを破損させるThread.interruptは使用しません。
      */
     public synchronized boolean requestStop() {
         running = false;
@@ -214,10 +210,7 @@ public class AudioRecordWorker implements Runnable {
             return false;
         }
 
-        // スレッドを停止するメッセージを送ります。
-        thread.interrupt();
-
-        // AudioRecord.read() のブロックを解除するために録音を停止します
+        // AudioRecord.read() のブロックだけを解除します。現在のPCM保存は完了させます。
         stopAudioRecord(microphoneRecord);
         stopAudioRecord(playbackRecord);
         return true;
@@ -235,7 +228,7 @@ public class AudioRecordWorker implements Runnable {
 
         try {
             startRequiredAudioRecords();
-            while (running && !currentThread.isInterrupted()) {
+            while (running) {
                 readNextAudioChunk();
             }
         } catch (Exception e) {
@@ -282,7 +275,6 @@ public class AudioRecordWorker implements Runnable {
      * @param sampleRate サンプリングレート。例: {@code 16000}
      * @param bufferSize byte数。例: {@code 32000}
      * @param projection MediaProjection許可。例: {@code projection}
-     * @param targetUid 対象アプリUID。負数ならOS選択対象全体。例: {@code -1}
      * @return 初期化済みAudioRecord。失敗時null。例: {@code audioRecord}
      * @throws SecurityException RECORD_AUDIOまたはMediaProjection許可が無効な場合
      */
@@ -291,19 +283,14 @@ public class AudioRecordWorker implements Runnable {
     private static AudioRecord createPlaybackAudioRecord(
             final int sampleRate,
             final int bufferSize,
-            @NonNull final MediaProjection projection,
-            final int targetUid
+            @NonNull final MediaProjection projection
     ) {
         final AudioPlaybackCaptureConfiguration.Builder configurationBuilder =
                 new AudioPlaybackCaptureConfiguration.Builder(projection);
-        if (targetUid >= 0) {
-            configurationBuilder.addMatchingUid(targetUid);
-        } else {
-            configurationBuilder
-                    .addMatchingUsage(AudioAttributes.USAGE_MEDIA)
-                    .addMatchingUsage(AudioAttributes.USAGE_GAME)
-                    .addMatchingUsage(AudioAttributes.USAGE_UNKNOWN);
-        }
+        configurationBuilder
+                .addMatchingUsage(AudioAttributes.USAGE_MEDIA)
+                .addMatchingUsage(AudioAttributes.USAGE_GAME)
+                .addMatchingUsage(AudioAttributes.USAGE_UNKNOWN);
         final AudioPlaybackCaptureConfiguration configuration = configurationBuilder.build();
         final AudioFormat format = new AudioFormat.Builder()
                 .setSampleRate(sampleRate)
@@ -389,7 +376,7 @@ public class AudioRecordWorker implements Runnable {
                 return false;
             }
             playbackRecord = createPlaybackAudioRecord(
-                    sampleRate, bufferSize, mediaProjection, captureTargetUid);
+                    sampleRate, bufferSize, mediaProjection);
             return playbackRecord != null;
         }
         return true;

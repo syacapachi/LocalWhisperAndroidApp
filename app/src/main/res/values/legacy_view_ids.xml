@@ -1,6 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <!-- UI再構成後もビルドへ残す旧センサーcontrollerの互換ID -->
-    <item name="status_text" type="id" />
-    <item name="sensor_text" type="id" />
-</resources>

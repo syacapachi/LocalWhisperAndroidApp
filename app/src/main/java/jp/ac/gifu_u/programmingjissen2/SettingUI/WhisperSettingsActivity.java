@@ -7,6 +7,7 @@ import android.text.InputType;
 import android.view.View;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
+import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
@@ -24,6 +25,7 @@ import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 
 import com.google.android.material.tabs.TabLayout;
+import com.google.android.material.button.MaterialButton;
 
 import org.jetbrains.annotations.Contract;
 
@@ -86,6 +88,7 @@ public class WhisperSettingsActivity extends AppCompatActivity {
     private SwitchCompat autoRetranscribeSwitch;
     private TextView statsText;
     private TextView fileStatsText;
+    private CheckBox debugResultCheckBox;
 
     @Override
     protected void onCreate(final @Nullable Bundle savedInstanceState) {
@@ -108,6 +111,35 @@ public class WhisperSettingsActivity extends AppCompatActivity {
     private View createContentView() {
         final LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
+        final LinearLayout buttonRow = new LinearLayout(this);
+        buttonRow.setOrientation(LinearLayout.HORIZONTAL);
+        buttonRow.setPadding(dp(12), dp(8), dp(12), 0);
+        root.addView(buttonRow, fullWidthParams());
+
+        final Button resetStatsButton = roundedButton("統計リセット");
+        resetStatsButton.setOnClickListener((view) -> {
+            store.resetStats();
+            refreshStats();
+            Toast.makeText(this, "推論時間統計をリセットしました", Toast.LENGTH_SHORT).show();
+        });
+        buttonRow.addView(resetStatsButton, weightedButtonParams());
+
+        final Button saveAndCloseButton = roundedButton("×");
+        saveAndCloseButton.setContentDescription("保存して閉じる");
+        saveAndCloseButton.setOnClickListener((view) -> {
+            saveSettings();
+            finish();
+        });
+        buttonRow.addView(saveAndCloseButton, weightedButtonParams());
+
+        debugResultCheckBox = new CheckBox(this);
+        debugResultCheckBox.setText("デバッグ情報を見る");
+        debugResultCheckBox.setChecked(store.isDebugResultVisible());
+        debugResultCheckBox.setMinHeight(dp(48));
+        final LinearLayout.LayoutParams debugParams = fullWidthParams();
+        debugParams.setMargins(dp(20), 0, dp(20), 0);
+        root.addView(debugResultCheckBox, debugParams);
+
         final TabLayout tabs = new TabLayout(this);
         tabs.addTab(tabs.newTab().setText("リアルタイム文字起こし設定"));
         tabs.addTab(tabs.newTab().setText("ファイル一括文字起こし設定"));
@@ -134,32 +166,6 @@ public class WhisperSettingsActivity extends AppCompatActivity {
             @Override public void onTabUnselected(@NonNull final TabLayout.Tab tab) { }
             @Override public void onTabReselected(@NonNull final TabLayout.Tab tab) { }
         });
-
-        final LinearLayout buttonRow = new LinearLayout(this);
-        buttonRow.setOrientation(LinearLayout.HORIZONTAL);
-        buttonRow.setPadding(dp(20), dp(8), dp(20), 0);
-        root.addView(buttonRow, fullWidthParams());
-
-        final Button saveButton = new Button(this);
-        saveButton.setText("両方を保存");
-        saveButton.setOnClickListener((view) -> saveSettings());
-        buttonRow.addView(saveButton, weightedButtonParams());
-
-        final Button resetStatsButton = new Button(this);
-        resetStatsButton.setText("統計リセット");
-        resetStatsButton.setOnClickListener((view) -> {
-            store.resetStats();
-            refreshStats();
-            Toast.makeText(this, "推論時間統計をリセットしました", Toast.LENGTH_SHORT).show();
-        });
-        buttonRow.addView(resetStatsButton, weightedButtonParams());
-
-        final Button closeButton = new Button(this);
-        closeButton.setText("閉じる");
-        closeButton.setOnClickListener((view) -> finish());
-        final LinearLayout.LayoutParams closeParams = fullWidthParams();
-        closeParams.setMargins(dp(20), 0, dp(20), dp(8));
-        root.addView(closeButton, closeParams);
         return root;
     }
 
@@ -467,6 +473,7 @@ public class WhisperSettingsActivity extends AppCompatActivity {
                 fileSettings
         );
         store.save(settings);
+        store.saveDebugResultVisible(debugResultCheckBox.isChecked());
         bindSettings(settings);
         refreshStats();
         Toast.makeText(this, "音声認識設定を保存しました", Toast.LENGTH_SHORT).show();
@@ -504,7 +511,7 @@ public class WhisperSettingsActivity extends AppCompatActivity {
      */
     @NonNull
     private String formatStats(
-            final ITranscriptionModel model,
+            @NonNull final ITranscriptionModel model,
             @NonNull final WhisperInferenceStats stats
     ) {
         return formatStats(model.displayName(), stats);
@@ -548,8 +555,7 @@ public class WhisperSettingsActivity extends AppCompatActivity {
      */
     @NonNull
     private Button externalModelButton() {
-        final Button button = new Button(this);
-        button.setText("外部モデルを追加");
+        final Button button = roundedButton("外部モデルを追加");
         button.setOnClickListener(view -> showExternalModelDialog());
         return button;
     }
@@ -564,8 +570,7 @@ public class WhisperSettingsActivity extends AppCompatActivity {
         container.setOrientation(LinearLayout.VERTICAL);
         container.addView(externalModelButton(), fullWidthParams());
 
-        final Button toggle = new Button(this);
-        toggle.setText("インポートの際の注意点 ▼");
+        final Button toggle = roundedButton("インポートの際の注意点 ▼");
         toggle.setContentDescription("インポートの際の注意点を開く");
         container.addView(toggle, fullWidthParams());
 
@@ -946,6 +951,19 @@ public class WhisperSettingsActivity extends AppCompatActivity {
         );
         params.setMargins(0, 0, dp(8), 0);
         return params;
+    }
+
+    /**
+     * 設定画面で共通利用する角丸ボタンを作成します。
+     * @param text ボタン表示。例: {@code "統計リセット"}
+     * @return 角半径16dpのMaterialButton。例: {@code Button}
+     */
+    @NonNull
+    private Button roundedButton(@NonNull final String text) {
+        final MaterialButton button = new MaterialButton(this);
+        button.setText(text);
+        button.setCornerRadius(dp(16));
+        return button;
     }
 
     /**

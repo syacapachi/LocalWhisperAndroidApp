@@ -124,13 +124,41 @@ public final class CTranslate2Bridge implements AutoCloseable {
         }
     }
 
+    /**
+     * ネイティブ領域にCTransrate2インスタンスを作成します。
+     * @param modelDirectory モデルのあるディレクトリ 例: {@code "/data/user/0/.../ct2/base"}
+     * @param computeType 推論タイプ 例: {@code "int8"}
+     * @param vadModelPath VADモデルのパス 例: {@code "/data/.../ggml-silero-v6.2.0.bin"}
+     * @param threads 使用スレッド数 例: {@code 4}
+     * @return インスタンスのポインター 例: {@code 102030230}
+     */
     private static native long create(
             String modelDirectory,
             String computeType,
             String vadModelPath,
             int threads
     );
+
+    /**
+     * ネイティブ領域のCTranslate2インスタンスを解放します。
+     * @param handle インスタンスのポインター 例: {@code 102030230}
+     */
     private static native void destroy(long handle);
+
+    /**
+     * CTransrate2の文字起こしを実行します。
+     * @param samples Direct PCM16保存領域。例: {@code ByteBuffer.allocateDirect(160000)}
+     * @param firstByteOffset 第1区間のbyte offset。例: {@code 96000}
+     * @param firstSampleCount 第1区間のサンプル数。例: {@code 32000}
+     * @param secondByteOffset 第2区間のbyte offset。例: {@code 0}
+     * @param secondSampleCount 第2区間のサンプル数。例: {@code 48000}
+     * @param language Whisper言語コード。例: {@code "ja"}
+     * @param translateToEnglish 英語翻訳ならtrue。例: {@code false}
+     * @param initialPrompt 初期プロンプトと直前文脈。例: {@code "専門用語: CTranslate2\n前の文"}
+     * @param vadEnabled 推論前にSilero VADを使う場合true。例: {@code true}
+     * @param vadThreshold 発話確率の閾値0～1。例: {@code 0.6f}
+     * @return VAD発話区間を推論した本文。発話区間がない場合は空文字。例: {@code "こんにちは"}
+     */
     private static native String transcribe(
             long handle,
             ByteBuffer samples,
