@@ -166,6 +166,32 @@ public class WhisperTranscriptionWorker implements Runnable {
             final int sampleRate,
             final WhisperSettings settings
     ) {
+        this(modelPath, vadModelPath, sessionId, sampleRate, settings, 0, 0L);
+    }
+
+    /**
+     * 同じセッションで推論workerを再生成するため、連番と音声時刻を引き継いで作成します。
+     * @param modelPath Whisperモデルの実ファイルパス。例: {@code "/data/.../model.bin"}
+     * @param vadModelPath VADモデルパス。無効時null。例: {@code null}
+     * @param sessionId 継続するセッションID。例: {@code "session-a1b2"}
+     * @param sampleRate 入力PCMのHz。例: {@code 16000}
+     * @param settings 推論設定。例: {@code WhisperSettings.defaultSettings()}
+     * @param initialSequence 最初に発行する結果番号。例: {@code 4}
+     * @param initialProcessedSamples 録音先頭からの開始サンプル位置。例: {@code 160000L}
+     * @throws IllegalArgumentException initialSequenceまたはinitialProcessedSamplesが負の場合
+     */
+    public WhisperTranscriptionWorker(
+            final String modelPath,
+            final String vadModelPath,
+            final String sessionId,
+            final int sampleRate,
+            final WhisperSettings settings,
+            final int initialSequence,
+            final long initialProcessedSamples
+    ) {
+        if (initialSequence < 0 || initialProcessedSamples < 0) {
+            throw new IllegalArgumentException("Initial transcription position must be non-negative");
+        }
         this.modelPath = modelPath;
         this.vadModelPath = vadModelPath;
         this.sessionId = sessionId;
@@ -176,6 +202,8 @@ public class WhisperTranscriptionWorker implements Runnable {
         this.overlapSamples = Math.max(0, sampleRate * this.settings.overlapMs() / 1000);
         this.minFinalSamples = Math.max(1, sampleRate * this.settings.minFinalMs() / 1000);
         this.pendingAudio = new DirectPcm16RingBuffer(windowSamples * 2 + sampleRate);
+        this.sequence = initialSequence;
+        this.processedSamples = initialProcessedSamples;
     }
 
     /** Whisper 推論スレッドを開始します。 */
@@ -326,7 +354,7 @@ public class WhisperTranscriptionWorker implements Runnable {
      * 停止時にバッファへ残っている音声を最終結果として推論します。
      * @param currentThread worker 自身のスレッド
      */
-    private void transcribeRemainingAudio(@NonNull CTranslate2TranscriptionWorker cTranslate2Worker, @NonNull final Thread currentThread) {
+    private void transcribeRemainingAudio(@NonNull final CTranslate2TranscriptionWorker cTranslate2Worker, @NonNull final Thread currentThread) {
         drainQueuedAudio(cTranslate2Worker, currentThread);
         final boolean hasRequiredAudio = pendingAudio.size() >= minFinalSamples;
         final boolean hasForcedFinalAudio = finishAfterQueuedAudio && pendingAudio.size() > 0;
@@ -385,7 +413,7 @@ public class WhisperTranscriptionWorker implements Runnable {
      *
      * @param finalResult 停止時の最終推論なら true
      */
-    private void transcribeNextWindow(@NonNull CTranslate2TranscriptionWorker cTranslate2Worker, final boolean finalResult) {
+    private void transcribeNextWindow(@NonNull final CTranslate2TranscriptionWorker cTranslate2Worker, final boolean finalResult) {
         final int sampleCount = finalResult
                 ? pendingAudio.size()
                 : windowSamples;

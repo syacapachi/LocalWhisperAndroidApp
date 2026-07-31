@@ -111,22 +111,6 @@ public final class WhisperSettings {
     }
 
     /**
-     * リアルタイムモデルだけを差し替えます。
-     *
-     * @param value 新しいモデル。例: {@code WhisperModelOption.CT2_BASE_INT8}
-     * @return その他の値を維持した新しい設定。例: {@code WhisperSettings}
-     */
-    @NonNull
-    @Contract("_ -> new")
-    public WhisperSettings withModel(final ITranscriptionModel value) {
-        return new WhisperSettings(
-                value, language, windowMs, overlapMs, minFinalMs, maxThreads,
-                audioRecordingEnabled, autoRetranscribeEnabled, vadEnabled, vadThreshold,
-                translateToEnglish, prompt, fileTranscription
-        );
-    }
-
-    /**
      * ファイル一括設定だけを差し替えます。
      *
      * @param value 新しい一括設定。例: {@code FileTranscriptionSettings.defaultSettings()}

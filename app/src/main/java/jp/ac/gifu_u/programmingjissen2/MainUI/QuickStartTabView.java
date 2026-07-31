@@ -1,6 +1,7 @@
 package jp.ac.gifu_u.programmingjissen2.MainUI;
 
 import android.app.Activity;
+import android.graphics.Color;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.Button;
@@ -25,6 +26,8 @@ public final class QuickStartTabView {
     private final LinearLayout root;
     private final Button fileButton;
     private final Button recordButton;
+    private final Button recordingPauseButton;
+    private final Button inferenceButton;
     private final Spinner sourceSpinner;
     private final SeekEditControl windowControl;
     private final SeekEditControl vadThresholdControl;
@@ -90,14 +93,25 @@ public final class QuickStartTabView {
 
         statusText = text("状態: 待機中", 13);
         content.addView(statusText, matchWrap());
+
+        final LinearLayout controlRow = new LinearLayout(activity);
+        controlRow.setGravity(Gravity.CENTER);
+
+        recordingPauseButton = controlButton("⏸", Color.BLACK, "録音を一時停止");
+        recordingPauseButton.setVisibility(View.GONE);
+        controlRow.addView(recordingPauseButton, controlButtonParams());
+
+        recordButton = controlButton("●", Color.RED, "録音セッションを開始");
+        controlRow.addView(recordButton, controlButtonParams());
+
+        inferenceButton = controlButton("🅐", Color.BLACK, "推論を一時停止");
+        inferenceButton.setVisibility(View.GONE);
+        controlRow.addView(inferenceButton, controlButtonParams());
+        content.addView(controlRow, matchWrap());
+
         content.addView(section("モデル別推論時間（デバッグ）"));
         benchmarkText = text("推論時間 未計測", 12);
         content.addView(benchmarkText, matchWrap());
-
-        recordButton = new Button(activity);
-        recordButton.setText("録音開始");
-        recordButton.setMinHeight(dp(64));
-        root.addView(recordButton, matchWrap());
     }
 
     /** @return タブへ追加するルートView。例: {@code LinearLayout} */
@@ -126,7 +140,8 @@ public final class QuickStartTabView {
     @NonNull
     public WhisperRecordControls controls(@NonNull final Button settingsButton) {
         return new WhisperRecordControls(
-                recordButton, null, settingsButton, sourceSpinner, null, null,
+                recordButton, recordingPauseButton, inferenceButton, settingsButton,
+                sourceSpinner,
                 latestText, statusText, benchmarkText);
     }
 
@@ -182,6 +197,37 @@ public final class QuickStartTabView {
     @NonNull private LinearLayout.LayoutParams matchWrap() { return new LinearLayout.LayoutParams(-1, -2); }
     /** @return 残り高さを使うLayoutParams。例: {@code params} */
     @NonNull private LinearLayout.LayoutParams weighted() { return new LinearLayout.LayoutParams(-1, 0, 1f); }
+    /**
+     * 録音操作行へ置く記号ボタンを作成します。
+     * @param glyph 表示記号。例: {@code "●"}
+     * @param color 文字色。例: {@code Color.RED}
+     * @param description 読み上げ用説明。例: {@code "録音セッションを開始"}
+     * @return 56×48dp枠へ収まる小型Button。例: {@code Button}
+     */
+    @NonNull
+    private Button controlButton(
+            @NonNull final String glyph,
+            final int color,
+            @NonNull final String description
+    ) {
+        final Button button = new Button(activity);
+        button.setText(glyph);
+        button.setTextColor(color);
+        button.setContentDescription(description);
+        button.setTextSize(20);
+        button.setMinWidth(0);
+        button.setMinHeight(0);
+        button.setPadding(0, 0, 0, 0);
+        return button;
+    }
+
+    /** @return 中央に並べる56×48dpのLayoutParams。例: {@code width=56dp} */
+    @NonNull
+    private LinearLayout.LayoutParams controlButtonParams() {
+        final LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(dp(56), dp(48));
+        params.setMargins(dp(4), dp(4), dp(4), dp(4));
+        return params;
+    }
     /** @param value dp。例: {@code 16} @return px。例: {@code 48} */
     private int dp(final int value) {
         return (int) (value * activity.getResources().getDisplayMetrics().density + 0.5f);

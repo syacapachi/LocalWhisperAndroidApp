@@ -54,15 +54,17 @@ public class TranscriptionJsonWriter {
 
     /** session開始時の1回あたり推論窓msです。 */
     private final int windowMs;
+    /** 言語設定です。 */
+    private final String lang;
+
+    /** sessionで共通のWhisperモデル識別子です。 */
+    private final String modelKey;
+
+    /** sessionで共通の発行元タグです。 */
+    private final WhisperTranscriptionTag tag;
 
     /** JSON に保存する文字起こし結果一覧です。 */
     private final JSONArray items = new JSONArray();
-
-    /** sessionで共通のWhisperモデル識別子です。 */
-    private String modelKey = "";
-
-    /** sessionで共通の発行元タグです。 */
-    private WhisperTranscriptionTag tag = WhisperTranscriptionTag.Recording;
 
     /** 録音終了時刻です。未終了の場合は 0 です。 */
     private long finishedAtUnixMs;
@@ -87,18 +89,21 @@ public class TranscriptionJsonWriter {
         this.sessionId = sessionId;
         this.createdAtUnixMs = System.currentTimeMillis();
         this.tag = initialTag;
-        this.modelKey = settings.model().key();
         if (initialTag == WhisperTranscriptionTag.FileTranscribing) {
             final FileTranscriptionSettings fileSettings = settings.fileTranscription();
             this.initialPrompt = fileSettings.prompt();
             this.vadEnabled = fileSettings.vadEnabled();
             this.vadThreshold = fileSettings.vadThreshold();
             this.windowMs = fileSettings.windowMs();
+            this.lang = fileSettings.language();
+            this.modelKey = fileSettings.model().key();
         } else {
             this.initialPrompt = settings.prompt();
             this.vadEnabled = settings.vadEnabled();
             this.vadThreshold = settings.vadThreshold();
             this.windowMs = settings.windowMs();
+            this.lang = settings.language();
+            this.modelKey = settings.model().key();
         }
 
         final File directory = new File(context.getFilesDir(), DIRECTORY_NAME);
@@ -129,11 +134,6 @@ public class TranscriptionJsonWriter {
         }
 
         try {
-            if (items.length() == 0) {
-                modelKey = event.modelKey() == null ? "" : event.modelKey();
-                tag = event.tag() == null
-                        ? WhisperTranscriptionTag.Recording : event.tag();
-            }
             items.put(TranscriptionJsonItem.fromEvent(event).toJsonObject());
             save();
         } catch (JSONException | IOException e) {
@@ -177,6 +177,7 @@ public class TranscriptionJsonWriter {
         root.put("vadEnabled", vadEnabled);
         root.put("vadThreshold", vadThreshold);
         root.put("windowMs", windowMs);
+        root.put("language",lang);
         root.put("items", items);
         return root;
     }

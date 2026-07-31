@@ -59,6 +59,7 @@ public final class ExternalModelImporter {
             @NonNull final Context context,
             @NonNull final Uri treeUri
     ) throws IOException {
+        // アプリの共有データの管理オブジェクト(ここからファイルパスを取得)
         final ContentResolver resolver = context.getContentResolver();
         final List<DocumentTreeReader.Entry> entries =
                 DocumentTreeReader.listFiles(resolver, treeUri);
@@ -115,7 +116,7 @@ public final class ExternalModelImporter {
 
     /**
      * SAF URIの表示名を取得します。
-     * @param resolver ContentResolver。例: {@code context.getContentResolver()}
+     * @param resolver ContentResolver。共有データ(DB的なもの)の管理オブジェクト。 例: {@code context.getContentResolver()}
      * @param uri 対象URI。例: {@code content://.../model.bin}
      * @return 表示名。例: {@code "model.bin"}
      * @throws IOException 名前を取得できない場合
@@ -125,6 +126,7 @@ public final class ExternalModelImporter {
             @NonNull final ContentResolver resolver,
             @NonNull final Uri uri
     ) throws IOException {
+        // DBから、ファイル名を取得するクエリを作成。読み取りを行う。
         try (Cursor cursor = resolver.query(
                 uri, new String[]{OpenableColumns.DISPLAY_NAME}, null, null, null)) {
             if (cursor != null && cursor.moveToFirst()) {

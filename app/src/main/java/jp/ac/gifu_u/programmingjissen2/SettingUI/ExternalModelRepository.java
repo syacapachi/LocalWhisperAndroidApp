@@ -31,10 +31,12 @@ public final class ExternalModelRepository {
      * @throws NullPointerException contextがnullの場合
      */
     public ExternalModelRepository(@NonNull final Context context) {
+        // app/thisAppName/DIRECTORY_NAME/のファイルパスを取得します。なければ作成。
         final File directory = new File(context.getFilesDir(), DIRECTORY_NAME);
         if (!directory.exists() && !directory.mkdirs()) {
             Log.w(TAG, "Could not create model definition directory: " + directory);
         }
+        // app/thisAppName/DIRECTORY_NAME/file のファイルパスを取得します。なければ作成。
         jsonFile = new File(directory, FILE_NAME);
     }
 

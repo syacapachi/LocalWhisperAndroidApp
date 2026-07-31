@@ -4,6 +4,7 @@ import android.content.Context;
 import android.content.SharedPreferences;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 
 import org.jetbrains.annotations.Contract;
 
@@ -40,6 +41,7 @@ public final class WhisperSettingsStore {
     private static final String KEY_FILE_VAD_THRESHOLD = "file_vad_threshold";
     private static final String KEY_FILE_TRANSLATE_TO_ENGLISH = "file_translate_to_english";
     private static final String KEY_FILE_PROMPT = "file_prompt";
+    private static final String KEY_DEBUG_RESULT_VISIBLE = "debug_result_visible";
     private static final String STATS_COUNT = "stats_count";
     private static final String STATS_TOTAL_MS = "stats_total_ms";
     private static final String STATS_LAST_MS = "stats_last_ms";
@@ -54,6 +56,7 @@ public final class WhisperSettingsStore {
      * @param context アプリのContext
      */
     public WhisperSettingsStore(@NonNull final Context context) {
+        // アプリ固有の保存ファイルへのアクセスパスを取得します。
         preferences = context.getApplicationContext().getSharedPreferences(
                 PREF_NAME,
                 Context.MODE_PRIVATE
@@ -154,8 +157,20 @@ public final class WhisperSettingsStore {
                 .apply();
     }
 
-    public void saveModel(final ITranscriptionModel model) {
-        save(load().withModel(model));
+    /**
+     * メイン画面に文字起こしJSON結果（デバッグ）タブを表示する設定を読み込みます。
+     * @return 表示する設定ならtrue。未設定時の例: {@code false}
+     */
+    public boolean isDebugResultVisible() {
+        return preferences.getBoolean(KEY_DEBUG_RESULT_VISIBLE, false);
+    }
+
+    /**
+     * デバッグJSON結果タブの表示設定を保存します。
+     * @param visible 表示するならtrue。例: {@code true}
+     */
+    public void saveDebugResultVisible(final boolean visible) {
+        preferences.edit().putBoolean(KEY_DEBUG_RESULT_VISIBLE, visible).apply();
     }
 
     @NonNull
@@ -183,6 +198,11 @@ public final class WhisperSettingsStore {
         );
     }
 
+    /**
+     * 推論時間統計を保存します。デバック用
+     * @param modelKey モデルキー 例: {@code "cpp-small-q8-0"}
+     * @param processingTimeMs 推論にかかった実行時間 例: {@code 2000}
+     */
     public void recordInference(final String modelKey, final long processingTimeMs) {
         if (modelKey == null || modelKey.isEmpty() || processingTimeMs < 0) {
             return;
@@ -213,6 +233,7 @@ public final class WhisperSettingsStore {
      * @param candidate 検査値。例: {@code "cpp-small-q8-0"}
      * @return 一致したキー。不明値はnull。例: {@code "cpp-small-q8-0"}
      */
+    @Nullable
     private String knownModelKey(final String candidate) {
         for (WhisperModelOption model : WhisperModelOption.values()) {
             if (model.key().equals(candidate)) {
@@ -227,6 +248,9 @@ public final class WhisperSettingsStore {
         return candidate.startsWith("external-") ? candidate : null;
     }
 
+    /**
+     * 統計情報をリセットします。
+     */
     public void resetStats() {
         final SharedPreferences.Editor editor = preferences.edit();
         for (WhisperInferenceEngine engine : WhisperInferenceEngine.values()) {
@@ -241,6 +265,12 @@ public final class WhisperSettingsStore {
         editor.apply();
     }
 
+    /**
+     * 統計キーを生成します。
+     * @param modelKey モデルキー　例: {@code "cpp-small-q8-0"}
+     * @param suffix 統計名　例: {@code "total_ms"}
+     * @return 生成した統計キー。例: {@code "cpp-small-q8-0_total_ms"}
+     */
     @NonNull
     private String statsKey(final String modelKey, final String suffix) {
         return StringBufferBuilderPool.Join("_", modelKey, suffix);

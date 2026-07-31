@@ -53,6 +53,7 @@ public class RecordActivity {
 
     private volatile RecordTranscriptionState state;
     private volatile boolean isTranscribing;
+    private volatile boolean sessionActive;
     private volatile boolean recording;
     private volatile boolean inferenceAlive;
     private volatile boolean inferenceAccepting;
@@ -71,9 +72,9 @@ public class RecordActivity {
         SystemEventHub.subscribe(WhisperRecordingStateEvent.class, stateListener);
 
         setupRecordButton();
+        setupRecordingPauseButton();
         setupInferenceButton();
         setupSettingsButton();
-        setupModelSelector();
         setupAudioSourceSelectors();
         RefreshSettings();
     }
@@ -90,10 +91,21 @@ public class RecordActivity {
 
     private void setupRecordButton() {
         screenBinder.setRecordClickListener((view) -> {
-            if (recording) {
+            if (sessionActive) {
                 StopRecord();
             } else {
                 StartRecord();
+            }
+        });
+    }
+
+    /** セッション中の録音workerだけを一時停止・再生成するボタンを設定します。 */
+    private void setupRecordingPauseButton() {
+        screenBinder.setRecordingPauseClickListener((view) -> {
+            if (recording) {
+                PauseRecord();
+            } else {
+                ResumeRecord();
             }
         });
     }
@@ -115,42 +127,18 @@ public class RecordActivity {
         ));
     }
 
-    private void setupModelSelector() {
-        screenBinder.bindModelSelector(currentSettings.model(), (selected) -> {
-            if (selected.key().equals(currentSettings.model().key())) {
-                return;
-            }
-
-            if (isTranscribing) {
-                outputMessage("モデル変更は録音停止後に反映できます");
-                screenBinder.syncModelSelector(currentSettings.model());
-                return;
-            }
-
-            currentSettings = currentSettings.withModel(selected);
-            settingsStore.save(currentSettings);
-            refreshWhisperInfo();
-        });
-    }
-
     /** 録音入力プルダウンだけを設定し、キャプチャ対象選択はMediaProjectionのOS画面へ任せます。 */
     private void setupAudioSourceSelectors() {
-        screenBinder.bindAudioSourceSelectors(
-                java.util.Collections.emptyList(),
-                source -> { }
-        );
+        screenBinder.bindAudioSourceSelector();
     }
 
     /** 設定画面から戻ったときなどに、保存済み設定を録音画面へ反映します。 */
     public void RefreshSettings() {
         if (!isTranscribing) {
             currentSettings = settingsStore.load();
-            setupModelSelector();
         }
         syncStateFromBackgroundService();
-        screenBinder.setRecordButtonState(state);
-        screenBinder.setInferenceButtonState(recording, inferenceAlive, inferenceAccepting);
-        screenBinder.setAudioSourceSelectorsEnabled(!recording);
+        refreshControlStates();
         refreshWhisperInfo();
 
         String latest = BackgroundWhisperService.latestText();
@@ -176,7 +164,7 @@ public class RecordActivity {
                             requestPostNotificationPermissionIfNeeded();
                             activity.runOnUiThread(() -> {
                                 if (StartRecord()) {
-                                    screenBinder.setRecordButtonState(state);
+                                    refreshControlStates();
                                 }
                             });
                         } else {
@@ -212,7 +200,7 @@ public class RecordActivity {
             outputMessage("対象アプリ音声のキャプチャを許可してください");
             return false;
         }
-        return startBackgroundRecording(source, null, Activity.RESULT_CANCELED, null);
+        return startBackgroundRecording(source, Activity.RESULT_CANCELED, null);
     }
 
     /**
@@ -227,37 +215,33 @@ public class RecordActivity {
             outputMessage("アプリ音声のキャプチャが許可されませんでした");
             return;
         }
-        startBackgroundRecording(source, null, resultCode, data);
+        startBackgroundRecording(source, resultCode, data);
     }
 
     /**
      * 選択済み入力をForeground Serviceへ渡してUIを録音中にします。
      * @param source 音声入力。例: {@code RecordingAudioSource.MICROPHONE_AND_APP}
-     * @param target 対象アプリ。マイクのみならnull。例: {@code new CaptureTargetApp("YouTube", "com.google.android.youtube", 10123)}
      * @param resultCode MediaProjection結果。例: {@code Activity.RESULT_OK}
      * @param projectionData MediaProjection token。マイクのみならnull。例: {@code resultIntent}
      * @return 開始要求を送れた場合true。例: {@code true}
      */
     private boolean startBackgroundRecording(
             @NonNull final RecordingAudioSource source,
-            final CaptureTargetApp target,
             final int resultCode,
             final Intent projectionData
     ) {
         BackgroundWhisperService.startRecording(
                 activity,
                 source,
-                target == null ? -1 : target.uid(),
                 resultCode,
                 projectionData
         );
+        sessionActive = true;
         recording = true;
         inferenceAlive = true;
         inferenceAccepting = true;
         setState(RecordTranscriptionState.Recording);
-        screenBinder.setRecordButtonState(state);
-        screenBinder.setInferenceButtonState(recording, inferenceAlive, inferenceAccepting);
-        screenBinder.setAudioSourceSelectorsEnabled(false);
+        refreshControlStates();
         outputMessage(StringBufferBuilderPool.Join(
                 "",
                 "バックグラウンド録音を開始します: ",
@@ -269,16 +253,46 @@ public class RecordActivity {
 
     /** バックグラウンド録音サービスへ停止を要求します。 */
     public boolean StopRecord() {
-        if (!recording && !BackgroundWhisperService.isRunning()) {
+        if (!sessionActive && !BackgroundWhisperService.isSessionActive()) {
             return false;
         }
 
+        sessionActive = false;
         recording = false;
         setState(RecordTranscriptionState.StopRecord);
         BackgroundWhisperService.stopRecording(activity);
-        screenBinder.setRecordButtonState(state);
-        screenBinder.setInferenceButtonState(recording, inferenceAlive, false);
-        screenBinder.setAudioSourceSelectorsEnabled(true);
+        inferenceAccepting = false;
+        refreshControlStates();
+        refreshWhisperInfo();
+        return true;
+    }
+
+    /**
+     * セッションを維持したままAudioRecord workerだけを停止します。
+     * @return 一時停止要求を送れた場合true。セッション外または停止済みならfalse。例: {@code true}
+     */
+    public boolean PauseRecord() {
+        if (!sessionActive || !recording) {
+            return false;
+        }
+        recording = false;
+        BackgroundWhisperService.pauseRecording(activity);
+        refreshControlStates();
+        refreshWhisperInfo();
+        return true;
+    }
+
+    /**
+     * 同じセッションでAudioRecord workerを再生成します。
+     * @return 再開要求を送れた場合true。セッション外または録音中ならfalse。例: {@code true}
+     */
+    public boolean ResumeRecord() {
+        if (!sessionActive || recording) {
+            return false;
+        }
+        recording = true;
+        BackgroundWhisperService.resumeRecording(activity);
+        refreshControlStates();
         refreshWhisperInfo();
         return true;
     }
@@ -289,12 +303,12 @@ public class RecordActivity {
      * @return 録音中に停止要求を送れた場合true。例: {@code true}
      */
     public boolean StopInference() {
-        if (!recording || !inferenceAlive) {
+        if (!sessionActive || !inferenceAlive) {
             return false;
         }
         inferenceAccepting = false;
         BackgroundWhisperService.stopInference(activity);
-        screenBinder.setInferenceButtonState(recording, inferenceAlive, false);
+        refreshControlStates();
         refreshWhisperInfo();
         return true;
     }
@@ -305,14 +319,14 @@ public class RecordActivity {
      * @return 再開要求を送れた場合true。録音していない場合false。例: {@code true}
      */
     public boolean ResumeInference() {
-        if (!recording) {
-            outputMessage("録音中のみ推論を再開できます");
+        if (!sessionActive) {
+            outputMessage("セッション継続中のみ推論を再開できます");
             return false;
         }
         inferenceAlive = true;
         inferenceAccepting = true;
         BackgroundWhisperService.resumeInference(activity);
-        screenBinder.setInferenceButtonState(recording, true, true);
+        refreshControlStates();
         refreshWhisperInfo();
         return true;
     }
@@ -325,7 +339,7 @@ public class RecordActivity {
      * @throws SecurityException URI の読み取り許可が失効している場合、worker 側でエラーイベントに変換します
      */
     public boolean TranscribeAudioFile(@NonNull final Uri uri) {
-        if (recording || inferenceAlive || BackgroundWhisperService.isServiceActive()) {
+        if (sessionActive || inferenceAlive || BackgroundWhisperService.isServiceActive()) {
             outputMessage("録音停止後に音声ファイルを文字起こしできます");
             return false;
         }
@@ -363,24 +377,14 @@ public class RecordActivity {
 
     private void onRecordingStateEvent(WhisperRecordingStateEvent event) {
         activity.runOnUiThread(() -> {
+            sessionActive = event.sessionActive();
             recording = event.recording();
             inferenceAlive = event.inferenceAlive();
             inferenceAccepting = event.inferenceAccepting();
             final RecordTranscriptionState serviceState =
                     BackgroundWhisperService.currentState();
-            setState(serviceState == RecordTranscriptionState.FileTranscribing
-                    ? RecordTranscriptionState.FileTranscribing
-                    : (event.stopping()
-                            ? RecordTranscriptionState.StopRecord
-                            : (event.recording()
-                                    ? RecordTranscriptionState.Recording : null)));
-            screenBinder.setRecordButtonState(state);
-            screenBinder.setInferenceButtonState(
-                    recording,
-                    inferenceAlive,
-                    inferenceAccepting
-            );
-            screenBinder.setAudioSourceSelectorsEnabled(!recording);
+            setState(serviceState);
+            refreshControlStates();
             if (!event.latestText().isEmpty()) {
                 screenBinder.showMessage(event.latestText());
             } else if (!event.message().isEmpty()) {
@@ -488,16 +492,13 @@ public class RecordActivity {
      * 録音サービスの状態を RecordActivity のステートへ反映します。
      */
     private void syncStateFromBackgroundService() {
+        sessionActive = BackgroundWhisperService.isSessionActive();
         recording = BackgroundWhisperService.isRunning();
         inferenceAlive = BackgroundWhisperService.isInferenceAlive();
         inferenceAccepting = BackgroundWhisperService.isInferenceAccepting();
         final RecordTranscriptionState serviceState =
                 BackgroundWhisperService.currentState();
-        setState(serviceState == RecordTranscriptionState.FileTranscribing
-                ? serviceState
-                : (BackgroundWhisperService.isStopping()
-                        ? serviceState
-                        : (recording ? RecordTranscriptionState.Recording : null)));
+        setState(serviceState);
     }
 
     /**
@@ -508,7 +509,7 @@ public class RecordActivity {
     private void setState(final RecordTranscriptionState nextState) {
         state = nextState;
         isTranscribing = nextState == RecordTranscriptionState.FileTranscribing
-                || recording
+                || sessionActive
                 || inferenceAlive;
     }
 
@@ -526,15 +527,29 @@ public class RecordActivity {
             return "ファイル文字起こし中";
         }
         if (state == RecordTranscriptionState.StopRecord) {
-            return "録音停止";
+            return "セッション終了処理中";
         }
-        if (state == RecordTranscriptionState.StopAll) {
-            return recording ? "録音中（推論停止）" : "推論停止";
+        if (state == RecordTranscriptionState.RecordingPaused) {
+            return "録音一時停止・推論中";
+        }
+        if (state == RecordTranscriptionState.InferencePaused) {
+            return "録音中・推論一時停止";
+        }
+        if (state == RecordTranscriptionState.RecordingAndInferencePaused) {
+            return "録音・推論一時停止";
         }
         return "待機中";
     }
 
     private void setStatusText(final String value) {
         screenBinder.setStatusText(value);
+    }
+
+    /** セッション・録音・推論の状態を3つの操作ボタンと入力固定状態へ反映します。 */
+    private void refreshControlStates() {
+        screenBinder.setRecordButtonState(sessionActive);
+        screenBinder.setRecordingPauseButtonState(sessionActive, recording);
+        screenBinder.setInferenceButtonState(sessionActive, inferenceAccepting);
+        screenBinder.setAudioSourceSelectorsEnabled(!sessionActive);
     }
 }
