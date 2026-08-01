@@ -25,9 +25,9 @@ public final class QuickStartTabView {
     private final Activity activity;
     private final LinearLayout root;
     private final Button fileButton;
-    private final Button recordButton;
-    private final Button recordingPauseButton;
-    private final Button inferenceButton;
+    private final MorphingControlButton recordButton;
+    private final MorphingControlButton recordingPauseButton;
+    private final MorphingControlButton inferenceButton;
     private final Spinner sourceSpinner;
     private final SeekEditControl windowControl;
     private final SeekEditControl vadThresholdControl;
@@ -205,19 +205,19 @@ public final class QuickStartTabView {
      * @return 56×48dp枠へ収まる小型Button。例: {@code Button}
      */
     @NonNull
-    private Button controlButton(
+    private MorphingControlButton controlButton(
             @NonNull final String glyph,
             final int color,
             @NonNull final String description
     ) {
-        final Button button = new Button(activity);
-        button.setText(glyph);
+        final MorphingControlButton button = new MorphingControlButton(activity);
+        button.initialize(glyph, description);
         button.setTextColor(color);
-        button.setContentDescription(description);
-        button.setTextSize(20);
+        button.setTextSize(40);
         button.setMinWidth(0);
         button.setMinHeight(0);
         button.setPadding(0, 0, 0, 0);
+        button.setGravity(Gravity.TOP | Gravity.CENTER_HORIZONTAL);
         return button;
     }
 

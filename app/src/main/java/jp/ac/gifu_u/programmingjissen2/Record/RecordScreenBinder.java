@@ -103,8 +103,8 @@ public final class RecordScreenBinder {
      * @param sessionActive セッション継続中ならtrue。例: {@code true}
      */
     public void setRecordButtonState(final boolean sessionActive) {
-        controls.recordButton.setText(sessionActive ? "■" : "●");
-        controls.recordButton.setContentDescription(
+        controls.recordButton.morphTo(
+                sessionActive ? "■" : "●",
                 sessionActive ? "録音セッションを終了" : "録音セッションを開始");
     }
 
@@ -118,8 +118,8 @@ public final class RecordScreenBinder {
             final boolean recording
     ) {
         controls.recordingPauseButton.setVisibility(sessionActive ? View.VISIBLE : View.GONE);
-        controls.recordingPauseButton.setText(recording ? "⏸" : "▸");
-        controls.recordingPauseButton.setContentDescription(
+        controls.recordingPauseButton.morphTo(
+                recording ? "⏸" : "▸",
                 recording ? "録音を一時停止" : "録音を再開");
         controls.recordingPauseButton.setEnabled(sessionActive);
     }
@@ -135,8 +135,8 @@ public final class RecordScreenBinder {
             final boolean inferenceAccepting
     ) {
         controls.inferenceButton.setVisibility(sessionActive ? View.VISIBLE : View.GONE);
-        controls.inferenceButton.setText(inferenceAccepting ? "🅐" : "Ⓐ");
-        controls.inferenceButton.setContentDescription(
+        controls.inferenceButton.morphTo(
+                inferenceAccepting ? "🅐" : "Ⓐ",
                 inferenceAccepting ? "推論を一時停止" : "推論を再開");
         controls.inferenceButton.setEnabled(sessionActive);
     }
