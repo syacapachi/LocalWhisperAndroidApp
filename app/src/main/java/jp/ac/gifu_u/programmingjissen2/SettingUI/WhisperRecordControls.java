@@ -4,11 +4,13 @@ import android.widget.Button;
 import android.widget.Spinner;
 import android.widget.TextView;
 
+import jp.ac.gifu_u.programmingjissen2.MainUI.MorphingControlButton;
+
 /** 録音画面に配置された Whisper 関連 UI 参照です。 */
 public final class WhisperRecordControls {
-    public final Button recordButton;
-    public final Button recordingPauseButton;
-    public final Button inferenceButton;
+    public final MorphingControlButton recordButton;
+    public final MorphingControlButton recordingPauseButton;
+    public final MorphingControlButton inferenceButton;
     public final Button settingsButton;
     public final Spinner recordingSourceSpinner;
     public final TextView resultTextView;
@@ -28,9 +30,9 @@ public final class WhisperRecordControls {
      * @param benchmarkTextView 統計欄。例: {@code findViewById(R.id.whisperBenchmarkText)}
      */
     public WhisperRecordControls(
-            Button recordButton,
-            Button recordingPauseButton,
-            Button inferenceButton,
+            MorphingControlButton recordButton,
+            MorphingControlButton recordingPauseButton,
+            MorphingControlButton inferenceButton,
             Button settingsButton,
             Spinner recordingSourceSpinner,
             TextView resultTextView,

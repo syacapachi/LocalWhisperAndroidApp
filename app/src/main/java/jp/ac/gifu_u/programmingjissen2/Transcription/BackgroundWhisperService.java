@@ -495,6 +495,12 @@ public class BackgroundWhisperService extends Service {
      * 引数と戻り値はありません。AudioRecord初期化失敗時は一時停止状態を維持して通知します。
      */
     private void startRecordingWorkerForSession() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
+                != PackageManager.PERMISSION_GRANTED) {
+            publishState("録音権限がありません");
+            stopForegroundAndSelf();
+            return;
+        }
         final int sampleRate = WhisperTranscriptionWorker.DEFAULT_SAMPLE_RATE;
         final int bufferSize = AudioRecordWorker.createBufferSize(sampleRate);
         if (bufferSize <= 0) {
