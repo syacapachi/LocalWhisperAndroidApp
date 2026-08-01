@@ -141,7 +141,7 @@ final class WhisperForegroundNotification {
                 ? "最新の文字起こしはまだありません" : text;
         return new NotificationCompat.Builder(service, CHANNEL_ID) // バックグラウンドで実行するために最低限必要
                 .setSmallIcon(R.mipmap.ic_launcher_monochrome_foreground) //アイコンを設定
-                //.setColor(Color.argb(255,255,0,255))
+                .setColor(Color.argb(130,0,255,255))
                 .setContentTitle(title) // 通知タイトルを設定
                 .setContentText(displayText) //通知テキストを設定
                 .setStyle(new NotificationCompat.BigTextStyle().bigText(displayText)) //スタイルを設定

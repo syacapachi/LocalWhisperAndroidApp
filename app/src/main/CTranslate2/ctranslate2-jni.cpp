@@ -239,11 +239,15 @@ Java_CTranslate2_CTranslate2Bridge_transcribe(
     prompt.emplace_back("<|notimestamps|>");
     std::vector<std::vector<std::string>> prompts{std::move(prompt)};
     ctranslate2::models::WhisperOptions options;
-    options.beam_size = static_cast<size_t>(std::max(1, beam_size));
-    options.max_length = static_cast<size_t>(std::max(1, max_length));
-    options.sampling_topk = 1;
-    options.return_scores = false;
-    options.return_no_speech_prob = false;
+    options.beam_size = static_cast<size_t>(std::max(1, beam_size));//候補の推論数
+    options.max_length = static_cast<size_t>(std::max(1, max_length));//出力最大値
+    options.sampling_topk = 1;//候補が正しい確率(1だと決定的な出力)
+    options.return_scores = false;//デバック情報
+    options.return_no_speech_prob = false;//内部VAD用。今回は外部VADを使うのでなし。
+    options.patience = 1;//探索回数
+    options.num_hypotheses = 1;//候補の出力数
+    options.sampling_temperature = 1;//出力の揺らぎ、大きいと急に話が変わっても対応できる。
+
 
     // 文字起こしを実行
     auto futures = handle->model->generate(features, std::move(prompts), options);
